@@ -65,21 +65,17 @@ your-project/
 │   │   ├── verification-agent.md
 │   │   └── code-review-agent.md
 │   └── skills/
-│       └── belmont/             # Skills (canonical location)
-│           ├── working-backwards.md
-│           ├── product-plan.md
-│           ├── tech-plan.md
-│           ├── implement.md
-│           ├── next.md
-│           ├── verify.md
-│           ├── debug.md
-│           ├── debug-auto.md
-│           ├── debug-manual.md
-│           ├── status.md
-│           ├── review-plans.md
-│           ├── cleanup.md
-│           ├── reset.md
-│           └── references/      # Progressive-disclosure detail (loaded on demand)
+│       └── belmont/             # Skills (canonical location, agentskills.io folder layout)
+│           ├── implement/
+│           │   ├── SKILL.md
+│           │   ├── references/  # Progressive-disclosure detail (loaded on demand)
+│           │   └── agents/
+│           │       └── openai.yaml   # Codex UI metadata (if Codex selected) — display_name "belmont:implement"
+│           ├── verify/
+│           │   └── SKILL.md  (+ references/, agents/openai.yaml)
+│           └── ...              # one folder per skill: working-backwards, product-plan, tech-plan,
+│                                # next, debug, debug-auto, debug-manual, status, review-plans,
+│                                # note, cleanup, reset
 ├── .belmont/                    # Planning & state (commit to share with team)
 │   ├── PR_FAQ.md
 │   ├── PRD.md                   # Living spec (no status markers — purely requirements)
@@ -112,7 +108,7 @@ your-project/
 └── ...
 ```
 
-Codex, Cursor, Windsurf, Gemini, GitHub Copilot, Pi, and opencode all auto-discover `.agents/skills/belmont/<skill>/SKILL.md` natively (see [supported-tools.md](supported-tools.md)). opencode additionally gets the `.opencode/command/belmont/` wrapper commands above, because its TUI `/` autocomplete only lists commands, not skills.
+Codex, Cursor, Windsurf, Gemini, GitHub Copilot, Pi, and opencode all auto-discover `.agents/skills/belmont/<skill>/SKILL.md` natively (see [supported-tools.md](supported-tools.md)). opencode additionally gets the `.opencode/command/belmont/` wrapper commands above, because its TUI `/` autocomplete only lists commands, not skills. Codex additionally gets per-skill `agents/openai.yaml` UI metadata inside the canonical skill folders (`interface.display_name: "belmont:<skill>"`), so typing `$belmont` in its composer lists every skill — Codex's `/` menu only shows built-ins and can't be extended.
 
 ## Key Separation
 
