@@ -334,7 +334,7 @@ See [Skills Reference](docs/skills-reference.md) for detailed descriptions of ea
 | Tool                  | How Skills Are Wired                                                  | How to Use                                          |
 |-----------------------|-----------------------------------------------------------------------|-----------------------------------------------------|
 | **Claude Code**       | `.claude/agents/belmont` symlink + per-skill symlinks `.claude/commands/belmont/<skill>.md` → `.agents/skills/belmont/<skill>/SKILL.md` | `/belmont:product-plan`, `/belmont:implement`, etc. |
-| **Codex**             | None — `.agents/skills/` auto-discovered                              | `belmont:implement` in prompt                       |
+| **Codex**             | Generated per-skill `agents/openai.yaml` (`display_name: "belmont:<skill>"`) — skills auto-discovered via `.agents/skills/` | Type `$belmont` to list all skills, or `belmont:implement` in prompt |
 | **Cursor**            | None — `.agents/skills/` auto-discovered (Cursor Skills)              | `belmont:implement` in prompt                       |
 | **Windsurf**          | None — `.agents/skills/` auto-discovered (Cascade Skills)             | `belmont:implement` in prompt                       |
 | **Gemini**            | None — `.agents/skills/` is the documented `.gemini/skills/` alias    | `belmont:implement` in prompt                       |

@@ -1,11 +1,11 @@
 # Supported Tools
 
-Belmont skills install as agentskills.io-format folders at `.agents/skills/belmont/<skill>/SKILL.md`. Six of eight supported AI CLIs auto-discover this path natively — the install does **zero per-tool wiring** for them. Two tools additionally get per-skill slash commands so Belmont shows up in their `/` autocomplete: Claude Code discovers slash commands at `.claude/commands/<name>.md` (subfolders become `:`-namespace prefixes → `/belmont:<skill>`; Belmont symlinks each at the canonical SKILL.md), and opencode discovers them at `.opencode/command/<name>.md` (subfolders become `/`-namespace prefixes → `/belmont/<skill>`; Belmont generates small wrapper commands that delegate to the canonical SKILL.md — see the opencode section for why these can't be symlinks).
+Belmont skills install as agentskills.io-format folders at `.agents/skills/belmont/<skill>/SKILL.md`. All eight supported AI CLIs auto-discover this path natively — the install does **zero per-tool wiring** for skill *discovery*. Three tools additionally get per-skill autocomplete wiring so Belmont shows up grouped in their pickers: Claude Code discovers slash commands at `.claude/commands/<name>.md` (subfolders become `:`-namespace prefixes → `/belmont:<skill>`; Belmont symlinks each at the canonical SKILL.md), opencode discovers them at `.opencode/command/<name>.md` (subfolders become `/`-namespace prefixes → `/belmont/<skill>`; Belmont generates small wrapper commands that delegate to the canonical SKILL.md — see the opencode section for why these can't be symlinks), and Codex gets per-skill UI metadata at `<skill>/agents/openai.yaml` (`interface.display_name: "belmont:<skill>"`) so typing `$belmont` in the composer lists every skill — see the Codex section for why its `/` menu can't be extended.
 
 | Tool               | Wiring                                                               | How to use                                              |
 |--------------------|----------------------------------------------------------------------|---------------------------------------------------------|
 | **Claude Code**    | `.claude/agents/belmont` symlink + `.claude/commands/belmont/<skill>.md` per-skill symlinks → `.agents/skills/belmont/<skill>/SKILL.md` | `/belmont:product-plan`, `/belmont:implement`, etc.     |
-| **Codex**          | none — `.agents/skills/` auto-discovered (Codex 0.126+)              | Prompt `belmont:<skill>` — surfaces via `/skills`       |
+| **Codex**          | `.agents/skills/belmont/<skill>/agents/openai.yaml` generated per skill (`interface.display_name: "belmont:<skill>"`) — skill content auto-discovered via `.agents/skills/` (Codex 0.126+) | Type `$belmont` → all skills in the `$`-mention popup; also `/skills` or prompt `belmont:<skill>` |
 | **Cursor**         | none — `.agents/skills/` auto-discovered (Cursor Skills system)      | Prompt `belmont:<skill>` — auto-loaded by description   |
 | **Windsurf**       | none — `.agents/skills/` auto-discovered (Cascade v1.13.6+)          | Prompt `belmont:<skill>` — auto-loaded by description   |
 | **Gemini**         | none — `.agents/skills/` is the documented alias for `.gemini/skills/` | Prompt `belmont:<skill>` — surfaces via `/skills`       |
@@ -63,7 +63,35 @@ Skills become native slash commands:
 
 All seven auto-discover `.agents/skills/belmont/<skill>/SKILL.md`. Open the tool in your project directory and prompt with a skill reference like `belmont:implement` — the CLI's Skills system surfaces and activates the skill via its `description:` frontmatter.
 
-For Codex specifically, the `/skills` slash command lists discovered skills. For Gemini, the same. For Cursor, you can also browse them via the Skills panel in the IDE. For opencode, every discovered skill is listed in the model's `<available_skills>` block and loaded on demand via the native `skill` tool — and opencode additionally gets first-class slash commands (`/belmont/<skill>`); see its section below.
+For Codex specifically, typing `$belmont` lists every Belmont skill in the composer's mention popup (see its section below); the `/skills` slash command also lists discovered skills. For Gemini, `/skills` does the same. For Cursor, you can also browse them via the Skills panel in the IDE. For opencode, every discovered skill is listed in the model's `<available_skills>` block and loaded on demand via the native `skill` tool — and opencode additionally gets first-class slash commands (`/belmont/<skill>`); see its section below.
+
+### Codex
+
+Codex (0.126+) discovers Belmont's skills with zero wiring — its skill loader scans `.agents/skills/` from the working directory up to the repo root (plus `~/.agents/skills/`), reading each `<skill>/SKILL.md`. Skills activate implicitly via `description:` matching, explicitly via the `/skills` picker, or via `$`-mentions in the composer.
+
+**Why there's no `/belmont` slash command:** Codex's TUI `/` menu lists built-in commands only and is not extensible — the old `~/.codex/prompts` custom-prompt feature (which could add entries) was deprecated in favor of skills and then removed upstream. The grouped-autocomplete experience lives behind `$` instead: typing `$` opens a fuzzy-filtered mention popup over all discovered skills, showing each skill's display name and description.
+
+Belmont therefore writes per-skill UI metadata at `.agents/skills/belmont/<skill>/agents/openai.yaml`:
+
+```yaml
+interface:
+  display_name: "belmont:<skill>"
+```
+
+Codex's mention popup prefers `interface.display_name` over the frontmatter `name:` and fuzzy-matches your filter against it — the shared `belmont:` prefix is what groups the skills. Typing `$belmont` lists the full set:
+
+```
+› $belmont
+
+  belmont:next        Implement just the next single pending task…
+  belmont:status      Show current status of belmont tasks…
+  belmont:verify      Run verification and code review…
+  …
+```
+
+Selecting one inserts `$<skill>` (the canonical frontmatter name) and the skill loads when you submit. Two details to know: display names longer than 21 characters are visually truncated in the popup (`belmont:working-backwards` → `belmont:working-back…`) but still match the full filter text, and per agentskills.io the `agents/` subdir is product-specific config — every other supported CLI ignores it, so the canonical skill folders stay single-source.
+
+The metadata files are (re)generated by `belmont install` / `belmont update` whenever Codex is a selected tool, and are pruned automatically with their skill folder when a skill is removed.
 
 ### Pi (local-LLM workflow)
 

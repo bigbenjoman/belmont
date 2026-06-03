@@ -461,6 +461,79 @@ func TestLinkOpencodeCommands_PrunesStaleEntries(t *testing.T) {
 	}
 }
 
+func TestWriteCodexSkillInterfaces_GeneratesYamlPerSkill(t *testing.T) {
+	dir := t.TempDir()
+	skillsTarget := filepath.Join(dir, ".agents/skills/belmont")
+	mustWrite(t, filepath.Join(skillsTarget, "implement/SKILL.md"), "---\nname: implement\ndescription: Implement the next milestone\n---\nbody\n")
+	mustWrite(t, filepath.Join(skillsTarget, "verify/SKILL.md"), "---\nname: verify\ndescription: Run verification\n---\nbody\n")
+	// Scaffolding dir and a non-skill dir must be skipped.
+	mustWrite(t, filepath.Join(skillsTarget, "_src/implement.md"), "src\n")
+	if err := os.MkdirAll(filepath.Join(skillsTarget, "not-a-skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := writeCodexSkillInterfaces(skillsTarget); err != nil {
+		t.Fatalf("writeCodexSkillInterfaces: %v", err)
+	}
+
+	// Per-skill agents/openai.yaml with a belmont:-prefixed display_name —
+	// Codex's $-mention popup fuzzy-matches interface.display_name, so the
+	// shared prefix is what makes "$belmont" list every skill.
+	for _, skill := range []string{"implement", "verify"} {
+		yamlPath := filepath.Join(skillsTarget, skill, "agents/openai.yaml")
+		data, err := os.ReadFile(yamlPath)
+		if err != nil {
+			t.Fatalf("expected openai.yaml for %s, got: %v", skill, err)
+		}
+		content := string(data)
+		if !strings.Contains(content, "interface:") {
+			t.Errorf("%s missing interface: block:\n%s", yamlPath, content)
+		}
+		want := "display_name: \"belmont:" + skill + "\""
+		if !strings.Contains(content, want) {
+			t.Errorf("%s should carry %q:\n%s", yamlPath, want, content)
+		}
+	}
+
+	if _, err := os.Stat(filepath.Join(skillsTarget, "_src/agents/openai.yaml")); err == nil {
+		t.Errorf("_src/ is scaffolding, not a skill — no openai.yaml should be written")
+	}
+	if _, err := os.Stat(filepath.Join(skillsTarget, "not-a-skill/agents/openai.yaml")); err == nil {
+		t.Errorf("dir without SKILL.md must not get an openai.yaml")
+	}
+
+	// Idempotency: a second run must leave content unchanged.
+	before, _ := os.ReadFile(filepath.Join(skillsTarget, "implement/agents/openai.yaml"))
+	if err := writeCodexSkillInterfaces(skillsTarget); err != nil {
+		t.Fatalf("second writeCodexSkillInterfaces: %v", err)
+	}
+	after, _ := os.ReadFile(filepath.Join(skillsTarget, "implement/agents/openai.yaml"))
+	if string(before) != string(after) {
+		t.Errorf("openai.yaml content changed on idempotent re-run")
+	}
+}
+
+func TestWriteCodexSkillInterfaces_RewritesOutdatedContent(t *testing.T) {
+	dir := t.TempDir()
+	skillsTarget := filepath.Join(dir, ".agents/skills/belmont")
+	mustWrite(t, filepath.Join(skillsTarget, "implement/SKILL.md"), "body\n")
+	// Plant stale metadata from an older Belmont version (e.g. a different
+	// display-name scheme).
+	mustWrite(t, filepath.Join(skillsTarget, "implement/agents/openai.yaml"), "interface:\n  display_name: \"old-name\"\n")
+
+	if err := writeCodexSkillInterfaces(skillsTarget); err != nil {
+		t.Fatalf("writeCodexSkillInterfaces: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(skillsTarget, "implement/agents/openai.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "display_name: \"belmont:implement\"") {
+		t.Errorf("outdated openai.yaml should be rewritten to the current scheme:\n%s", data)
+	}
+}
+
 func TestDetectTools_PiMarkerDir(t *testing.T) {
 	dir := t.TempDir()
 	// Plant the .pi/ marker dir to simulate a project that's used Pi before.
