@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.10.8
+
+**Released:** 2026-06-03
+
+### Changes since v0.10.7-final
+
+- Add opencode (opencode.ai) as a first-class supported tool
+
+
+
 ## v0.10.7
 
 **Released:** 2026-05-12
