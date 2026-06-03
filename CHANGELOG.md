@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.10.10
+
+**Released:** 2026-06-03
+
+### Changes since v0.10.9
+
+- Group Belmont skills in Codex's $-mention popup via per-skill display names
+
+
+
 ## v0.10.9
 
 **Released:** 2026-06-03
