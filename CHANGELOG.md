@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.10.9
+
+**Released:** 2026-06-03
+
+### Changes since v0.10.8
+
+- Surface Belmont skills in opencode's TUI slash menu via generated wrapper commands
+
+
+
 ## v0.10.8
 
 **Released:** 2026-06-03
