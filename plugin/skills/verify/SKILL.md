@@ -188,19 +188,21 @@ Per-agent model tiers (low/medium/high) are defined in `{base}/models.yaml`. If 
 
 Belmont uses three user-facing tiers — `low`, `medium`, `high` — which map to concrete model identifiers per AI CLI. When you need to pass a model override explicitly (see `dispatch-strategy.md` Model Tier Overrides or `tier-preflight.md`), translate via this table.
 
-| Tier   | Claude  | Codex          | Gemini                | Cursor             | Copilot              | Pi                   |
-|--------|---------|----------------|-----------------------|--------------------|----------------------|----------------------|
-| low    | haiku   | gpt-5.4-mini   | gemini-2.5-flash-lite | sonnet-4           | haiku-4.5            | user-configured¹     |
-| medium | sonnet  | gpt-5.3-codex  | gemini-2.5-flash      | sonnet-4-thinking  | claude-sonnet-4.5    | user-configured¹     |
-| high   | opus    | gpt-5.4        | gemini-2.5-pro        | gpt-5              | gpt-5.4              | user-configured¹     |
+| Tier   | Claude  | Codex          | Gemini                | Cursor             | Copilot              | Pi                   | opencode                     |
+|--------|---------|----------------|-----------------------|--------------------|----------------------|----------------------|------------------------------|
+| low    | haiku   | gpt-5.4-mini   | gemini-2.5-flash-lite | sonnet-4           | haiku-4.5            | user-configured¹     | anthropic/claude-haiku-4-5²  |
+| medium | sonnet  | gpt-5.3-codex  | gemini-2.5-flash      | sonnet-4-thinking  | claude-sonnet-4.5    | user-configured¹     | anthropic/claude-sonnet-4-6² |
+| high   | opus    | gpt-5.4        | gemini-2.5-pro        | gpt-5              | gpt-5.4              | user-configured¹     | anthropic/claude-opus-4-8²   |
 
 ¹ Pi runs against user-provided local (or remote) models whose IDs Belmont cannot know in advance. The user maps tiers → providers + models in `~/.belmont/local-llms.json` (or per-project `.belmont/local-llms.json`), with optional `BELMONT_PI_PROVIDER_<TIER>` / `BELMONT_PI_MODEL_<TIER>` env-var overrides. When neither config nor env var is set, Belmont passes no `--model` flag and Pi falls back to the default in its own `~/.pi/agent/models.json`. See `docs/supported-tools.md` and `docs/local-llms.example.json`.
 
-The canonical source for the closed-model tiers (Claude / Codex / Gemini / Cursor / Copilot) is the `modelTiers` map in `cmd/belmont/main.go`. If this table drifts from the Go registry, the Go registry wins — file an issue and update this partial. `scripts/generate-skills.sh --check` is the place to add a drift guard.
+² opencode model IDs are `provider/model` tokens; the defaults assume the Anthropic provider. Users on another provider (opencode zen, OpenAI, local models, …) override per tier via `opencode.tiers.<tier>` in `~/.belmont/local-llms.json` / `.belmont/local-llms.json`, or `BELMONT_OPENCODE_MODEL_<TIER>` / `BELMONT_OPENCODE_MODEL` env vars. See `docs/supported-tools.md` and `docs/local-llms.example.json`.
+
+The canonical source for the closed-model tiers (Claude / Codex / Gemini / Cursor / Copilot / opencode) is the `modelTiers` map in `cmd/belmont/main.go`. If this table drifts from the Go registry, the Go registry wins — file an issue and update this partial. `scripts/generate-skills.sh --check` is the place to add a drift guard.
 
 ### Model Tier Preflight (non-Claude CLIs)
 
-Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi) run the entire skill in a single top-level session at whichever model the session was started with — there's no sub-agent dispatch to override mid-session. Before doing any heavy work, compare the **required tier** for the current skill to the **session's current model** and surface a warning if they diverge. Do NOT block execution; let the user decide.
+Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi, opencode) run the entire skill in a single top-level session at whichever model the session was started with — there's no sub-agent dispatch to override mid-session. Before doing any heavy work, compare the **required tier** for the current skill to the **session's current model** and surface a warning if they diverge. Do NOT block execution; let the user decide.
 
 **Workflow at start-of-skill (non-Claude only)**:
 
@@ -218,6 +220,7 @@ Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi) run the entire skill in a s
    - Cursor: check `/model`.
    - Copilot: check `/model`.
    - Pi: Pi has no in-session model swap. Check the model the session was started with (visible in Pi's TUI footer, or the `--model` flag the user passed when launching `pi`).
+   - opencode: check the model shown in the TUI status area, or run `/models` to see the current selection.
 5. **If they diverge**, print this warning block before doing any further work:
 
    ```
@@ -229,7 +232,7 @@ Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi) run the entire skill in a s
    different model is not supported on this CLI.
    ```
 
-   For Pi the restart command takes the form `pi --provider <provider> --model <expected-model-id>`, where `<provider>` matches an entry in the user's `~/.pi/agent/models.json`.
+   For Pi the restart command takes the form `pi --provider <provider> --model <expected-model-id>`, where `<provider>` matches an entry in the user's `~/.pi/agent/models.json`. For opencode the expected model ID is a `provider/model` token (e.g. `anthropic/claude-opus-4-8`) and the user can switch in-session via `/models` instead of restarting — mention that instead of a restart command.
 
 6. **Proceed with the skill**. The warning is informational; it never blocks execution.
 
@@ -354,7 +357,7 @@ Task(team_name: "...", name: "implementation-agent", subagent_type: "general-pur
 
 **If `models.yaml` is absent**, omit `model:` entirely — agent frontmatter defaults apply.
 
-**Non-Claude CLIs** (Codex, Gemini, Cursor, Copilot, Pi): they don't have a Task-tool-style sub-agent dispatch, so mid-session model override is impossible. Use the preflight partial (`tier-preflight.md`) instead, which surfaces a warning if the session model doesn't match the tier the skill expects. Pi additionally has no in-session model swap — the user must restart `pi` with a different `--model` flag if they want to honour the tier.
+**Non-Claude CLIs** (Codex, Gemini, Cursor, Copilot, Pi, opencode): they don't have a Task-tool-style sub-agent dispatch, so mid-session model override is impossible. Use the preflight partial (`tier-preflight.md`) instead, which surfaces a warning if the session model doesn't match the tier the skill expects. Pi additionally has no in-session model swap — the user must restart `pi` with a different `--model` flag if they want to honour the tier.
 
 ### User Context Forwarding (CRITICAL)
 
@@ -569,4 +572,4 @@ Skip this step if you used the Parallel Task method or the Sequential Inline fal
 6. **Polish doesn't block** - If only Polish/Suggestion items are found, all tasks are marked `[v]` and overall status is ALL PASSED
 
 Once done, prompt the user to "/clear" and then "/belmont:status", "/belmont:next", or "/belmont:implement"
-   - If you are Codex, instead prompt: "/new" and then "belmont:status", "belmont:next", or "belmont:implement"
+   - If you are Codex or opencode, instead prompt: "/new" and then "belmont:status", "belmont:next", or "belmont:implement"

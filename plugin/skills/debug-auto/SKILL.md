@@ -213,7 +213,7 @@ Task(team_name: "...", name: "implementation-agent", subagent_type: "general-pur
 
 **If `models.yaml` is absent**, omit `model:` entirely — agent frontmatter defaults apply.
 
-**Non-Claude CLIs** (Codex, Gemini, Cursor, Copilot, Pi): they don't have a Task-tool-style sub-agent dispatch, so mid-session model override is impossible. Use the preflight partial (`tier-preflight.md`) instead, which surfaces a warning if the session model doesn't match the tier the skill expects. Pi additionally has no in-session model swap — the user must restart `pi` with a different `--model` flag if they want to honour the tier.
+**Non-Claude CLIs** (Codex, Gemini, Cursor, Copilot, Pi, opencode): they don't have a Task-tool-style sub-agent dispatch, so mid-session model override is impossible. Use the preflight partial (`tier-preflight.md`) instead, which surfaces a warning if the session model doesn't match the tier the skill expects. Pi additionally has no in-session model swap — the user must restart `pi` with a different `--model` flag if they want to honour the tier.
 
 ### User Context Forwarding (CRITICAL)
 
@@ -478,7 +478,7 @@ After completing all updates to `.belmont/` planning files, commit them:
 ## Step 7: Final Actions
 
 Once done, prompt the user to "/clear" and then "/belmont:status", "/belmont:verify", or "/belmont:next".
-   - If you are Codex, instead prompt: "/new" and then "belmont:status", "belmont:verify", or "belmont:next"
+   - If you are Codex or opencode, instead prompt: "/new" and then "belmont:status", "belmont:verify", or "belmont:next"
 
 ## Scope Guardrails
 
