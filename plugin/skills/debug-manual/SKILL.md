@@ -668,7 +668,8 @@ After completing all updates to `.belmont/` planning files, commit them:
 ## Step 7: Final Actions
 
 Once done, prompt the user to "/clear" and then "/belmont:status", "/belmont:verify", or "/belmont:next".
-   - If you are Codex or opencode, instead prompt: "/new" and then "belmont:status", "belmont:verify", or "belmont:next"
+   - If you are Codex, instead prompt: "/new" and then "belmont:status", "belmont:verify", or "belmont:next"
+   - If you are opencode, instead prompt: "/new" and then "/belmont/status", "/belmont/verify", or "/belmont/next"
 
 ## Scope Guardrails
 

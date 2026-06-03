@@ -81,7 +81,7 @@ Resolve via `git stash -u`, `git commit -am "..."`, or, as a last resort, bypass
 `belmont update` follows a successful self-update + skill reinstall by staging and committing only Belmont-managed paths:
 
 - `.agents/belmont/`, `.agents/skills/belmont/`
-- `.claude/agents/belmont/`, `.claude/commands/belmont/`
+- `.claude/agents/belmont/`, `.claude/commands/belmont/`, `.opencode/command/belmont/`
 - Legacy (no longer created, but staged for deletion if leftover from older Belmont versions): `.claude/skills/belmont/`, `.claude/plugins/belmont/`, `.codex/belmont/`, `.cursor/rules/belmont/`, `.windsurf/rules/belmont/`, `.gemini/rules/belmont/`, `.copilot/belmont/`
 - `AGENTS.md` (Codex + Copilot routing section), `GEMINI.md` (Gemini `@import` section)
 

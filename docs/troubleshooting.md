@@ -41,6 +41,22 @@ ls .agents/skills/belmont/
 
 If you're upgrading from Belmont 0.10.x and `claude -p`'s init message shows zero `belmont:*` entries, you're likely still on the dead `.claude/skills/belmont` (or briefly `.claude/plugins/belmont`) layout — Claude Code 2.1.x never discovered either of those. Run `belmont install` to migrate; the legacy cleanup pass removes the dead paths and writes the per-skill `.claude/commands/belmont/<skill>.md` symlinks. If symlinks are missing after re-install, re-run with `belmont install --source /path/to/belmont` and select Claude Code.
 
+## `/belmont` shows "No matching items" in opencode
+
+opencode's TUI `/` autocomplete lists **commands**, not skills — Belmont's skills are discovered (the model can load them via the `skill` tool) but they never appear in the slash menu on their own. Belmont installs per-skill slash commands to bridge this. Verify:
+
+```bash
+ls -la .opencode/command/belmont/
+# Should show one regular .md file per skill (generated wrappers, NOT symlinks)
+
+head -3 .opencode/command/belmont/implement.md
+# Should show frontmatter with description: only — no name: key
+```
+
+If the directory is missing, re-run `belmont install` and select opencode (it's auto-selected when the `opencode` binary is on PATH or a root `opencode.json`/`opencode.jsonc` exists). Commands register as `/belmont/<skill>` — opencode namespaces with `/`, not Claude Code's `:`. Restart opencode (or start a new session) after installing so the command list refreshes.
+
+If the files are **symlinks** to SKILL.md (an early integration approach), the commands silently register under the wrong names: opencode merges frontmatter over the path-derived command name, so SKILL.md's `name:` key makes the command register as bare `implement` instead of `belmont/implement`. Re-run `belmont install` — it replaces the symlinks with generated wrapper files.
+
 ## Skills not showing up in Cursor
 
 Cursor uses per-file symlinks with `.mdc` extension. Verify:

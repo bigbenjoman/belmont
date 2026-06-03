@@ -436,7 +436,8 @@ Once the PR/FAQ is complete:
 1. Present a brief summary to the user
 2. Ask if they want to revise any sections
 3. When finalized, prompt the user to "/clear" and then "/belmont:product-plan" to break the vision into concrete features and tasks
-   - If you are Codex or opencode, instead prompt: "/new" and then "belmont:product-plan"
+   - If you are Codex, instead prompt: "/new" and then "belmont:product-plan"
+   - If you are opencode, instead prompt: "/new" and then "/belmont/product-plan"
 
 ## Begin
 

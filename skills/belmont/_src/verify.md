@@ -240,4 +240,5 @@ Skip this step if you used the Parallel Task method or the Sequential Inline fal
 6. **Polish doesn't block** - If only Polish/Suggestion items are found, all tasks are marked `[v]` and overall status is ALL PASSED
 
 Once done, prompt the user to "/clear" and then "/belmont:status", "/belmont:next", or "/belmont:implement"
-   - If you are Codex or opencode, instead prompt: "/new" and then "belmont:status", "belmont:next", or "belmont:implement"
+   - If you are Codex, instead prompt: "/new" and then "belmont:status", "belmont:next", or "belmont:implement"
+   - If you are opencode, instead prompt: "/new" and then "/belmont/status", "/belmont/next", or "/belmont/implement"

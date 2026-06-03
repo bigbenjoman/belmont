@@ -283,11 +283,11 @@ type task struct {
 }
 
 type milestone struct {
-	ID        string
-	Name      string
-	Tasks     []task   // tasks in this milestone (from PROGRESS.md)
-	Deps      []string // e.g. ["M1", "M3"] — nil for no explicit deps
-	LiveFrom  string   `json:"live_from,omitempty"` // worktree path when state was read from an active worktree (buildStatus only)
+	ID       string
+	Name     string
+	Tasks    []task   // tasks in this milestone (from PROGRESS.md)
+	Deps     []string // e.g. ["M1", "M3"] — nil for no explicit deps
+	LiveFrom string   `json:"live_from,omitempty"` // worktree path when state was read from an active worktree (buildStatus only)
 }
 
 // Milestone computed state helpers
@@ -335,21 +335,21 @@ func milestoneNotStarted(m milestone) bool {
 }
 
 type featureSummary struct {
-	Slug             string      `json:"slug"`
-	Name             string      `json:"name"`
-	TasksDone        int         `json:"tasks_done"`
-	TasksVerified    int         `json:"tasks_verified"`
-	TasksInProgress  int         `json:"tasks_in_progress"`
-	TasksBlocked     int         `json:"tasks_blocked"`
-	TasksTotal       int         `json:"tasks_total"`
-	MilestonesDone   int         `json:"milestones_done"`
-	MilestonesTotal  int         `json:"milestones_total"`
-	Milestones       []milestone `json:"milestones"`
-	NextMilestone    *milestone  `json:"next_milestone,omitempty"`
-	NextTask         *task       `json:"next_task,omitempty"`
-	Status           string      `json:"status"`
-	Deps             []string    `json:"deps,omitempty"`
-	Priority         string      `json:"priority,omitempty"`
+	Slug            string      `json:"slug"`
+	Name            string      `json:"name"`
+	TasksDone       int         `json:"tasks_done"`
+	TasksVerified   int         `json:"tasks_verified"`
+	TasksInProgress int         `json:"tasks_in_progress"`
+	TasksBlocked    int         `json:"tasks_blocked"`
+	TasksTotal      int         `json:"tasks_total"`
+	MilestonesDone  int         `json:"milestones_done"`
+	MilestonesTotal int         `json:"milestones_total"`
+	Milestones      []milestone `json:"milestones"`
+	NextMilestone   *milestone  `json:"next_milestone,omitempty"`
+	NextTask        *task       `json:"next_task,omitempty"`
+	Status          string      `json:"status"`
+	Deps            []string    `json:"deps,omitempty"`
+	Priority        string      `json:"priority,omitempty"`
 }
 
 type statusReport struct {
@@ -410,11 +410,11 @@ var errFeaturePaused = fmt.Errorf("feature paused")
 var errWorktreeDirty = fmt.Errorf("worktree has uncommitted changes")
 
 type loopAction struct {
-	Type            loopActionType
-	Reason          string
-	MilestoneID     string
-	TriageDecision  string // "fix_and_reverify", "fix_and_proceed", "defer_and_proceed" — set after triage
-	ReverifyScope   string // "full" or "focused" — set by triage
+	Type           loopActionType
+	Reason         string
+	MilestoneID    string
+	TriageDecision string // "fix_and_reverify", "fix_and_proceed", "defer_and_proceed" — set after triage
+	ReverifyScope  string // "full" or "focused" — set by triage
 }
 
 type executionResult struct {
@@ -432,7 +432,7 @@ const (
 	workConfig   workType = "config"   // .yml, .yaml, .json, .toml, CI files
 	workDocs     workType = "docs"     // .md, .txt
 	workMixed    workType = "mixed"
-	workMinimal  workType = "minimal"  // < 3 files changed
+	workMinimal  workType = "minimal" // < 3 files changed
 	workUnknown  workType = "unknown"
 )
 
@@ -763,9 +763,9 @@ func (s envSignals) consumesEnv() bool {
 
 // workspaceInfo describes a discovered workspace.
 type workspaceInfo struct {
-	ID       string      // package name (or directory base if not parseable)
-	Path     string      // relative path from project root
-	Manifest string      // absolute path to manifest file (may be empty for synthetic entries)
+	ID       string // package name (or directory base if not parseable)
+	Path     string // relative path from project root
+	Manifest string // absolute path to manifest file (may be empty for synthetic entries)
 	Signals  envSignals
 	HasDev   bool // package.json has scripts.dev / Cargo bin target / etc. (used for primary selection)
 }
@@ -1614,8 +1614,8 @@ type aiDecision struct {
 }
 
 type reconciliationFile struct {
-	Strategy          string `json:"strategy"`
-	PostResolveCmd    string `json:"post_resolve_command"`
+	Strategy        string `json:"strategy"`
+	PostResolveCmd  string `json:"post_resolve_command"`
 	File            string `json:"file"`
 	Confidence      string `json:"confidence"`
 	Reason          string `json:"reason"`
@@ -2496,7 +2496,6 @@ func flattenTasks(milestones []milestone, maxName int) []task {
 	return tasks
 }
 
-
 func parseTaskOrder(id string) (int, int) {
 	re := regexp.MustCompile(`^P(\d+)-(\d+)`)
 	match := re.FindStringSubmatch(id)
@@ -2779,7 +2778,6 @@ func isFeatureTerminal(status string) bool {
 	}
 	return false
 }
-
 
 func renderStatus(report statusReport, color bool, showArchived bool) string {
 	// Feature listing mode (default when no --feature specified)
@@ -3099,13 +3097,13 @@ func renderFeatureListing(report statusReport, color bool, showArchived bool) st
 
 // ANSI color codes for terminal output
 const (
-	ansiReset   = "\033[0m"
-	ansiGreen   = "\033[32m"
-	ansiYellow  = "\033[33m"
-	ansiRed     = "\033[31m"
-	ansiCyan    = "\033[36m"
-	ansiBold    = "\033[1m"
-	ansiDim     = "\033[2m"
+	ansiReset  = "\033[0m"
+	ansiGreen  = "\033[32m"
+	ansiYellow = "\033[33m"
+	ansiRed    = "\033[31m"
+	ansiCyan   = "\033[36m"
+	ansiBold   = "\033[1m"
+	ansiDim    = "\033[2m"
 )
 
 func taskStatusIcon(status taskStatus, color bool) string {
@@ -3302,7 +3300,9 @@ func runInstall(args []string) error {
 				fmt.Println("    Use: prompt belmont:<skill> — Copilot loads from .agents/skills/")
 			case "opencode":
 				fmt.Println("  opencode     .agents/skills/belmont/<name>/SKILL.md (auto-discovered)")
-				fmt.Println("    Use: prompt belmont:<skill> — opencode loads it via its skill tool")
+				fmt.Println("               .opencode/command/belmont/<skill>.md (generated per-skill slash commands)")
+				fmt.Println("    Use: /belmont/working-backwards, /belmont/product-plan, /belmont/tech-plan, /belmont/implement, /belmont/next, /belmont/verify, /belmont/debug, /belmont/debug-auto, /belmont/debug-manual, /belmont/status")
+				fmt.Println("    (or prompt belmont:<skill> — opencode also loads skills via its skill tool)")
 			}
 		}
 	}
@@ -4090,9 +4090,23 @@ func setupTool(projectRoot, tool string) error {
 		// followed, skill name taken from frontmatter), so the canonical
 		// install at `.agents/skills/belmont/<skill>/SKILL.md` is discovered
 		// with no per-tool wiring. Skills surface via opencode's native
-		// `skill` tool and the <available_skills> system-prompt block.
+		// `skill` tool and the <available_skills> system-prompt block —
+		// but ONLY to the model. The TUI's `/` autocomplete lists commands,
+		// not skills, so without command files `/belmont…` shows
+		// "No matching items".
+		//
+		// opencode loads commands from `.opencode/command/**/*.md` (the
+		// glob accepts `commands/` too). The name is the relative path
+		// minus `.md`, so `.opencode/command/belmont/next.md` registers as
+		// `/belmont/next` (slash namespace — opencode has no colon form).
+		// These are generated wrapper files, NOT SKILL.md symlinks — see
+		// linkOpencodeCommands for why symlinks register under the wrong
+		// name there.
 		fmt.Println("Linking opencode...")
-		fmt.Println("  = .agents/skills/belmont auto-discovered (no symlink needed)")
+		fmt.Println("  = .agents/skills/belmont auto-discovered (skill tool)")
+		if err := linkOpencodeCommands(projectRoot, filepath.Join(projectRoot, ".agents", "skills", "belmont")); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -4103,12 +4117,103 @@ func setupTool(projectRoot, tool string) error {
 // (subfolder under `.claude/commands/` becomes the namespace prefix). The
 // agentskills.io frontmatter (`name:`, `description:`) on SKILL.md is also
 // valid frontmatter for Claude Code slash commands, so no rewriting is needed.
-//
-// Stale .md entries inside `.claude/commands/belmont/` (left over from removed
-// or renamed skills) are pruned so the slash-command surface always matches
-// the current skill set.
 func linkClaudeCommands(projectRoot, skillsTarget string) error {
-	commandsDir := filepath.Join(projectRoot, ".claude", "commands", "belmont")
+	return syncSkillCommands(projectRoot, skillsTarget, filepath.Join(".claude", "commands", "belmont"),
+		func(cmdPath, skillFile, skill string) error {
+			return ensureSymlink(cmdPath, skillFile, false)
+		})
+}
+
+// linkOpencodeCommands creates per-skill wrapper command files at
+// `.opencode/command/belmont/<skill>.md`. opencode registers each one as a
+// `/belmont/<skill>` slash command (the command name is the file path
+// relative to `command/`, minus `.md` — opencode namespaces with `/`, not
+// Claude's `:`). Skills themselves remain discoverable via opencode's
+// `skill` tool, but the TUI's `/` autocomplete only lists commands — these
+// files are what make `/belmont…` show the skill list.
+//
+// Unlike Claude Code, these CANNOT be symlinks to SKILL.md: opencode's
+// command loader builds the raw config as `{name, ...frontmatter, template}`,
+// so a SKILL.md `name:` key (required by agentskills.io) OVERRIDES the
+// path-derived `belmont/<skill>` name and the command registers under the
+// bare skill name instead — colliding with (and shadowing) the skill itself
+// and never appearing under `/belmont`. So each command is a small generated
+// wrapper: `description:` copied from the skill frontmatter (feeds the TUI
+// autocomplete) and a body that tells the model to read the canonical
+// SKILL.md — the same delegation form adaptPromptForTool uses in auto mode,
+// which also keeps the skill's relative `references/` paths resolving from
+// the real skill directory.
+func linkOpencodeCommands(projectRoot, skillsTarget string) error {
+	return syncSkillCommands(projectRoot, skillsTarget, filepath.Join(".opencode", "command", "belmont"),
+		writeOpencodeCommandFile)
+}
+
+// writeOpencodeCommandFile generates the wrapper command file for one skill.
+// Idempotent: an up-to-date file is left untouched. A pre-existing symlink at
+// cmdPath (from an older Belmont install attempt) is removed first — writing
+// through it would corrupt the canonical SKILL.md it points at.
+func writeOpencodeCommandFile(cmdPath, skillFile, skill string) error {
+	var b strings.Builder
+	b.WriteString("---\n")
+	if desc := skillDescription(skillFile); desc != "" {
+		b.WriteString("description: " + strconv.Quote(desc) + "\n")
+	}
+	b.WriteString("---\n\n")
+	fmt.Fprintf(&b,
+		"Run the belmont:%s skill. Read .agents/skills/belmont/%s/SKILL.md fully and follow the instructions in its body to completion. $ARGUMENTS\n",
+		skill, skill)
+	content := b.String()
+
+	if st, err := os.Lstat(cmdPath); err == nil {
+		if st.Mode()&os.ModeSymlink != 0 {
+			fmt.Printf("  ~ %s (replacing symlink with wrapper command)\n", cmdPath)
+			if err := os.Remove(cmdPath); err != nil {
+				return err
+			}
+		} else if existing, err := os.ReadFile(cmdPath); err == nil && string(existing) == content {
+			fmt.Printf("  = %s (command ok)\n", cmdPath)
+			return nil
+		}
+	}
+	if err := os.WriteFile(cmdPath, []byte(content), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("  + %s\n", cmdPath)
+	return nil
+}
+
+// skillDescription extracts the `description:` value from a SKILL.md
+// frontmatter block. Returns "" when the file or the key is missing —
+// Belmont-generated skills always carry single-line descriptions.
+func skillDescription(skillFile string) string {
+	data, err := os.ReadFile(skillFile)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return ""
+	}
+	for _, line := range lines[1:] {
+		if strings.TrimSpace(line) == "---" {
+			break
+		}
+		if strings.HasPrefix(line, "description:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+		}
+	}
+	return ""
+}
+
+// syncSkillCommands materializes one tool-native slash command per skill at
+// `<commandsRelDir>/<skill>.md` via the write callback (symlink for Claude
+// Code, generated wrapper file for opencode).
+//
+// Stale .md entries inside the commands dir (left over from removed or
+// renamed skills) are pruned so the slash-command surface always matches
+// the current skill set.
+func syncSkillCommands(projectRoot, skillsTarget, commandsRelDir string, write func(cmdPath, skillFile, skill string) error) error {
+	commandsDir := filepath.Join(projectRoot, commandsRelDir)
 	if err := os.MkdirAll(commandsDir, 0o755); err != nil {
 		return fmt.Errorf("create commands dir: %w", err)
 	}
@@ -4133,8 +4238,8 @@ func linkClaudeCommands(projectRoot, skillsTarget string) error {
 		if _, err := os.Stat(skillFile); err != nil {
 			continue
 		}
-		linkPath := filepath.Join(commandsDir, name+".md")
-		if err := ensureSymlink(linkPath, skillFile, false); err != nil {
+		cmdPath := filepath.Join(commandsDir, name+".md")
+		if err := write(cmdPath, skillFile, name); err != nil {
 			return err
 		}
 		wanted[name+".md"] = true
@@ -4153,7 +4258,7 @@ func linkClaudeCommands(projectRoot, skillsTarget string) error {
 			}
 			stale := filepath.Join(commandsDir, n)
 			if err := os.Remove(stale); err == nil {
-				fmt.Printf("  - %s (stale slash command, removed)\n", filepath.Join(".claude", "commands", "belmont", n))
+				fmt.Printf("  - %s (stale slash command, removed)\n", filepath.Join(commandsRelDir, n))
 			}
 		}
 	}
@@ -4770,7 +4875,7 @@ func runUpdate(args []string) error {
 			fmt.Fprintf(os.Stderr, "Auto-install failed: %v\nRun 'belmont install' manually.\n", err)
 		} else if noCommit {
 			fmt.Println("\nSkipping auto-commit (--no-commit).")
-			fmt.Println("To commit manually: git add .agents .claude/agents/belmont .claude/commands/belmont .cursor/rules/belmont .windsurf/rules/belmont AGENTS.md GEMINI.md && git commit -m \"Update Belmont to " + release.TagName + "\"")
+			fmt.Println("To commit manually: git add .agents .claude/agents/belmont .claude/commands/belmont .opencode/command/belmont .cursor/rules/belmont .windsurf/rules/belmont AGENTS.md GEMINI.md && git commit -m \"Update Belmont to " + release.TagName + "\"")
 		} else {
 			if err := commitBelmontUpdate(".", release.TagName); err != nil {
 				fmt.Fprintln(os.Stderr, err.Error())
@@ -6848,7 +6953,8 @@ Output JSON: {"decision":"defer_and_proceed|fix_and_proceed|fix_and_reverify","b
 //
 // opencode uses "/" for its own command palette too, and `opencode run`
 // passes the message to the model as plain text — a literal "/belmont:X"
-// neither matches an opencode command (its discovered skills are named by
+// neither matches an opencode command (Belmont's installed commands are
+// slash-namespaced "/belmont/X", and discovered skills are named by
 // SKILL.md frontmatter, e.g. "implement") nor reliably maps to the skill
 // tool. The same explicit rewrite removes the ambiguity.
 //
@@ -7441,15 +7547,15 @@ func decideLoopActionAI(report statusReport, history []historyEntry, cfg loopCon
 	// Build rich milestone state JSON
 	inRange := milestonesInRange(report.Milestones, cfg.From, cfg.To)
 	type msStateJSON struct {
-		ID             string `json:"id"`
-		Name           string `json:"name"`
-		Done           bool   `json:"done"`
-		Implemented    bool   `json:"implemented"`
-		Verified       bool   `json:"verified"`
+		ID              string `json:"id"`
+		Name            string `json:"name"`
+		Done            bool   `json:"done"`
+		Implemented     bool   `json:"implemented"`
+		Verified        bool   `json:"verified"`
 		VerifyFailures  int    `json:"verify_failures,omitempty"`
 		VerifySuccesses int    `json:"verify_successes,omitempty"`
 		WorkType        string `json:"work_type,omitempty"`
-		FilesChanged   int    `json:"files_changed,omitempty"`
+		FilesChanged    int    `json:"files_changed,omitempty"`
 	}
 	var milestones []msStateJSON
 	for _, m := range inRange {
@@ -7912,7 +8018,7 @@ func skipMilestoneInProgress(root, feature, milestoneID string) error {
 	changed := false
 	for i, line := range lines {
 		if m := msRe.FindStringSubmatch(line); len(m) >= 2 {
-			inTarget = ("M"+m[1]) == milestoneID
+			inTarget = ("M" + m[1]) == milestoneID
 			continue
 		}
 		if strings.HasPrefix(strings.TrimSpace(line), "## ") {
@@ -8395,13 +8501,13 @@ type worktreeTracker struct {
 // autoJSON is the on-disk format for .belmont/auto.json, enabling belmont status
 // to discover active worktrees and read live feature state from them.
 type autoJSON struct {
-	Active    bool                       `json:"active"`
-	Started   string                     `json:"started"`
-	Mode      string                     `json:"mode,omitempty"`    // "single-feature" or "parallel" or "multi-feature"
-	Feature   string                     `json:"feature,omitempty"` // active feature slug (single-feature mode)
-	From      string                     `json:"from,omitempty"`    // milestone range start
-	To        string                     `json:"to,omitempty"`      // milestone range end
-	Worktrees map[string]autoJSONEntry   `json:"worktrees"`
+	Active    bool                     `json:"active"`
+	Started   string                   `json:"started"`
+	Mode      string                   `json:"mode,omitempty"`    // "single-feature" or "parallel" or "multi-feature"
+	Feature   string                   `json:"feature,omitempty"` // active feature slug (single-feature mode)
+	From      string                   `json:"from,omitempty"`    // milestone range start
+	To        string                   `json:"to,omitempty"`      // milestone range end
+	Worktrees map[string]autoJSONEntry `json:"worktrees"`
 }
 
 type autoJSONEntry struct {
@@ -9481,8 +9587,9 @@ func getCurrentBranch(root string) string {
 // auto-commit (to scope `git add` so unrelated user work isn't swept up).
 //
 // Phase 2 actively writes: `.agents/belmont/`, `.agents/skills/belmont/`,
-// `.claude/agents/belmont` (sub-agent symlink), and `.claude/commands/belmont/`
-// (per-skill slash-command symlinks → .agents/skills/belmont/<skill>/SKILL.md).
+// `.claude/agents/belmont` (sub-agent symlink), `.claude/commands/belmont/`
+// and `.opencode/command/belmont/` (per-skill slash-command symlinks →
+// .agents/skills/belmont/<skill>/SKILL.md).
 // Every other entry below is a legacy path kept in the list so deletions of
 // stale dirs/files also get staged for the auto-commit when an older project
 // upgrades through `belmont update` → `belmont install` → runLegacyCleanup.
@@ -9491,6 +9598,7 @@ var belmontManagedPaths = []string{
 	".agents/skills/belmont",
 	".claude/agents/belmont",
 	".claude/commands/belmont",
+	".opencode/command/belmont",
 	// Legacy (may be staged for deletion):
 	".claude/skills/belmont",  // Phase-2 nested symlink — never worked
 	".claude/plugins/belmont", // Phase-2.5 project-local-plugin attempt — also never worked
@@ -9957,11 +10065,11 @@ func commitBelmontState(root string) error {
 type mergeFailureKind int
 
 const (
-	mergeConflict            mergeFailureKind = iota // file-level conflicts
-	mergeUntrackedOverwrite                          // untracked files would be overwritten
-	mergeDirtyWorktree                               // local changes would be overwritten
-	mergeUnmergedFiles                               // stale unmerged files from previous merge
-	mergeOtherFailure                                // unknown merge failure
+	mergeConflict           mergeFailureKind = iota // file-level conflicts
+	mergeUntrackedOverwrite                         // untracked files would be overwritten
+	mergeDirtyWorktree                              // local changes would be overwritten
+	mergeUnmergedFiles                              // stale unmerged files from previous merge
+	mergeOtherFailure                               // unknown merge failure
 )
 
 // classifyMergeError determines what kind of merge failure occurred from git output.
@@ -11690,10 +11798,10 @@ type milestoneBlockText struct {
 // reverting out-of-scope edits. Non-milestone lines (preamble, activity log,
 // decisions section) are stored too so they can be preserved verbatim.
 type progressSnapshot struct {
-	Path     string
-	Raw      string
-	Blocks   []milestoneBlockText
-	ByID     map[string]int // milestone ID -> index in Blocks
+	Path   string
+	Raw    string
+	Blocks []milestoneBlockText
+	ByID   map[string]int // milestone ID -> index in Blocks
 }
 
 // snapshotProgress reads PROGRESS.md for the feature and builds a snapshot.
@@ -11761,12 +11869,12 @@ func parseProgressSnapshot(path, content string) *progressSnapshot {
 
 // scopeViolation is one finding from the post-phase guard.
 type scopeViolation struct {
-	Kind       string // "new_milestone" | "out_of_scope_flip"
-	Milestone  string // milestone ID involved
+	Kind          string // "new_milestone" | "out_of_scope_flip"
+	Milestone     string // milestone ID involved
 	MilestoneName string
-	TaskID     string // for out_of_scope_flip
-	FromState  string // for out_of_scope_flip
-	ToState    string // for out_of_scope_flip
+	TaskID        string // for out_of_scope_flip
+	FromState     string // for out_of_scope_flip
+	ToState       string // for out_of_scope_flip
 }
 
 // runScopeGuard performs the post-phase check + revert + commit amend +
@@ -12325,4 +12433,3 @@ func reportMergeOverlap(root, branch, msID string, mergedFiles map[string][]stri
 	}
 	fmt.Fprintf(os.Stderr, "  \033[2m  Proceeding with default merge strategy — review the resulting commit before pushing.\033[0m\n\n")
 }
-

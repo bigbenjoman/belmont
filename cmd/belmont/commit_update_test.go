@@ -35,6 +35,7 @@ func setupRepo(t *testing.T) string {
 		".agents/belmont/codebase-agent.md",
 		".agents/skills/belmont/implement.md",
 		".claude/commands/belmont/implement.md",
+		".opencode/command/belmont/implement.md",
 	} {
 		full := filepath.Join(dir, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -57,6 +58,7 @@ func TestCommitBelmontUpdate_HappyPath(t *testing.T) {
 	// staged work in progress.
 	mustWrite(t, filepath.Join(dir, ".agents/belmont/codebase-agent.md"), "v2\n")
 	mustWrite(t, filepath.Join(dir, ".agents/skills/belmont/implement.md"), "v2\n")
+	mustWrite(t, filepath.Join(dir, ".opencode/command/belmont/implement.md"), "v2\n")
 	mustWrite(t, filepath.Join(dir, "src/app.py"), "user code\n")
 	runGit(t, dir, "add", "src/app.py")
 
@@ -68,8 +70,9 @@ func TestCommitBelmontUpdate_HappyPath(t *testing.T) {
 	files := runGit(t, dir, "diff", "--name-only", "HEAD~1", "HEAD")
 	got := strings.Split(files, "\n")
 	want := map[string]bool{
-		".agents/belmont/codebase-agent.md": true,
-		".agents/skills/belmont/implement.md": true,
+		".agents/belmont/codebase-agent.md":      true,
+		".agents/skills/belmont/implement.md":    true,
+		".opencode/command/belmont/implement.md": true,
 	}
 	for _, f := range got {
 		if !want[f] {
@@ -341,6 +344,119 @@ func TestLinkClaudeCommands_PrunesStaleEntries(t *testing.T) {
 		t.Errorf("expected stale slash-command file to be pruned")
 	}
 	if _, err := os.Lstat(filepath.Join(dir, ".claude/commands/belmont/implement.md")); err != nil {
+		t.Errorf("expected current slash-command symlink to exist: %v", err)
+	}
+}
+
+func TestLinkOpencodeCommands_GeneratesWrapperPerSkill(t *testing.T) {
+	dir := t.TempDir()
+	skillsTarget := filepath.Join(dir, ".agents/skills/belmont")
+	mustWrite(t, filepath.Join(skillsTarget, "implement/SKILL.md"), "---\nname: implement\ndescription: Implement the next milestone\n---\nbody\n")
+	mustWrite(t, filepath.Join(skillsTarget, "verify/SKILL.md"), "---\nname: verify\ndescription: Run verification\n---\nbody\n")
+
+	if err := linkOpencodeCommands(dir, skillsTarget); err != nil {
+		t.Fatalf("linkOpencodeCommands: %v", err)
+	}
+
+	// Per-skill wrapper files at .opencode/command/belmont/<skill>.md —
+	// opencode registers each as a /belmont/<skill> slash command
+	// (path-relative-to-command/ naming). They must be regular files, NOT
+	// symlinks to SKILL.md: opencode builds command config as
+	// {name, ...frontmatter, template}, so SKILL.md's `name:` key would
+	// override the path-derived name and register the command as bare
+	// "implement" instead of "belmont/implement".
+	for _, skill := range []string{"implement", "verify"} {
+		cmdPath := filepath.Join(dir, ".opencode/command/belmont", skill+".md")
+		st, err := os.Lstat(cmdPath)
+		if err != nil {
+			t.Fatalf("expected wrapper command file for %s, got: %v", skill, err)
+		}
+		if st.Mode()&os.ModeSymlink != 0 {
+			t.Errorf("%s must be a regular file, not a symlink (SKILL.md name: would override the command name)", cmdPath)
+		}
+		data, err := os.ReadFile(cmdPath)
+		if err != nil {
+			t.Fatalf("reading %s: %v", cmdPath, err)
+		}
+		content := string(data)
+		if strings.Contains(content, "\nname:") || strings.HasPrefix(content, "name:") {
+			t.Errorf("%s frontmatter must not carry a name: key:\n%s", cmdPath, content)
+		}
+		if !strings.Contains(content, "description: ") {
+			t.Errorf("%s should carry the skill description:\n%s", cmdPath, content)
+		}
+		want := "Read .agents/skills/belmont/" + skill + "/SKILL.md fully"
+		if !strings.Contains(content, want) {
+			t.Errorf("%s body should delegate to the canonical SKILL.md (%q):\n%s", cmdPath, want, content)
+		}
+		if !strings.Contains(content, "$ARGUMENTS") {
+			t.Errorf("%s body should pass through $ARGUMENTS:\n%s", cmdPath, content)
+		}
+	}
+
+	// Idempotency: a second run must leave content unchanged.
+	before, _ := os.ReadFile(filepath.Join(dir, ".opencode/command/belmont/implement.md"))
+	if err := linkOpencodeCommands(dir, skillsTarget); err != nil {
+		t.Fatalf("second linkOpencodeCommands: %v", err)
+	}
+	after, _ := os.ReadFile(filepath.Join(dir, ".opencode/command/belmont/implement.md"))
+	if string(before) != string(after) {
+		t.Errorf("wrapper content changed on idempotent re-run")
+	}
+}
+
+func TestLinkOpencodeCommands_ReplacesLegacySymlink(t *testing.T) {
+	dir := t.TempDir()
+	skillsTarget := filepath.Join(dir, ".agents/skills/belmont")
+	skillFile := filepath.Join(skillsTarget, "implement/SKILL.md")
+	skillBody := "---\nname: implement\ndescription: x\n---\nbody\n"
+	mustWrite(t, skillFile, skillBody)
+
+	// Simulate an older install that symlinked SKILL.md directly.
+	cmdPath := filepath.Join(dir, ".opencode/command/belmont/implement.md")
+	if err := os.MkdirAll(filepath.Dir(cmdPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(skillFile, cmdPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := linkOpencodeCommands(dir, skillsTarget); err != nil {
+		t.Fatalf("linkOpencodeCommands: %v", err)
+	}
+
+	st, err := os.Lstat(cmdPath)
+	if err != nil {
+		t.Fatalf("expected wrapper command file, got: %v", err)
+	}
+	if st.Mode()&os.ModeSymlink != 0 {
+		t.Errorf("legacy symlink should have been replaced with a regular file")
+	}
+	// The canonical SKILL.md must NOT have been written through the symlink.
+	data, err := os.ReadFile(skillFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != skillBody {
+		t.Errorf("SKILL.md was corrupted by writing through the legacy symlink:\n%s", data)
+	}
+}
+
+func TestLinkOpencodeCommands_PrunesStaleEntries(t *testing.T) {
+	dir := t.TempDir()
+	skillsTarget := filepath.Join(dir, ".agents/skills/belmont")
+	mustWrite(t, filepath.Join(skillsTarget, "implement/SKILL.md"), "body\n")
+
+	mustWrite(t, filepath.Join(dir, ".opencode/command/belmont/old-skill.md"), "stale\n")
+
+	if err := linkOpencodeCommands(dir, skillsTarget); err != nil {
+		t.Fatalf("linkOpencodeCommands: %v", err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(dir, ".opencode/command/belmont/old-skill.md")); err == nil {
+		t.Errorf("expected stale slash-command file to be pruned")
+	}
+	if _, err := os.Lstat(filepath.Join(dir, ".opencode/command/belmont/implement.md")); err != nil {
 		t.Errorf("expected current slash-command symlink to exist: %v", err)
 	}
 }

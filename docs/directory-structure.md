@@ -103,10 +103,16 @@ your-project/
 │           ├── implement.md   -> ../../../.agents/skills/belmont/implement/SKILL.md
 │           ├── verify.md      -> ../../../.agents/skills/belmont/verify/SKILL.md
 │           └── ...               (per-skill symlinks)
+├── .opencode/                   # opencode (if selected)
+│   └── command/
+│       └── belmont/              # one generated .md wrapper per skill — each registers as /belmont/<skill>
+│           ├── implement.md      # description + "read .agents/skills/belmont/implement/SKILL.md" body
+│           ├── verify.md
+│           └── ...               (per-skill wrapper commands, not symlinks — see supported-tools.md)
 └── ...
 ```
 
-Codex, Cursor, Windsurf, Gemini, GitHub Copilot, Pi, and opencode all auto-discover `.agents/skills/belmont/<skill>/SKILL.md` natively — no per-tool wiring is created (see [supported-tools.md](supported-tools.md)).
+Codex, Cursor, Windsurf, Gemini, GitHub Copilot, Pi, and opencode all auto-discover `.agents/skills/belmont/<skill>/SKILL.md` natively (see [supported-tools.md](supported-tools.md)). opencode additionally gets the `.opencode/command/belmont/` wrapper commands above, because its TUI `/` autocomplete only lists commands, not skills.
 
 ## Key Separation
 

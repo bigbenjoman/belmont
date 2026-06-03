@@ -1,6 +1,6 @@
 # Supported Tools
 
-Belmont skills install as agentskills.io-format folders at `.agents/skills/belmont/<skill>/SKILL.md`. Seven of eight supported AI CLIs auto-discover this path natively — the install does **zero per-tool wiring** for them. Claude Code is the exception: it discovers slash commands at `.claude/commands/<name>.md` (with subfolders becoming namespace prefixes), so Belmont creates per-skill symlinks at `.claude/commands/belmont/<skill>.md` pointing at the canonical SKILL.md.
+Belmont skills install as agentskills.io-format folders at `.agents/skills/belmont/<skill>/SKILL.md`. Six of eight supported AI CLIs auto-discover this path natively — the install does **zero per-tool wiring** for them. Two tools additionally get per-skill slash commands so Belmont shows up in their `/` autocomplete: Claude Code discovers slash commands at `.claude/commands/<name>.md` (subfolders become `:`-namespace prefixes → `/belmont:<skill>`; Belmont symlinks each at the canonical SKILL.md), and opencode discovers them at `.opencode/command/<name>.md` (subfolders become `/`-namespace prefixes → `/belmont/<skill>`; Belmont generates small wrapper commands that delegate to the canonical SKILL.md — see the opencode section for why these can't be symlinks).
 
 | Tool               | Wiring                                                               | How to use                                              |
 |--------------------|----------------------------------------------------------------------|---------------------------------------------------------|
@@ -11,7 +11,7 @@ Belmont skills install as agentskills.io-format folders at `.agents/skills/belmo
 | **Gemini**         | none — `.agents/skills/` is the documented alias for `.gemini/skills/` | Prompt `belmont:<skill>` — surfaces via `/skills`       |
 | **GitHub Copilot** | none — `.agents/skills/` auto-discovered                              | Prompt `belmont:<skill>` — surfaces via Copilot CLI     |
 | **Pi** ([pi.dev](https://pi.dev)) | none — `.agents/skills/` auto-discovered (agentskills.io)             | Prompt `belmont:<skill>` — Pi loads SKILL.md by description |
-| **opencode** ([opencode.ai](https://opencode.ai)) | none — `.agents/skills/` auto-discovered (recursive, symlink-following) | Prompt `belmont:<skill>` — opencode loads it via its `skill` tool |
+| **opencode** ([opencode.ai](https://opencode.ai)) | `.opencode/command/belmont/<skill>.md` generated per-skill wrapper commands delegating to `.agents/skills/belmont/<skill>/SKILL.md` (skills also auto-discovered via `.agents/skills/`) | `/belmont/product-plan`, `/belmont/implement`, etc. (or prompt `belmont:<skill>` — the `skill` tool) |
 | **Any other tool** | none                                                                  | Point your tool at `.agents/skills/belmont/<skill>/SKILL.md` |
 
 Each `<skill>/SKILL.md` carries `name:` + `description:` YAML frontmatter (required by agentskills.io) plus a `references/` subdir with the progressive-disclosure files that skill body references.
@@ -63,7 +63,7 @@ Skills become native slash commands:
 
 All seven auto-discover `.agents/skills/belmont/<skill>/SKILL.md`. Open the tool in your project directory and prompt with a skill reference like `belmont:implement` — the CLI's Skills system surfaces and activates the skill via its `description:` frontmatter.
 
-For Codex specifically, the `/skills` slash command lists discovered skills. For Gemini, the same. For Cursor, you can also browse them via the Skills panel in the IDE. For opencode, every discovered skill is listed in the model's `<available_skills>` block and loaded on demand via the native `skill` tool.
+For Codex specifically, the `/skills` slash command lists discovered skills. For Gemini, the same. For Cursor, you can also browse them via the Skills panel in the IDE. For opencode, every discovered skill is listed in the model's `<available_skills>` block and loaded on demand via the native `skill` tool — and opencode additionally gets first-class slash commands (`/belmont/<skill>`); see its section below.
 
 ### Pi (local-LLM workflow)
 
@@ -113,7 +113,11 @@ If neither file nor env var is present, Belmont passes no `--model` flag and Pi 
 
 opencode ([opencode.ai](https://opencode.ai)) discovers Belmont's skills with zero wiring — its skill scanner walks `.agents/skills/**/SKILL.md` recursively (symlinks followed), so the canonical install at `.agents/skills/belmont/<skill>/SKILL.md` is picked up as-is. Skill identity comes from the SKILL.md `name:`/`description:` frontmatter; opencode injects the list into the system prompt and the agent activates a skill through its native `skill` tool. opencode also reads `AGENTS.md` natively, so Belmont's repo guidance applies without extra config.
 
-**Interactive mode**: open `opencode` in your project and prompt `belmont:implement` (or describe the task — description-matching works too).
+Skills, however, are only visible to the *model* — opencode's TUI `/` autocomplete lists **commands**, not skills, so on their own the skills never show up when you type `/belmont`. Belmont therefore also installs per-skill slash commands at `.opencode/command/belmont/<skill>.md`. opencode names a command by its path relative to `command/` (minus `.md`), so these register as `/belmont/implement`, `/belmont/status`, etc. — typing `/belmont` lists them all, mirroring Claude Code's `/belmont:<skill>` experience (opencode namespaces with `/` rather than `:`).
+
+Unlike the Claude Code wiring, these are **generated wrapper files, not symlinks to SKILL.md**. opencode merges a command file's frontmatter *over* the path-derived name, so the `name:` key that agentskills.io requires in every SKILL.md would override `belmont/<skill>` and register the command under the bare skill name (e.g. `implement`) — shadowing the skill and never appearing under `/belmont`. Each wrapper instead carries only the skill's `description:` (for the autocomplete) and a one-line body delegating to the canonical `.agents/skills/belmont/<skill>/SKILL.md`, which also keeps the skill's relative `references/` paths resolving from the real skill directory. Wrappers are regenerated on every `belmont install`/`update`.
+
+**Interactive mode**: open `opencode` in your project and type `/belmont` to pick a command (e.g. `/belmont/implement`), or prompt `belmont:implement` / describe the task — description-matching via the `skill` tool works too.
 
 **Auto mode**: `belmont auto --tool opencode`. Belmont shells out to `opencode run --dangerously-skip-permissions`, which auto-approves everything *not explicitly denied* in your `opencode.json` `permission` block — `deny` rules still win, so you can keep guardrails (e.g. `"bash": {"rm -rf *": "deny"}`) while running unattended.
 
