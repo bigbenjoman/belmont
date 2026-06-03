@@ -2,7 +2,7 @@
 
 A toolkit for running structured coding sessions with AI coding agents. Belmont manages a PRD (Product Requirements Document), orchestrates specialized sub-agent phases, and tracks progress across milestones.
 
-**Agent-agnostic** -- works with Claude Code, Codex, Cursor, Windsurf, Gemini, GitHub Copilot, [Pi](https://pi.dev) (incl. local LLMs via LM Studio / Ollama), and any tool that can read markdown files. No Docker required. No loops. Just skills and agents.
+**Agent-agnostic** -- works with Claude Code, Codex, Cursor, Windsurf, Gemini, GitHub Copilot, [Pi](https://pi.dev) (incl. local LLMs via LM Studio / Ollama), [opencode](https://opencode.ai), and any tool that can read markdown files. No Docker required. No loops. Just skills and agents.
 
 A flexible PRD system has been used to provide the best level of context from plan to implementation. Tech plans allow you to specify specifics for the agent to follow while building.
 
@@ -18,7 +18,7 @@ Strong guardrails are in place to keep the agent focused and on task.
 
 ### All AI Tools (CLI)
 
-The CLI installer supports Claude Code, Codex, Cursor, Windsurf, Gemini, GitHub Copilot, and Pi:
+The CLI installer supports Claude Code, Codex, Cursor, Windsurf, Gemini, GitHub Copilot, Pi, and opencode:
 
 ```bash
 # Install via Homebrew (macOS / Linux)
@@ -340,9 +340,10 @@ See [Skills Reference](docs/skills-reference.md) for detailed descriptions of ea
 | **Gemini**            | None — `.agents/skills/` is the documented `.gemini/skills/` alias    | `belmont:implement` in prompt                       |
 | **GitHub Copilot**    | None — `.agents/skills/` auto-discovered                              | `belmont:implement` in prompt                       |
 | **Pi** (incl. local LLMs) | None — `.agents/skills/` auto-discovered (agentskills.io)         | `belmont:implement` in prompt; configure provider/model in `~/.belmont/local-llms.json` |
+| **opencode**          | None — `.agents/skills/` auto-discovered (recursive)                  | `belmont:implement` in prompt — loaded via opencode's `skill` tool |
 | **Any other tool**    | None — point your tool at `.agents/skills/belmont/<skill>/SKILL.md`   |                                                     |
 
-Skills are installed as agentskills.io-format folders (`<skill>/SKILL.md`), the open standard supported by Codex, Cursor, Gemini, Windsurf, GitHub Copilot, Claude Code, Pi, and a growing number of other AI tools.
+Skills are installed as agentskills.io-format folders (`<skill>/SKILL.md`), the open standard supported by Codex, Cursor, Gemini, Windsurf, GitHub Copilot, Claude Code, Pi, opencode, and a growing number of other AI tools.
 
 See [Supported Tools](docs/supported-tools.md) for detailed per-tool setup instructions.
 
@@ -392,7 +393,7 @@ belmont steer --milestone M5 --file fix-notes.md
 belmont steer -   # read from stdin; or run with no source for $EDITOR
 ```
 
-The auto command auto-detects which AI tool CLI you have installed (Claude Code, Codex, Gemini, Copilot, Cursor) and shells out to it in headless mode. Override with `--tool`.
+The auto command auto-detects which AI tool CLI you have installed (Claude Code, Codex, Gemini, Copilot, Cursor, Pi, opencode) and shells out to it in headless mode. Override with `--tool`.
 
 It uses a hybrid decision system: smart deterministic rules handle ~80% of cases (using git diff classification and per-milestone tracking), with AI called only for ambiguous situations like repeated verification failures. The AI receives rich context including work type, failure history, and verification state. Falls back to deterministic rules automatically if the AI call fails.
 
@@ -429,7 +430,7 @@ See [Feature Auto](docs/feature-auto.md) for full documentation.
 
 ## Requirements
 
-- An AI coding tool (Claude Code, Codex, Cursor, Windsurf, Gemini, Copilot, or any tool that reads markdown)
+- An AI coding tool (Claude Code, Codex, Cursor, Windsurf, Gemini, Copilot, Pi, opencode, or any tool that reads markdown)
 - [figma-mcp](https://github.com/nichochar/figma-mcp) (recommended) -- enables Belmont to load Figma designs, extract design tokens, and perform visual verification
 - [playwright-mcp](https://github.com/microsoft/playwright-mcp) (recommended) -- enables agents to interact with browsers for visual verification and E2E test debugging
 - No Go required (pre-built binaries)

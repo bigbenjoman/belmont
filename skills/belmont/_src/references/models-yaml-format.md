@@ -1,6 +1,6 @@
 # Per-Feature Model Tiers: `models.yaml` Format
 
-Belmont assigns each sub-agent (codebase, design, implementation, verification, code-review, reconciliation) to a tier — `low`, `medium`, or `high` — which is mapped to a concrete model ID for whichever AI CLI runs the work (Claude Code, Codex, Gemini, Cursor, Copilot).
+Belmont assigns each sub-agent (codebase, design, implementation, verification, code-review, reconciliation) to a tier — `low`, `medium`, or `high` — which is mapped to a concrete model ID for whichever AI CLI runs the work (Claude Code, Codex, Gemini, Cursor, Copilot, opencode).
 
 Tiers are stored per feature in `.belmont/features/<slug>/models.yaml`. The tech-plan skill writes this file after assessing the feature's effort profile; the Belmont Go CLI reads it when spawning each phase, and the orchestrator skills (implement, verify, code-review) read it when dispatching sub-agents on Claude Code.
 
@@ -44,8 +44,9 @@ The Belmont Go CLI maps each tier to a CLI-specific model ID. See the `modelTier
 | gemini  | gemini-2.5-flash-lite      | gemini-2.5-flash      | gemini-2.5-pro      |
 | cursor  | sonnet-4                   | sonnet-4-thinking     | gpt-5               |
 | copilot | haiku-4.5                  | claude-sonnet-4.5     | gpt-5.4             |
+| opencode | anthropic/claude-haiku-4-5 | anthropic/claude-sonnet-4-6 | anthropic/claude-opus-4-8 |
 
-Tiers are stable; model IDs get bumped in the Go registry when tools ship new versions.
+Tiers are stable; model IDs get bumped in the Go registry when tools ship new versions. opencode defaults assume the Anthropic provider — users on another provider override per tier via `opencode.tiers.<tier>` in `~/.belmont/local-llms.json` (or `BELMONT_OPENCODE_MODEL_<TIER>` env vars).
 
 ## Starting-point examples (non-definitive)
 

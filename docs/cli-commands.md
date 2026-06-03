@@ -17,6 +17,7 @@ belmont status --show-archived          # Include archived features in the listi
 belmont auto --feature auth              # Run feature auto (auto-detect tool)
 belmont auto --feature auth --tool codex # Use specific tool
 belmont auto --feature auth --tool pi    # Run with Pi (local LLM via ~/.belmont/local-llms.json)
+belmont auto --feature auth --tool opencode  # Run with opencode (anthropic/* tiers by default)
 belmont auto --feature auth --from M2 --to M4  # Milestone range
 belmont auto --features auth,payments    # Run multiple features in parallel
 belmont auto --all                       # Run all pending features in parallel
@@ -153,6 +154,19 @@ When `--tool pi` is used, Belmont resolves Pi's `--provider <p> --model <m>` fla
 | _(none)_ | Belmont passes no flags; Pi uses the default model from `~/.pi/agent/models.json`. |
 
 Each layer is consulted independently for `provider` and `model`, so you can override one field without touching the other. See [Supported Tools → Pi](supported-tools.md#pi-local-llm-workflow) for the full schema and an LM Studio + Ollama example, and [docs/local-llms.example.json](local-llms.example.json) for a copy-paste starter.
+
+## Model overrides (opencode)
+
+When `--tool opencode` is used, Belmont resolves the `--model <provider/model>` flag from a similar chain. Unlike Pi, opencode has built-in defaults (the Anthropic provider), so the chain ends in a working mapping instead of "no flags". From highest priority to lowest:
+
+| Source | Notes |
+|--------|-------|
+| `BELMONT_OPENCODE_MODEL_<TIER>` env var | Per-shot override (e.g. `BELMONT_OPENCODE_MODEL_HIGH=opencode/gpt-5.1-codex`). Tier is uppercased. |
+| `BELMONT_OPENCODE_MODEL` env var | Single value applied to every tier. |
+| `<project>/.belmont/local-llms.json` `opencode.tiers.<tier>` | Per-project mapping. `model` takes a full `provider/model` ID, or split across `provider` + `model` and Belmont joins them with `/`. |
+| `~/.belmont/local-llms.json` `opencode.tiers.<tier>` | User-level mapping. |
+| Built-in `modelTiers` defaults | `anthropic/claude-haiku-4-5` / `anthropic/claude-sonnet-4-6` / `anthropic/claude-opus-4-8`. |
+| _(no tier)_ | When the feature has no `models.yaml`, Belmont passes no `--model` flag and opencode uses the default model from its own config. |
 
 ## How Skills Use the CLI
 

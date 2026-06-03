@@ -535,7 +535,7 @@ After completing all updates to `.belmont/` planning files, commit them:
 - Say: "Tech plan complete."
 - STOP. Do not continue. Do not implement anything.
 - Final: Prompt user to "/clear" and "/belmont:implement" (also mention `/belmont:review-plans` is recommended for safety before implementation)
-    - If you are Codex, instead prompt: "/new" and then "belmont:implement" and "belmont:review-plans"
+    - If you are Codex or opencode, instead prompt: "/new" and then "belmont:implement" and "belmont:review-plans"
 
 ## Master TECH_PLAN.md Format
 

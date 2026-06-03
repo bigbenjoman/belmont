@@ -262,3 +262,132 @@ func TestLoadLocalLLMs_MalformedReturnsError(t *testing.T) {
 		t.Errorf("resolver should return safely on malformed config, got: %v", got)
 	}
 }
+
+// clearOpencodeEnv unsets every BELMONT_OPENCODE_* env var the resolver
+// reads, so a test starts from a known-clean baseline.
+func clearOpencodeEnv(t *testing.T) {
+	t.Helper()
+	for _, v := range []string{
+		"BELMONT_OPENCODE_MODEL",
+		"BELMONT_OPENCODE_MODEL_LOW",
+		"BELMONT_OPENCODE_MODEL_MEDIUM",
+		"BELMONT_OPENCODE_MODEL_HIGH",
+	} {
+		t.Setenv(v, "")
+	}
+}
+
+func TestResolveOpencodeModelFlags_DefaultTiers(t *testing.T) {
+	withTempHome(t)
+	clearOpencodeEnv(t)
+	project := t.TempDir()
+
+	// No config + no env → the built-in modelTiers defaults (unlike Pi,
+	// which has no defaults and passes no flags).
+	for tier, want := range modelTiers["opencode"] {
+		flags := resolveOpencodeModelFlags(project, tier)
+		if len(flags) != 2 || flags[0] != "--model" || flags[1] != want {
+			t.Errorf("tier %s: expected [--model %s], got %v", tier, want, flags)
+		}
+	}
+}
+
+func TestResolveOpencodeModelFlags_EmptyTier_NoFlags(t *testing.T) {
+	withTempHome(t)
+	clearOpencodeEnv(t)
+	project := t.TempDir()
+
+	flags := resolveOpencodeModelFlags(project, "")
+	if len(flags) != 0 {
+		t.Errorf("expected no flags for empty tier, got %v", flags)
+	}
+}
+
+func TestResolveOpencodeModelFlags_UserFileFullID(t *testing.T) {
+	home := withTempHome(t)
+	clearOpencodeEnv(t)
+	project := t.TempDir()
+
+	// Full provider/model ID in the `model` field.
+	writeUserConfig(t, home, `{"opencode": {"tiers": {"high": {"model": "opencode/gpt-5.1-codex"}}}}`)
+
+	flags := resolveOpencodeModelFlags(project, "high")
+	if len(flags) != 2 || flags[1] != "opencode/gpt-5.1-codex" {
+		t.Errorf("expected [--model opencode/gpt-5.1-codex], got %v", flags)
+	}
+
+	// Unconfigured tier falls through to the built-in default.
+	flags = resolveOpencodeModelFlags(project, "low")
+	if len(flags) != 2 || flags[1] != modelTiers["opencode"]["low"] {
+		t.Errorf("expected built-in low default, got %v", flags)
+	}
+}
+
+func TestResolveOpencodeModelFlags_ProviderModelJoined(t *testing.T) {
+	home := withTempHome(t)
+	clearOpencodeEnv(t)
+	project := t.TempDir()
+
+	// Split provider + model (Pi-schema symmetry) is joined with "/".
+	writeUserConfig(t, home, `{"opencode": {"tiers": {"medium": {"provider": "lmstudio", "model": "qwen3-coder-30b"}}}}`)
+
+	flags := resolveOpencodeModelFlags(project, "medium")
+	if len(flags) != 2 || flags[1] != "lmstudio/qwen3-coder-30b" {
+		t.Errorf("expected [--model lmstudio/qwen3-coder-30b], got %v", flags)
+	}
+}
+
+func TestResolveOpencodeModelFlags_ProjectOverridesUser(t *testing.T) {
+	home := withTempHome(t)
+	clearOpencodeEnv(t)
+	project := t.TempDir()
+
+	writeUserConfig(t, home, `{"opencode": {"tiers": {"high": {"model": "anthropic/claude-opus-4-8"}}}}`)
+	writeProjectConfig(t, project, `{"opencode": {"tiers": {"high": {"model": "opencode/gpt-5.1-codex"}}}}`)
+
+	flags := resolveOpencodeModelFlags(project, "high")
+	if len(flags) != 2 || flags[1] != "opencode/gpt-5.1-codex" {
+		t.Errorf("expected project override, got %v", flags)
+	}
+}
+
+func TestResolveOpencodeModelFlags_SingleEnvVarAppliesToAllTiers(t *testing.T) {
+	withTempHome(t)
+	clearOpencodeEnv(t)
+	project := t.TempDir()
+	t.Setenv("BELMONT_OPENCODE_MODEL", "openai/gpt-5.2")
+
+	for _, tier := range []string{"low", "medium", "high"} {
+		flags := resolveOpencodeModelFlags(project, tier)
+		if len(flags) != 2 || flags[1] != "openai/gpt-5.2" {
+			t.Errorf("tier %s: expected env override, got %v", tier, flags)
+		}
+	}
+}
+
+func TestResolveOpencodeModelFlags_PerTierEnvOverridesEverything(t *testing.T) {
+	home := withTempHome(t)
+	clearOpencodeEnv(t)
+	project := t.TempDir()
+
+	writeUserConfig(t, home, `{"opencode": {"tiers": {"high": {"model": "anthropic/claude-opus-4-8"}}}}`)
+	writeProjectConfig(t, project, `{"opencode": {"tiers": {"high": {"model": "anthropic/claude-sonnet-4-6"}}}}`)
+	t.Setenv("BELMONT_OPENCODE_MODEL", "openai/gpt-5.2")
+	t.Setenv("BELMONT_OPENCODE_MODEL_HIGH", "opencode/gpt-5.1-codex")
+
+	flags := resolveOpencodeModelFlags(project, "high")
+	if len(flags) != 2 || flags[1] != "opencode/gpt-5.1-codex" {
+		t.Errorf("expected per-tier env var to win, got %v", flags)
+	}
+}
+
+func TestResolveModelFlags_OpencodeDispatch(t *testing.T) {
+	withTempHome(t)
+	clearOpencodeEnv(t)
+	project := t.TempDir()
+
+	flags := resolveModelFlags("opencode", "medium", project)
+	if len(flags) != 2 || flags[0] != "--model" || flags[1] != modelTiers["opencode"]["medium"] {
+		t.Errorf("expected resolveModelFlags to dispatch to opencode chain, got %v", flags)
+	}
+}

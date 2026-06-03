@@ -68,3 +68,58 @@ func TestAdaptPromptForTool_PiDoesNotRewriteEmbeddedReferences(t *testing.T) {
 		t.Errorf("mid-prompt /belmont:tech-plan reference was rewritten — should be left alone:\n%s", got)
 	}
 }
+
+func TestAdaptPromptForTool_OpencodeRewritesSlashCommand(t *testing.T) {
+	// opencode shares Pi's constraint: `opencode run` passes the message as
+	// plain text, and its discovered skill names come from SKILL.md
+	// frontmatter ("implement"), not "/belmont:implement". The same explicit
+	// rewrite applies.
+	in := "/belmont:implement --feature oc-smoke\n\nMILESTONE-SCOPED IMPLEMENTATION: only milestone M1."
+	got := adaptPromptForTool(in, "opencode")
+
+	if strings.HasPrefix(got, "/belmont:") {
+		t.Errorf("rewrite still starts with literal slash command: %s", got)
+	}
+	if !strings.Contains(got, "Run the belmont:implement skill") {
+		t.Errorf("expected 'Run the belmont:implement skill' phrasing, got:\n%s", got)
+	}
+	if !strings.Contains(got, ".agents/skills/belmont/implement/SKILL.md") {
+		t.Errorf("expected explicit SKILL.md path, got:\n%s", got)
+	}
+	if !strings.Contains(got, `"oc-smoke"`) {
+		t.Errorf("expected feature name in quotes, got:\n%s", got)
+	}
+	if !strings.Contains(got, "MILESTONE-SCOPED IMPLEMENTATION: only milestone M1.") {
+		t.Errorf("expected milestone-scoped block preserved, got:\n%s", got)
+	}
+}
+
+func TestAdaptPromptForTool_OpencodeWithoutFeatureFlag(t *testing.T) {
+	in := "/belmont:tech-plan"
+	got := adaptPromptForTool(in, "opencode")
+	if strings.HasPrefix(got, "/belmont:") {
+		t.Errorf("bare slash command still literal: %s", got)
+	}
+	if !strings.Contains(got, ".agents/skills/belmont/tech-plan/SKILL.md") {
+		t.Errorf("expected SKILL.md pointer, got:\n%s", got)
+	}
+}
+
+func TestToolHeadlessArgs_Opencode(t *testing.T) {
+	args := toolHeadlessArgs("opencode", "do the thing", "/tmp/x", []string{"--model", "anthropic/claude-sonnet-4-6"}, false)
+	want := []string{"run", "--dangerously-skip-permissions", "--model", "anthropic/claude-sonnet-4-6", "do the thing"}
+	if len(args) != len(want) {
+		t.Fatalf("expected %v, got %v", want, args)
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Fatalf("arg %d: expected %q, got %q (full: %v)", i, want[i], args[i], args)
+		}
+	}
+
+	// No model flags → prompt is still the trailing positional.
+	args = toolHeadlessArgs("opencode", "p", "/tmp/x", nil, true)
+	if len(args) != 3 || args[0] != "run" || args[2] != "p" {
+		t.Fatalf("expected [run --dangerously-skip-permissions p], got %v", args)
+	}
+}

@@ -31,7 +31,7 @@ Every change to tool integration, skill content, sub-agent dispatch, model-tier 
 ## Don't re-do
 
 - **"Just test auto mode, interactive will follow."** It doesn't. The Pi integration plan (the entry's prompting cause) initially only covered the `belmont auto --tool pi` shell-out path; the user rejected the plan and asked for explicit interactive coverage. The two paths share files but exercise completely different code paths inside the AI tool itself.
-- **"Symlink everything per-tool like Claude Code."** Overkill. Six of seven supported tools auto-discover `.agents/skills/` directly via the agentskills.io standard; only Claude Code needs symlinks (because it discovers commands at `.claude/commands/<name>.md` rather than skills at `.agents/skills/`). The agentskills.io standard *is* the contract for the other six.
+- **"Symlink everything per-tool like Claude Code."** Overkill. Seven of eight supported tools auto-discover `.agents/skills/` directly via the agentskills.io standard; only Claude Code needs symlinks (because it discovers commands at `.claude/commands/<name>.md` rather than skills at `.agents/skills/`). The agentskills.io standard *is* the contract for the other seven.
 - **"Use only the tool's interactive REPL for everything (skip headless)."** Rejected because auto mode is what enables Belmont's parallel waves, evidence checks, scope guards, and steering pipeline — all of which require Belmont controlling the prompt. Interactive mode can't drive multi-worktree orchestration.
 - **"Use only headless / auto mode (skip interactive)."** Also rejected. Many users want to run `/belmont:status` or `/belmont:next` without spinning up the full auto loop. Interactive mode is the lighter-weight, exploratory entry point and removing it would make Belmont feel like a black box.
 
@@ -39,9 +39,10 @@ Every change to tool integration, skill content, sub-agent dispatch, model-tier 
 
 - `skills/belmont/_partials/dispatch-strategy.md` already routes Claude (parallel sub-agents via Task tool) vs everyone else (sequential inline) — this is the dispatch half of the dual-path concern.
 - `skills/belmont/_partials/tier-preflight.md` only fires for non-Claude CLIs in interactive mode (auto mode handles tier via `--model` flag passed to the subprocess) — this is the tier half.
-- `cmd/belmont/main.go` `setupTool` shows both shapes side-by-side: Claude Code gets per-skill symlinks (because of its commands-discovery model), while Codex / Cursor / Windsurf / Gemini / GitHub Copilot / Pi all get the same no-op (auto-discovery via agentskills.io). Adding a new tool means deciding which side it lands on.
+- `cmd/belmont/main.go` `setupTool` shows both shapes side-by-side: Claude Code gets per-skill symlinks (because of its commands-discovery model), while Codex / Cursor / Windsurf / Gemini / GitHub Copilot / Pi / opencode all get the same no-op (auto-discovery via agentskills.io). Adding a new tool means deciding which side it lands on.
 - Pi integration plan (this entry's prompting cause): first draft covered only `belmont auto` shell-out; user rejected and asked for explicit interactive coverage. Plan now has Part 1.5 (interactive-mode integration) sitting alongside Part 2 (auto-mode integration).
 
 ## Revisions
 
 - 2026-05-10 — created during Pi integration planning; rule was already implicit in the codebase (dispatch-strategy + tier-preflight partials reflect both paths) but had no front-of-house statement to gate planning sessions.
+- 2026-06-03 — opencode integration followed the rule from the start: interactive mode verified against opencode's skill scanner source (recursive `skills/**/SKILL.md` glob over `.agents/`, frontmatter-named, description required for system-prompt visibility) and auto mode via `opencode run --dangerously-skip-permissions` with Pi-style prompt rewriting in `adaptPromptForTool` (opencode's `run` passes the message as plain text; its discovered skill names are bare, so the literal `/belmont:<skill>` form is ambiguous there).

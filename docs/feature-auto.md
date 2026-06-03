@@ -19,8 +19,12 @@ The `belmont auto` command automates the full implementation cycle for a Belmont
 | **Gemini** | `gemini "<prompt>"` | `--yolo` | `--output-format json` |
 | **Copilot** | `copilot -p "<prompt>"` | `--yolo` | text only |
 | **Cursor** | `cursor agent -p "<prompt>"` | `--force` | `--output-format json` |
+| **Pi** | `pi -p "<prompt>"` | none needed (YOLO by default) | text only |
+| **opencode** | `opencode run "<prompt>"` | `--dangerously-skip-permissions` | text only |
 
 Windsurf has no headless CLI and is not supported for auto.
+
+Pi and opencode emit plain text (no JSON envelope); Belmont's decision extractor handles fenced/inline JSON in their output. opencode's skip-permissions flag auto-approves everything *not explicitly denied* in `opencode.json` — `deny` rules still win.
 
 ## Usage
 
@@ -125,7 +129,7 @@ DEBUG, REPLAN, and SKIP_MILESTONE are only available via AI decisions (not the s
 
 ### Tool Auto-Detection
 
-When `--tool` is not specified, the auto command checks `$PATH` for supported CLIs in priority order: `claude`, `codex`, `gemini`, `copilot`, `cursor`. The first one found is used. If none are found, the command exits with a helpful error message.
+When `--tool` is not specified, the auto command checks `$PATH` for supported CLIs in priority order: `claude`, `codex`, `gemini`, `copilot`, `cursor`, `windsurf`, `pi`, `opencode`. The first one found is used. If none are found, the command exits with a helpful error message.
 
 ### Execution Layer
 
@@ -355,7 +359,7 @@ belmont auto --all (with dependencies)
 | `--all` | `false` | Run all pending features in parallel |
 | `--from <milestone>` | | Start from milestone (single-feature only) |
 | `--to <milestone>` | | End at milestone (single-feature only) |
-| `--tool <name>` | auto-detect | CLI tool: claude, codex, gemini, copilot, cursor |
+| `--tool <name>` | auto-detect | CLI tool: claude, codex, gemini, copilot, cursor, pi, opencode |
 | `--policy <policy>` | `autonomous` | Checkpoint policy |
 | `--max-iterations <n>` | `50` | Maximum loop iterations per feature |
 | `--max-failures <n>` | `3` | Consecutive failures before stopping |

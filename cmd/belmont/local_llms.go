@@ -9,9 +9,10 @@ import (
 
 // localLLMsConfig is the parsed shape of `local-llms.json`. Top-level keyed by
 // tool name so future tools that gain local-endpoint support can be added
-// without a schema break. Today only Pi reads from this file.
+// without a schema break. Today Pi and opencode read from this file.
 type localLLMsConfig struct {
-	Pi *toolLocalLLMs `json:"pi,omitempty"`
+	Pi       *toolLocalLLMs `json:"pi,omitempty"`
+	Opencode *toolLocalLLMs `json:"opencode,omitempty"`
 }
 
 // toolLocalLLMs is the per-tool entry. `Tiers` maps "low"/"medium"/"high" to a
@@ -72,13 +73,20 @@ func loadLocalLLMs(projectRoot string) (*localLLMsConfig, error) {
 	}
 	merged := &localLLMsConfig{}
 	if user != nil {
-		merged.Pi = clonePiConfig(user.Pi)
+		merged.Pi = cloneToolConfig(user.Pi)
+		merged.Opencode = cloneToolConfig(user.Opencode)
 	}
 	if proj != nil && proj.Pi != nil {
 		if merged.Pi == nil {
 			merged.Pi = &toolLocalLLMs{}
 		}
-		mergePiTiers(merged.Pi, proj.Pi)
+		mergeToolTiers(merged.Pi, proj.Pi)
+	}
+	if proj != nil && proj.Opencode != nil {
+		if merged.Opencode == nil {
+			merged.Opencode = &toolLocalLLMs{}
+		}
+		mergeToolTiers(merged.Opencode, proj.Opencode)
 	}
 	return merged, nil
 }
@@ -104,7 +112,7 @@ func readLocalLLMsFile(path string) (*localLLMsConfig, error) {
 	return &cfg, nil
 }
 
-func clonePiConfig(src *toolLocalLLMs) *toolLocalLLMs {
+func cloneToolConfig(src *toolLocalLLMs) *toolLocalLLMs {
 	if src == nil {
 		return nil
 	}
@@ -118,10 +126,10 @@ func clonePiConfig(src *toolLocalLLMs) *toolLocalLLMs {
 	return out
 }
 
-// mergePiTiers overlays src tiers onto dst, field-by-field. A non-empty
+// mergeToolTiers overlays src tiers onto dst, field-by-field. A non-empty
 // project Provider replaces the user Provider (independently of Model), and
 // vice versa, so users can override just one field per tier.
-func mergePiTiers(dst, src *toolLocalLLMs) {
+func mergeToolTiers(dst, src *toolLocalLLMs) {
 	if src == nil || src.Tiers == nil {
 		return
 	}
@@ -169,6 +177,67 @@ func resolvePiModelFlags(projectRoot, tier string) []string {
 		return []string{}
 	}
 	return flags
+}
+
+// resolveOpencodeModelFlags returns the `--model <provider/model>` flag pair
+// to pass to `opencode run`, applying this priority order (highest first):
+//
+//  1. BELMONT_OPENCODE_MODEL_<TIER> env var (per-tier override,
+//     e.g. BELMONT_OPENCODE_MODEL_HIGH=opencode/gpt-5.1-codex)
+//  2. BELMONT_OPENCODE_MODEL env var (single value applied to every tier)
+//  3. .belmont/local-llms.json `opencode.tiers.<tier>` (project-level)
+//  4. ~/.belmont/local-llms.json `opencode.tiers.<tier>` (user-level)
+//  5. the built-in `modelTiers["opencode"]` defaults (Anthropic provider)
+//  6. nothing — opencode uses the default model from its own config
+//
+// opencode model IDs are a single `provider/model` token. In local-llms.json
+// the value may be written either as a full ID in `model`
+// ("anthropic/claude-sonnet-4-6") or split across `provider` + `model`
+// ("anthropic" + "claude-sonnet-4-6") for symmetry with the Pi schema —
+// when both fields are set they are joined with "/".
+//
+// Unlike Pi, opencode has well-known frontier model IDs, so step 5 gives a
+// working out-of-the-box mapping; the config/env layers exist for users on a
+// different provider (opencode zen, OpenAI, local models via LM Studio, …).
+// Returns an empty slice (NOT nil) when no source produces a value — callers
+// append the result to argv unconditionally.
+func resolveOpencodeModelFlags(projectRoot, tier string) []string {
+	model := resolveOpencodeModel(projectRoot, tier)
+	if model == "" {
+		return []string{}
+	}
+	return []string{"--model", model}
+}
+
+func resolveOpencodeModel(projectRoot, tier string) string {
+	tierUpper := strings.ToUpper(strings.TrimSpace(tier))
+
+	if tierUpper != "" {
+		if v := os.Getenv("BELMONT_OPENCODE_MODEL_" + tierUpper); v != "" {
+			return v
+		}
+	}
+	if v := os.Getenv("BELMONT_OPENCODE_MODEL"); v != "" {
+		return v
+	}
+
+	tierKey := strings.ToLower(strings.TrimSpace(tier))
+	cfg, err := loadLocalLLMs(projectRoot)
+	if err == nil && cfg != nil && cfg.Opencode != nil {
+		if entry, ok := cfg.Opencode.Tiers[tierKey]; ok {
+			if entry.Provider != "" && entry.Model != "" {
+				return entry.Provider + "/" + entry.Model
+			}
+			if entry.Model != "" {
+				return entry.Model
+			}
+		}
+	}
+
+	if tierKey == "" {
+		return ""
+	}
+	return modelTiers["opencode"][tierKey]
 }
 
 func resolvePiTierValues(projectRoot, tier string) (provider, model string) {

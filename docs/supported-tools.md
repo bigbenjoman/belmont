@@ -1,6 +1,6 @@
 # Supported Tools
 
-Belmont skills install as agentskills.io-format folders at `.agents/skills/belmont/<skill>/SKILL.md`. Six of seven supported AI CLIs auto-discover this path natively — the install does **zero per-tool wiring** for them. Claude Code is the exception: it discovers slash commands at `.claude/commands/<name>.md` (with subfolders becoming namespace prefixes), so Belmont creates per-skill symlinks at `.claude/commands/belmont/<skill>.md` pointing at the canonical SKILL.md.
+Belmont skills install as agentskills.io-format folders at `.agents/skills/belmont/<skill>/SKILL.md`. Seven of eight supported AI CLIs auto-discover this path natively — the install does **zero per-tool wiring** for them. Claude Code is the exception: it discovers slash commands at `.claude/commands/<name>.md` (with subfolders becoming namespace prefixes), so Belmont creates per-skill symlinks at `.claude/commands/belmont/<skill>.md` pointing at the canonical SKILL.md.
 
 | Tool               | Wiring                                                               | How to use                                              |
 |--------------------|----------------------------------------------------------------------|---------------------------------------------------------|
@@ -11,14 +11,15 @@ Belmont skills install as agentskills.io-format folders at `.agents/skills/belmo
 | **Gemini**         | none — `.agents/skills/` is the documented alias for `.gemini/skills/` | Prompt `belmont:<skill>` — surfaces via `/skills`       |
 | **GitHub Copilot** | none — `.agents/skills/` auto-discovered                              | Prompt `belmont:<skill>` — surfaces via Copilot CLI     |
 | **Pi** ([pi.dev](https://pi.dev)) | none — `.agents/skills/` auto-discovered (agentskills.io)             | Prompt `belmont:<skill>` — Pi loads SKILL.md by description |
+| **opencode** ([opencode.ai](https://opencode.ai)) | none — `.agents/skills/` auto-discovered (recursive, symlink-following) | Prompt `belmont:<skill>` — opencode loads it via its `skill` tool |
 | **Any other tool** | none                                                                  | Point your tool at `.agents/skills/belmont/<skill>/SKILL.md` |
 
 Each `<skill>/SKILL.md` carries `name:` + `description:` YAML frontmatter (required by agentskills.io) plus a `references/` subdir with the progressive-disclosure files that skill body references.
 
 Belmont detects which tools to install for via three signals:
-- conventional project dirs (`.claude/`, `.codex/`, `.cursor/`, `.pi/`, …) already present;
-- tool binaries on PATH (`claude`, `codex`, `cursor-agent`, `gemini`, `copilot`, `pi`);
-- a Belmont skill-routing section in `AGENTS.md` / `GEMINI.md` (signals a previous install).
+- conventional project dirs (`.claude/`, `.codex/`, `.cursor/`, `.pi/`, `.opencode/`, …) already present;
+- tool binaries on PATH (`claude`, `codex`, `cursor-agent`, `gemini`, `copilot`, `pi`, `opencode`);
+- a Belmont skill-routing section in `AGENTS.md` / `GEMINI.md` (signals a previous install), or a root `opencode.json` / `opencode.jsonc` (opencode's `.opencode/` dir is optional).
 
 ## Headless invocation
 
@@ -32,6 +33,7 @@ Belmont's `auto` loop shells out to each tool's CLI in headless mode. The flag c
 | Gemini        | `gemini`         | `gemini -p "<prompt>" --approval-mode yolo --output-format json` (`--yolo` is deprecated)                               |
 | GitHub Copilot| `copilot`        | `copilot -p "<prompt>" --yolo`                                                                                          |
 | Pi            | `pi`             | `pi -p [--provider <p> --model <m>] "<prompt>"` — provider/model resolved from `~/.belmont/local-llms.json`; YOLO is Pi's default so no auto-approve flag is needed |
+| opencode      | `opencode`       | `opencode run --dangerously-skip-permissions [--model <provider/model>] "<prompt>"` — plain-text output (no `--format json`: that emits an escaped event stream the decision extractor can't read); `deny` rules in `opencode.json` still win over the skip flag |
 
 Cursor's CLI is installed as both `cursor-agent` (legacy) and `agent` (current canonical name) — Belmont targets `cursor-agent` for stability, since the unambiguous name is less likely to collide with other tools that might expose a generic `agent` binary.
 
@@ -57,11 +59,11 @@ Skills become native slash commands:
 /belmont:reset              Reset state and start fresh
 ```
 
-### Codex / Cursor / Windsurf / Gemini / GitHub Copilot / Pi
+### Codex / Cursor / Windsurf / Gemini / GitHub Copilot / Pi / opencode
 
-All six auto-discover `.agents/skills/belmont/<skill>/SKILL.md`. Open the tool in your project directory and prompt with a skill reference like `belmont:implement` — the CLI's Skills system surfaces and activates the skill via its `description:` frontmatter.
+All seven auto-discover `.agents/skills/belmont/<skill>/SKILL.md`. Open the tool in your project directory and prompt with a skill reference like `belmont:implement` — the CLI's Skills system surfaces and activates the skill via its `description:` frontmatter.
 
-For Codex specifically, the `/skills` slash command lists discovered skills. For Gemini, the same. For Cursor, you can also browse them via the Skills panel in the IDE.
+For Codex specifically, the `/skills` slash command lists discovered skills. For Gemini, the same. For Cursor, you can also browse them via the Skills panel in the IDE. For opencode, every discovered skill is listed in the model's `<available_skills>` block and loaded on demand via the native `skill` tool.
 
 ### Pi (local-LLM workflow)
 
@@ -106,6 +108,30 @@ Mix and match — point `high` at a stronger model (e.g. DeepSeek-Coder via Olla
 If neither file nor env var is present, Belmont passes no `--model` flag and Pi falls back to whatever default `~/.pi/agent/models.json` defines — Belmont stays out of Pi's way.
 
 **Tool-calling caveat for local Qwen:** Qwen2.5-Coder on LM Studio has [broken tool calling](https://github.com/lmstudio-ai/lmstudio-bug-tracker/issues/825) — the model emits a non-hermes `<tools>` tag format that LM Studio's OpenAI-compat layer doesn't parse, and `tool_calls` arrives empty. Belmont's auto loop is 100% tool-call-driven, so file edits and bash silently fail. **Use Qwen3-Coder (or newer)** which uses the standard hermes format. Different runtimes (Ollama, vLLM) parse Qwen2.5-Coder correctly; the issue is specifically the LM Studio + Qwen2.5 combination.
+
+### opencode
+
+opencode ([opencode.ai](https://opencode.ai)) discovers Belmont's skills with zero wiring — its skill scanner walks `.agents/skills/**/SKILL.md` recursively (symlinks followed), so the canonical install at `.agents/skills/belmont/<skill>/SKILL.md` is picked up as-is. Skill identity comes from the SKILL.md `name:`/`description:` frontmatter; opencode injects the list into the system prompt and the agent activates a skill through its native `skill` tool. opencode also reads `AGENTS.md` natively, so Belmont's repo guidance applies without extra config.
+
+**Interactive mode**: open `opencode` in your project and prompt `belmont:implement` (or describe the task — description-matching works too).
+
+**Auto mode**: `belmont auto --tool opencode`. Belmont shells out to `opencode run --dangerously-skip-permissions`, which auto-approves everything *not explicitly denied* in your `opencode.json` `permission` block — `deny` rules still win, so you can keep guardrails (e.g. `"bash": {"rm -rf *": "deny"}`) while running unattended.
+
+**Model tiers**: opencode model IDs are `provider/model` tokens. Belmont's built-in tier mapping assumes the Anthropic provider (`anthropic/claude-haiku-4-5` / `anthropic/claude-sonnet-4-6` / `anthropic/claude-opus-4-8`). If you run another provider (opencode zen, OpenAI, a local model through LM Studio, …), override per tier in `~/.belmont/local-llms.json` (or per-project `.belmont/local-llms.json`):
+
+```json
+{
+  "opencode": {
+    "tiers": {
+      "low":    { "model": "opencode/grok-code" },
+      "medium": { "model": "opencode/gpt-5.1-codex" },
+      "high":   { "model": "opencode/gpt-5.1-codex" }
+    }
+  }
+}
+```
+
+The `model` field takes a full `provider/model` ID; alternatively split it across `provider` + `model` (Pi-schema symmetry) and Belmont joins them with `/`. Per-shot env-var overrides: `BELMONT_OPENCODE_MODEL_<TIER>` (per tier) or `BELMONT_OPENCODE_MODEL` (all tiers). When no tier applies (no `models.yaml` for the feature), Belmont passes no `--model` flag and opencode uses the default model from its own config.
 
 ### Generic / Other Tools
 

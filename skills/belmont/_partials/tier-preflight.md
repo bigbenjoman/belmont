@@ -1,6 +1,6 @@
 ### Model Tier Preflight (non-Claude CLIs)
 
-Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi) run the entire skill in a single top-level session at whichever model the session was started with — there's no sub-agent dispatch to override mid-session. Before doing any heavy work, compare the **required tier** for the current skill to the **session's current model** and surface a warning if they diverge. Do NOT block execution; let the user decide.
+Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi, opencode) run the entire skill in a single top-level session at whichever model the session was started with — there's no sub-agent dispatch to override mid-session. Before doing any heavy work, compare the **required tier** for the current skill to the **session's current model** and surface a warning if they diverge. Do NOT block execution; let the user decide.
 
 **Workflow at start-of-skill (non-Claude only)**:
 
@@ -18,6 +18,7 @@ Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi) run the entire skill in a s
    - Cursor: check `/model`.
    - Copilot: check `/model`.
    - Pi: Pi has no in-session model swap. Check the model the session was started with (visible in Pi's TUI footer, or the `--model` flag the user passed when launching `pi`).
+   - opencode: check the model shown in the TUI status area, or run `/models` to see the current selection.
 5. **If they diverge**, print this warning block before doing any further work:
 
    ```
@@ -29,7 +30,7 @@ Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi) run the entire skill in a s
    different model is not supported on this CLI.
    ```
 
-   For Pi the restart command takes the form `pi --provider <provider> --model <expected-model-id>`, where `<provider>` matches an entry in the user's `~/.pi/agent/models.json`.
+   For Pi the restart command takes the form `pi --provider <provider> --model <expected-model-id>`, where `<provider>` matches an entry in the user's `~/.pi/agent/models.json`. For opencode the expected model ID is a `provider/model` token (e.g. `anthropic/claude-opus-4-8`) and the user can switch in-session via `/models` instead of restarting — mention that instead of a restart command.
 
 6. **Proceed with the skill**. The warning is informational; it never blocks execution.
 

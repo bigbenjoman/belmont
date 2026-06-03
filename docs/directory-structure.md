@@ -106,7 +106,7 @@ your-project/
 └── ...
 ```
 
-Codex, Cursor, Windsurf, Gemini, and GitHub Copilot all auto-discover `.agents/skills/belmont/<skill>/SKILL.md` natively — no per-tool wiring is created (see [supported-tools.md](supported-tools.md)).
+Codex, Cursor, Windsurf, Gemini, GitHub Copilot, Pi, and opencode all auto-discover `.agents/skills/belmont/<skill>/SKILL.md` natively — no per-tool wiring is created (see [supported-tools.md](supported-tools.md)).
 
 ## Key Separation
 

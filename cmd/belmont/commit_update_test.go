@@ -376,3 +376,46 @@ func TestRunLegacyCleanup_Idempotent(t *testing.T) {
 		t.Fatalf("runLegacyCleanup #2: %v", err)
 	}
 }
+
+func TestDetectTools_OpencodeMarkerDir(t *testing.T) {
+	dir := t.TempDir()
+	// Plant the .opencode/ marker dir to simulate a project that's used
+	// opencode before.
+	if err := os.MkdirAll(filepath.Join(dir, ".opencode"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := detectTools(dir)
+	found := false
+	for _, tool := range got {
+		if tool == "opencode" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected detectTools(%s) to include 'opencode' due to .opencode/ marker, got: %v", dir, got)
+	}
+}
+
+func TestDetectTools_OpencodeJSONFallback(t *testing.T) {
+	// opencode projects often carry only a root opencode.json(c) — the
+	// .opencode/ directory is optional, so the config file alone must count
+	// as a detection signal.
+	for _, name := range []string{"opencode.json", "opencode.jsonc"} {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, name), "{}\n")
+
+		got := detectTools(dir)
+		found := false
+		for _, tool := range got {
+			if tool == "opencode" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected detectTools(%s) to include 'opencode' due to %s, got: %v", dir, name, got)
+		}
+	}
+}

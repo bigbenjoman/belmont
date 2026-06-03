@@ -65,6 +65,16 @@ var modelTiers = map[string]map[string]string{
 		"medium": "claude-sonnet-4.5",
 		"high":   "gpt-5.4",
 	},
+	// opencode model IDs are `provider/model` pairs. The defaults below assume
+	// the Anthropic provider (opencode's most common frontier setup); users on
+	// another provider (opencode zen, OpenAI, local models, …) override per
+	// tier via `opencode.tiers.<tier>.model` in local-llms.json or
+	// BELMONT_OPENCODE_MODEL_<TIER> env vars — see resolveOpencodeModelFlags.
+	"opencode": {
+		"low":    "anthropic/claude-haiku-4-5",
+		"medium": "anthropic/claude-sonnet-4-6",
+		"high":   "anthropic/claude-opus-4-8",
+	},
 }
 
 // toolSupportsModel indicates whether the tool's CLI accepts --model at all.
@@ -76,12 +86,13 @@ var modelTiers = map[string]map[string]string{
 // nothing in that chain produces a value Belmont passes no flags and Pi falls
 // back to the default model in its own `~/.pi/agent/models.json`.
 var toolSupportsModel = map[string]bool{
-	"claude":  true,
-	"codex":   true,
-	"gemini":  true,
-	"cursor":  true,
-	"copilot": true,
-	"pi":      true,
+	"claude":   true,
+	"codex":    true,
+	"gemini":   true,
+	"cursor":   true,
+	"copilot":  true,
+	"pi":       true,
+	"opencode": true,
 }
 
 // planningTier is always used for product-plan and tech-plan invocations.
@@ -99,16 +110,20 @@ const reconciliationDefaultTier = "high"
 // with no tier, returns --model auto (copilot's explicit "pick a sensible
 // model" token).
 //
-// projectRoot is consulted only for Pi — see resolvePiModelFlags for the
-// resolution chain (env vars > .belmont/local-llms.json > ~/.belmont/local-llms.json
-// > nil). Pass "" if no project context is available; Pi will still honour
-// env vars and the user-level config file.
+// projectRoot is consulted only for Pi and opencode — see resolvePiModelFlags /
+// resolveOpencodeModelFlags for the resolution chain (env vars >
+// .belmont/local-llms.json > ~/.belmont/local-llms.json > tier default for
+// opencode / nil for Pi). Pass "" if no project context is available; both
+// tools still honour env vars and the user-level config file.
 func resolveModelFlags(tool, tier, projectRoot string) []string {
 	if !toolSupportsModel[tool] {
 		return nil
 	}
 	if tool == "pi" {
 		return resolvePiModelFlags(projectRoot, tier)
+	}
+	if tool == "opencode" {
+		return resolveOpencodeModelFlags(projectRoot, tier)
 	}
 	if tier == "" {
 		if tool == "copilot" {
@@ -1666,11 +1681,11 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  belmont install [--source PATH] [--project PATH] [--tools all|none|claude,codex,...]")
 	fmt.Fprintln(w, "  belmont update [--check] [--force] [--no-commit]")
 	fmt.Fprintln(w, "  belmont status [--root PATH] [--feature SLUG] [--format text|json] [--color auto|always|never]")
-	fmt.Fprintln(w, "  belmont auto --feature SLUG [--from M1] [--to M5] [--tool claude|codex|gemini|copilot|cursor|pi] [--policy autonomous|milestone|every_action] [--max-iterations N] [--max-parallel N] [--allow-dirty] [--root PATH]")
+	fmt.Fprintln(w, "  belmont auto --feature SLUG [--from M1] [--to M5] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--policy autonomous|milestone|every_action] [--max-iterations N] [--max-parallel N] [--allow-dirty] [--root PATH]")
 	fmt.Fprintln(w, "    (alias: belmont loop)")
 	fmt.Fprintln(w, "  belmont reverify [--feature SLUG] [--from M1] [--to M5] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont sync [--root PATH]")
-	fmt.Fprintln(w, "  belmont recover [--list] [--merge SLUG] [--clean SLUG] [--clean-all] [--tool claude|codex|gemini|copilot|cursor|pi] [--root PATH] [--format text|json]")
+	fmt.Fprintln(w, "  belmont recover [--list] [--merge SLUG] [--clean SLUG] [--clean-all] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont steer [--feature SLUG] [--milestone M5] [--message \"text\" | --file PATH | -] [--root PATH]")
 	fmt.Fprintln(w, "  belmont validate [--feature SLUG] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont version")
@@ -3136,6 +3151,7 @@ var toolConfigs = []toolConfig{
 	{Name: "gemini", Label: "Gemini (.gemini/)"},
 	{Name: "copilot", Label: "GitHub Copilot (.copilot/)"},
 	{Name: "pi", Label: "Pi (.pi/)"},
+	{Name: "opencode", Label: "opencode (.opencode/)"},
 }
 
 func runInstall(args []string) error {
@@ -3284,6 +3300,9 @@ func runInstall(args []string) error {
 			case "copilot":
 				fmt.Println("  Copilot      .agents/skills/belmont/<name>/SKILL.md (auto-discovered)")
 				fmt.Println("    Use: prompt belmont:<skill> — Copilot loads from .agents/skills/")
+			case "opencode":
+				fmt.Println("  opencode     .agents/skills/belmont/<name>/SKILL.md (auto-discovered)")
+				fmt.Println("    Use: prompt belmont:<skill> — opencode loads it via its skill tool")
 			}
 		}
 	}
@@ -3606,9 +3625,11 @@ func resolveTools(projectRoot, toolsFlag string, noPrompt bool) ([]string, error
 //   - a Belmont skill-routing section exists in AGENTS.md (for Codex and
 //     Copilot) or GEMINI.md (for Gemini), signaling Belmont was previously
 //     installed for that tool here — needed because Phase 1+ installs no
-//     longer create `.codex/`, `.gemini/`, or `.copilot/` marker dirs.
+//     longer create `.codex/`, `.gemini/`, or `.copilot/` marker dirs;
+//   - a root `opencode.json` / `opencode.jsonc` exists (for opencode, whose
+//     `.opencode/` directory is optional when config lives at the root).
 func detectTools(projectRoot string) []string {
-	tools := []string{"claude", "codex", "cursor", "windsurf", "gemini", "copilot", "pi"}
+	tools := []string{"claude", "codex", "cursor", "windsurf", "gemini", "copilot", "pi", "opencode"}
 	dirMarker := map[string]string{
 		"claude":   ".claude",
 		"codex":    ".codex",
@@ -3617,6 +3638,7 @@ func detectTools(projectRoot string) []string {
 		"gemini":   ".gemini",
 		"copilot":  ".copilot",
 		"pi":       ".pi",
+		"opencode": ".opencode",
 	}
 	hasAgentsBelmontSection := fileContainsMarker(filepath.Join(projectRoot, "AGENTS.md"), belmontAgentsSectionStart)
 	hasGeminiBelmontSection := fileContainsMarker(filepath.Join(projectRoot, "GEMINI.md"), belmontGeminiSectionStart)
@@ -3639,6 +3661,12 @@ func detectTools(projectRoot string) []string {
 			}
 		case "gemini":
 			if hasGeminiBelmontSection {
+				detected = append(detected, tool)
+			}
+		case "opencode":
+			// opencode projects often carry only a root opencode.json(c) —
+			// the .opencode/ marker directory is optional.
+			if fileExists(filepath.Join(projectRoot, "opencode.json")) || fileExists(filepath.Join(projectRoot, "opencode.jsonc")) {
 				detected = append(detected, tool)
 			}
 		}
@@ -4056,6 +4084,14 @@ func setupTool(projectRoot, tool string) error {
 		fmt.Println("  = .agents/skills/belmont auto-discovered (no symlink needed)")
 	case "pi":
 		fmt.Println("Linking Pi...")
+		fmt.Println("  = .agents/skills/belmont auto-discovered (no symlink needed)")
+	case "opencode":
+		// opencode scans `.agents/skills/**/SKILL.md` recursively (symlinks
+		// followed, skill name taken from frontmatter), so the canonical
+		// install at `.agents/skills/belmont/<skill>/SKILL.md` is discovered
+		// with no per-tool wiring. Skills surface via opencode's native
+		// `skill` tool and the <available_skills> system-prompt block.
+		fmt.Println("Linking opencode...")
 		fmt.Println("  = .agents/skills/belmont auto-discovered (no symlink needed)")
 	}
 	return nil
@@ -4965,7 +5001,7 @@ func runAutoCmd(args []string) error {
 	fs.BoolVar(&allFlag, "all", false, "run all pending features in parallel")
 	fs.StringVar(&cfg.From, "from", "", "start milestone (e.g. M1)")
 	fs.StringVar(&cfg.To, "to", "", "end milestone (e.g. M5)")
-	fs.StringVar(&cfg.Tool, "tool", "", "CLI tool (claude|codex|gemini|copilot|cursor|pi)")
+	fs.StringVar(&cfg.Tool, "tool", "", "CLI tool (claude|codex|gemini|copilot|cursor|pi|opencode)")
 	fs.StringVar(&policyStr, "policy", "autonomous", "checkpoint policy (autonomous|milestone|every_action)")
 	fs.IntVar(&cfg.MaxIterations, "max-iterations", 50, "maximum loop iterations")
 	fs.IntVar(&cfg.MaxFailures, "max-failures", 3, "consecutive failures before stopping")
@@ -5010,16 +5046,16 @@ func runAutoCmd(args []string) error {
 	if cfg.Tool == "" {
 		detected := detectTool()
 		if detected == "" {
-			return fmt.Errorf("auto: no supported AI tool CLI found on PATH\n\nSupported tools: claude, codex, gemini, copilot, cursor, pi\nInstall one or use --tool to specify")
+			return fmt.Errorf("auto: no supported AI tool CLI found on PATH\n\nSupported tools: claude, codex, gemini, copilot, cursor, pi, opencode\nInstall one or use --tool to specify")
 		}
 		cfg.Tool = detected
 	} else {
 		// Validate tool name
 		switch cfg.Tool {
-		case "claude", "codex", "gemini", "copilot", "cursor", "pi":
+		case "claude", "codex", "gemini", "copilot", "cursor", "pi", "opencode":
 			// ok
 		default:
-			return fmt.Errorf("auto: unsupported tool %q (use claude, codex, gemini, copilot, cursor, or pi)", cfg.Tool)
+			return fmt.Errorf("auto: unsupported tool %q (use claude, codex, gemini, copilot, cursor, pi, or opencode)", cfg.Tool)
 		}
 	}
 
@@ -5995,7 +6031,7 @@ func mergeFeatureBranch(cfg loopConfig, slug, branch, wtPath string, tracker *wo
 }
 
 func detectTool() string {
-	for _, tool := range []string{"claude", "codex", "gemini", "copilot", "cursor", "windsurf", "pi"} {
+	for _, tool := range []string{"claude", "codex", "gemini", "copilot", "cursor", "windsurf", "pi", "opencode"} {
 		if _, err := exec.LookPath(toolBinary(tool)); err == nil {
 			return tool
 		}
@@ -6810,11 +6846,17 @@ Output JSON: {"decision":"defer_and_proceed|fix_and_proceed|fix_and_reverify","b
 // concrete instructions even if its description-matching pass is weaker
 // than a frontier model's.
 //
+// opencode uses "/" for its own command palette too, and `opencode run`
+// passes the message to the model as plain text — a literal "/belmont:X"
+// neither matches an opencode command (its discovered skills are named by
+// SKILL.md frontmatter, e.g. "implement") nor reliably maps to the skill
+// tool. The same explicit rewrite removes the ambiguity.
+//
 // Codex / Gemini / Cursor / Copilot are left unchanged — they recognise
 // "/belmont:<skill>" as a skill reference today. Revisit per-tool if any
 // of them changes behaviour.
 func adaptPromptForTool(prompt, tool string) string {
-	if tool != "pi" {
+	if tool != "pi" && tool != "opencode" {
 		return prompt
 	}
 	re := regexp.MustCompile(`^/belmont:([\w-]+)(?:\s+--feature\s+(\S+))?`)
@@ -7632,6 +7674,20 @@ func toolHeadlessArgs(tool, prompt, root string, modelFlags []string, streaming 
 		// falls back to its own default model. Pi's `-p` does not emit
 		// structured JSON — extractDecisionJSON handles plain-text shapes.
 		args := []string{"-p"}
+		args = append(args, modelFlags...)
+		return append(args, prompt)
+	case "opencode":
+		// `opencode run` is opencode's one-shot non-interactive mode.
+		// --dangerously-skip-permissions auto-approves everything not
+		// explicitly denied in opencode.json (config `deny` rules still
+		// win, so users keep a guardrail). We deliberately do NOT pass
+		// `--format json`: that emits a JSON *event stream* whose text is
+		// escaped, which the decision extractor can't see through. The
+		// default format prints the response as plain text, which
+		// extractDecisionJSON's plain-text shapes handle (same path as
+		// Pi). modelFlags is `--model provider/model` produced by
+		// resolveOpencodeModelFlags.
+		args := []string{"run", "--dangerously-skip-permissions"}
 		args = append(args, modelFlags...)
 		return append(args, prompt)
 	}
@@ -10410,7 +10466,7 @@ func runReverifyCmd(args []string) error {
 	fs.StringVar(&from, "from", "", "start milestone (e.g. M3)")
 	fs.StringVar(&to, "to", "", "end milestone (e.g. M10)")
 	fs.StringVar(&format, "format", "text", "output format (text|json)")
-	fs.StringVar(&tool, "tool", "", "CLI tool (claude|codex|gemini|copilot|cursor|pi)")
+	fs.StringVar(&tool, "tool", "", "CLI tool (claude|codex|gemini|copilot|cursor|pi|opencode)")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("reverify: %w", err)
 	}
@@ -10420,7 +10476,7 @@ func runReverifyCmd(args []string) error {
 	if tool == "" {
 		tool = detectTool()
 		if tool == "" {
-			return fmt.Errorf("reverify: no supported AI tool CLI found on PATH\n\nSupported tools: claude, codex, gemini, copilot, cursor, pi\nInstall one or use --tool to specify")
+			return fmt.Errorf("reverify: no supported AI tool CLI found on PATH\n\nSupported tools: claude, codex, gemini, copilot, cursor, pi, opencode\nInstall one or use --tool to specify")
 		}
 	}
 
@@ -10736,7 +10792,7 @@ func runRecover(args []string) error {
 	fs.StringVar(&merge, "merge", "", "retry merge for slug")
 	fs.StringVar(&clean, "clean", "", "delete worktree and branch for slug")
 	fs.BoolVar(&cleanAll, "clean-all", false, "clean all preserved worktrees")
-	fs.StringVar(&tool, "tool", "", "CLI tool for reconciliation (claude|codex|gemini|copilot|cursor|pi) — auto-detected if omitted")
+	fs.StringVar(&tool, "tool", "", "CLI tool for reconciliation (claude|codex|gemini|copilot|cursor|pi|opencode) — auto-detected if omitted")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("recover: %w", err)
 	}
@@ -10822,14 +10878,14 @@ func recoverMerge(root, slug, tool string, worktrees []worktreeEntry) error {
 	if tool == "" {
 		tool = detectTool()
 		if tool == "" {
-			return fmt.Errorf("recover: no supported AI tool CLI found on PATH\n\nSupported tools: claude, codex, gemini, copilot, cursor, pi\nInstall one or use --tool to specify")
+			return fmt.Errorf("recover: no supported AI tool CLI found on PATH\n\nSupported tools: claude, codex, gemini, copilot, cursor, pi, opencode\nInstall one or use --tool to specify")
 		}
 	} else {
 		switch tool {
-		case "claude", "codex", "gemini", "copilot", "cursor", "pi":
+		case "claude", "codex", "gemini", "copilot", "cursor", "pi", "opencode":
 			// ok
 		default:
-			return fmt.Errorf("recover: unsupported tool %q (use claude, codex, gemini, copilot, cursor, or pi)", tool)
+			return fmt.Errorf("recover: unsupported tool %q (use claude, codex, gemini, copilot, cursor, pi, or opencode)", tool)
 		}
 	}
 
