@@ -418,7 +418,8 @@ After completing all updates to `.belmont/` planning files, commit them:
 **Note**: PROGRESS.md is the single source of truth for task state. PRD.md is a pure spec document with no status markers — do not add emoji or state indicators to PRD task headers.
 
 Final: Prompt user to "/clear" and then "/belmont:tech-plan"
-   - If you are Codex or opencode, instead prompt: "/new" and then "belmont:tech-plan"
+   - If you are Codex, instead prompt: "/new" and then "belmont:tech-plan"
+   - If you are opencode, instead prompt: "/new" and then "/belmont/tech-plan"
    - If this was the first feature in a new product, also mention they can create more features later by running `/belmont:product-plan` again
 
 ## Important Considerations

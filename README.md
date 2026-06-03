@@ -340,7 +340,7 @@ See [Skills Reference](docs/skills-reference.md) for detailed descriptions of ea
 | **Gemini**            | None — `.agents/skills/` is the documented `.gemini/skills/` alias    | `belmont:implement` in prompt                       |
 | **GitHub Copilot**    | None — `.agents/skills/` auto-discovered                              | `belmont:implement` in prompt                       |
 | **Pi** (incl. local LLMs) | None — `.agents/skills/` auto-discovered (agentskills.io)         | `belmont:implement` in prompt; configure provider/model in `~/.belmont/local-llms.json` |
-| **opencode**          | None — `.agents/skills/` auto-discovered (recursive)                  | `belmont:implement` in prompt — loaded via opencode's `skill` tool |
+| **opencode**          | Generated per-skill wrapper commands `.opencode/command/belmont/<skill>.md` delegating to `.agents/skills/belmont/<skill>/SKILL.md` (skills also auto-discovered) | `/belmont/product-plan`, `/belmont/implement`, etc. (or `belmont:implement` in prompt) |
 | **Any other tool**    | None — point your tool at `.agents/skills/belmont/<skill>/SKILL.md`   |                                                     |
 
 Skills are installed as agentskills.io-format folders (`<skill>/SKILL.md`), the open standard supported by Codex, Cursor, Gemini, Windsurf, GitHub Copilot, Claude Code, Pi, opencode, and a growing number of other AI tools.

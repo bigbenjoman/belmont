@@ -520,7 +520,8 @@ After completing all updates to `.belmont/` planning files, commit them:
 **Do NOT run `/belmont:verify` yourself.** Verification is a separate step — in the `auto` pipeline it runs automatically after implementation, and in manual mode the user decides when to verify. Running it here would duplicate work and cause the dedicated VERIFY step to find nothing to do.
 
 Exit and prompt the user to "/clear" and then run "/belmont:verify", "/belmont:implement", or "/belmont:status" as appropriate.
-- If you are Codex or opencode, instead prompt: "/new" and then "belmont:verify", "belmont:implement", or "belmont:status"
+- If you are Codex, instead prompt: "/new" and then "belmont:verify", "belmont:implement", or "belmont:status"
+- If you are opencode, instead prompt: "/new" and then "/belmont/verify", "/belmont/implement", or "/belmont/status"
 
 ## Blocker Handling
 

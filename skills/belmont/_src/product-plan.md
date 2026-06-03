@@ -185,7 +185,8 @@ See the plan-separation partial above for the full PRD ↔ TECH_PLAN boundary ru
 <!-- @include commit-belmont-changes.md commit_context="after product planning" -->
 
 Final: Prompt user to "/clear" and then "/belmont:tech-plan"
-   - If you are Codex or opencode, instead prompt: "/new" and then "belmont:tech-plan"
+   - If you are Codex, instead prompt: "/new" and then "belmont:tech-plan"
+   - If you are opencode, instead prompt: "/new" and then "/belmont/tech-plan"
    - If this was the first feature in a new product, also mention they can create more features later by running `/belmont:product-plan` again
 
 ## Important Considerations
