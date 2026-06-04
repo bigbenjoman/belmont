@@ -6,7 +6,7 @@ All implementation agents communicate through the **MILESTONE file** (`.belmont/
 
 ## Phase 1: Codebase Scan (codebase-agent) — *parallel with Phase 2*
 
-**File**: `.agents/belmont/codebase-agent.md` | **Model**: inherits session model (pin per feature via models.yaml)
+**File**: `.agents/belmont/codebase-agent.md`
 
 Reads the MILESTONE file, then scans the project:
 - Framework, language, styling, testing stack
@@ -20,7 +20,7 @@ Reads the MILESTONE file, then scans the project:
 
 ## Phase 2: Design Analysis (design-agent) — *parallel with Phase 1*
 
-**File**: `.agents/belmont/design-agent.md` | **Model**: inherits session model (pin per feature via models.yaml)
+**File**: `.agents/belmont/design-agent.md`
 
 Reads the MILESTONE file, then analyzes Figma designs when provided:
 - Loads designs via Figma Plugin or MCP
@@ -35,7 +35,7 @@ Reads the MILESTONE file, then analyzes Figma designs when provided:
 
 ## Phase 3: Implementation (implementation-agent) — *after Phases 1+2*
 
-**File**: `.agents/belmont/implementation-agent.md` | **Model**: inherits session model (pin per feature via models.yaml)
+**File**: `.agents/belmont/implementation-agent.md`
 
 Reads the complete MILESTONE file (all research phases' output):
 - Types/interfaces first, then utilities, then components
@@ -50,7 +50,7 @@ Reads the complete MILESTONE file (all research phases' output):
 
 ## Verification (verification-agent)
 
-**File**: `.agents/belmont/verification-agent.md` | **Model**: inherits session model (pin per feature via models.yaml)
+**File**: `.agents/belmont/verification-agent.md`
 
 Verifies implementations against requirements:
 - Reads PRD, TECH_PLAN, and archived MILESTONE files for context
@@ -61,7 +61,7 @@ Verifies implementations against requirements:
 
 ## Code Review (code-review-agent)
 
-**File**: `.agents/belmont/code-review-agent.md` | **Model**: inherits session model (pin per feature via models.yaml)
+**File**: `.agents/belmont/code-review-agent.md`
 
 Reviews code for quality and alignment:
 - Reads PRD, TECH_PLAN, and archived MILESTONE files for context
