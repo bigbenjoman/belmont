@@ -18,6 +18,16 @@ This session requires ultrathink-level reasoning — deeply analyze architecture
 5. Respect milestone sizing rules — see the plan-separation partial. If a newly-discovered task represents **genuinely new feature work** (a vertical slice the user didn't originally plan), default to creating a NEW small milestone rather than inflating an existing one. **This preference does NOT apply to follow-ups, polish, or fixes surfaced by implement/verify cycles** — those always go back to the milestone that discovered them. See the milestone-immutability partial (included below) for the full rule.
 6. After writing the tech plan AND completing Phase 4.5 (PRD Reconciliation), say "Tech plan complete." and STOP.
 
+## Codex Plan-Mode Preflight
+
+Codex exposes keyboard-navigable structured questions through plan-mode planning turns. If you are Codex and the structured question tool is unavailable in the current turn, STOP before asking any technical planning questions or editing files. Tell the user to restart this skill with:
+
+```text
+/plan $belmont:tech-plan <feature or brief>
+```
+
+Do NOT fake the structured question flow with Markdown lists. The user must be able to navigate the pick-list with arrow keys.
+
 <!-- @include forbidden-actions.md -->
 
 <!-- @include milestone-immutability.md -->

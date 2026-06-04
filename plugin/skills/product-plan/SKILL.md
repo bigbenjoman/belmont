@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Belmont: Product Plan
 
-You are running an interactive planning session. You should not switch the agent to plan mode. Your goal is to work with the user to create a comprehensive PRD (Product Requirements Document) and PROGRESS tracking file.
+You are running an interactive planning session. Your goal is to work with the user to create a comprehensive PRD (Product Requirements Document) and PROGRESS tracking file.
 
 This session requires ultrathink-level reasoning — deeply consider product edge cases, user needs, and architectural implications before proposing structure.
 
@@ -17,6 +17,16 @@ This session requires ultrathink-level reasoning — deeply consider product edg
 3. ONLY write to files in `.belmont/` (PRD.md, PROGRESS.md, and feature directories).
 4. Ask questions iteratively until the plan is 100% concrete.
 5. Always ask the user for clarification and approval before finalizing.
+
+## Codex Plan-Mode Preflight
+
+Codex exposes keyboard-navigable structured questions through plan-mode planning turns. If you are Codex and the structured question tool is unavailable in the current turn, STOP before asking any planning questions or editing files. Tell the user to restart this skill with:
+
+```text
+/plan $belmont:product-plan <brief>
+```
+
+Do NOT fake the structured question flow with Markdown lists. The user must be able to navigate the pick-list with arrow keys.
 
 ## FORBIDDEN ACTIONS
 - Creating component files
@@ -103,10 +113,15 @@ Rules for updating PRD/PROGRESS from the tech-plan session:
 When you need to ask the user a question:
 
 1. **Use your structured question tool** (e.g. `AskUserQuestion`, or equivalent). This is NON-NEGOTIABLE when such a tool is available.
-2. **Ask ONE set of related questions at a time** — group related questions into a single tool call, then wait for answers before asking the next set.
+2. **Ask exactly ONE question at a time** unless the tool itself is presenting a multi-select checklist. Wait for the user's answer before asking the next question.
 3. **NEVER print the question as inline text AND use the tool.** The tool call IS the question — do not duplicate it in your response body.
 4. **NEVER ask questions as plain inline text** when a structured question tool exists. No "Question 1: ..." followed by more text. Use the tool.
-5. **Fallback**: If no structured question tool is available in your environment, ask questions as plain text — one set at a time, clearly formatted.
+5. **Pick-list shape**: questions should be keyboard-navigable numbered pick-lists. Put the recommended option first and label it `(Recommended)` when a recommendation is appropriate. Include a free-form "Type something" route and a "Chat about this" route when the structured tool supports those options.
+6. **Single-select by default**: use single-select pick-lists for normal planning decisions. Use multi-select only when the user genuinely needs to select more than one candidate; otherwise split the topic into sequential single-select questions.
+7. **Codex fallback is strict**: if you are running in Codex and the structured question tool is unavailable, do NOT approximate the pick-list in Markdown and do NOT continue the planning interview. Stop immediately and tell the user to restart the skill in Codex plan mode:
+   - Product planning: `/plan $belmont:product-plan <brief>`
+   - Technical planning: `/plan $belmont:tech-plan <brief or feature>`
+8. **Non-Codex fallback**: outside Codex, if no structured question tool exists at all, ask one clearly formatted plain-text question at a time and explicitly note that the structured picker is unavailable.
 
 ## Dynamic Questioning Depth (MANDATORY)
 
