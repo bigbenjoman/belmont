@@ -28,8 +28,16 @@ type toolLocalLLMs struct {
 // <model>` for Pi). Both fields are optional — partial entries fall through to
 // the next priority level in the resolution chain.
 type localLLMTier struct {
-	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model,omitempty"`
+	Provider        string `json:"provider,omitempty"`
+	Model           string `json:"model,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	ServiceTier     string `json:"service_tier,omitempty"`
+}
+
+var codexReasoningEfforts = map[string]string{
+	"low":    "low",
+	"medium": "medium",
+	"high":   "high",
 }
 
 // userLocalLLMsPath returns the user-level config path
@@ -152,6 +160,12 @@ func mergeToolTiers(dst, src *toolLocalLLMs) {
 		if srcTier.Model != "" {
 			merged.Model = srcTier.Model
 		}
+		if srcTier.ReasoningEffort != "" {
+			merged.ReasoningEffort = srcTier.ReasoningEffort
+		}
+		if srcTier.ServiceTier != "" {
+			merged.ServiceTier = srcTier.ServiceTier
+		}
 		dst.Tiers[tier] = merged
 	}
 }
@@ -187,8 +201,9 @@ func resolvePiModelFlags(projectRoot, tier string) []string {
 	return flags
 }
 
-// resolveCodexModelFlags returns the `--model <model>` flag pair to pass to
-// `codex exec`, applying this priority order (highest first):
+// resolveCodexModelFlags returns the `--model <model>` flag pair and Codex
+// config overrides to pass to `codex exec`, applying this priority order
+// (highest first):
 //
 //  1. BELMONT_CODEX_MODEL_<TIER> env var (per-tier override,
 //     e.g. BELMONT_CODEX_MODEL_HIGH=gpt-5.5)
@@ -198,40 +213,79 @@ func resolvePiModelFlags(projectRoot, tier string) []string {
 //  5. the built-in `modelTiers["codex"]` defaults
 //  6. nothing — Codex uses the default model from its own config
 //
-// Codex model IDs are single model slugs. The `provider` field is ignored for
-// Codex so the shared local-llms schema stays compatible with Pi/opencode.
+// Codex model IDs are single model slugs. Belmont also sets
+// `model_reasoning_effort` per tier (low/medium/high) because it is the main
+// Codex knob for balancing speed and token use against reasoning depth. The
+// `provider` field is ignored for Codex so the shared local-llms schema stays
+// compatible with Pi/opencode.
 func resolveCodexModelFlags(projectRoot, tier string) []string {
-	model := resolveCodexModel(projectRoot, tier)
-	if model == "" {
+	model, effort, serviceTier := resolveCodexTierValues(projectRoot, tier)
+	var flags []string
+	if model != "" {
+		flags = append(flags, "--model", model)
+	}
+	if effort != "" {
+		flags = append(flags, "-c", `model_reasoning_effort="`+effort+`"`)
+	}
+	if serviceTier != "" {
+		flags = append(flags, "-c", `service_tier="`+serviceTier+`"`)
+	}
+	if flags == nil {
 		return []string{}
 	}
-	return []string{"--model", model}
+	return flags
 }
 
-func resolveCodexModel(projectRoot, tier string) string {
+func resolveCodexTierValues(projectRoot, tier string) (model, effort, serviceTier string) {
 	tierUpper := strings.ToUpper(strings.TrimSpace(tier))
 
 	if tierUpper != "" {
 		if v := os.Getenv("BELMONT_CODEX_MODEL_" + tierUpper); v != "" {
-			return v
+			model = v
+		}
+		if v := os.Getenv("BELMONT_CODEX_REASONING_EFFORT_" + tierUpper); v != "" {
+			effort = v
+		}
+		if v := os.Getenv("BELMONT_CODEX_SERVICE_TIER_" + tierUpper); v != "" {
+			serviceTier = v
 		}
 	}
-	if v := os.Getenv("BELMONT_CODEX_MODEL"); v != "" {
-		return v
+	if model == "" {
+		model = os.Getenv("BELMONT_CODEX_MODEL")
+	}
+	if effort == "" {
+		effort = os.Getenv("BELMONT_CODEX_REASONING_EFFORT")
+	}
+	if serviceTier == "" {
+		serviceTier = os.Getenv("BELMONT_CODEX_SERVICE_TIER")
 	}
 
 	tierKey := strings.ToLower(strings.TrimSpace(tier))
 	cfg, err := loadLocalLLMs(projectRoot)
 	if err == nil && cfg != nil && cfg.Codex != nil {
-		if entry, ok := cfg.Codex.Tiers[tierKey]; ok && entry.Model != "" {
-			return entry.Model
+		if entry, ok := cfg.Codex.Tiers[tierKey]; ok {
+			if model == "" && entry.Model != "" {
+				model = entry.Model
+			}
+			if effort == "" && entry.ReasoningEffort != "" {
+				effort = entry.ReasoningEffort
+			}
+			if serviceTier == "" && entry.ServiceTier != "" {
+				serviceTier = entry.ServiceTier
+			}
 		}
 	}
 
 	if tierKey == "" {
-		return ""
+		return model, effort, serviceTier
 	}
-	return modelTiers["codex"][tierKey]
+	if model == "" {
+		model = modelTiers["codex"][tierKey]
+	}
+	if effort == "" {
+		effort = codexReasoningEfforts[tierKey]
+	}
+	return model, effort, serviceTier
 }
 
 // resolveOpencodeModelFlags returns the `--model <provider/model>` flag pair

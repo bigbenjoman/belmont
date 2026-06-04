@@ -40,13 +40,13 @@ The Belmont Go CLI maps each tier to a CLI-specific model ID. See the `modelTier
 | Tool    | low                        | medium                | high                |
 |---------|----------------------------|-----------------------|---------------------|
 | claude  | haiku                      | sonnet                | opus                |
-| codex   | gpt-5.4-mini               | gpt-5.3-codex         | gpt-5.5             |
+| codex   | gpt-5.4-mini               | gpt-5.4               | gpt-5.5             |
 | gemini  | gemini-2.5-flash-lite      | gemini-2.5-flash      | gemini-2.5-pro      |
 | cursor  | sonnet-4                   | sonnet-4-thinking     | gpt-5               |
 | copilot | haiku-4.5                  | claude-sonnet-4.5     | gpt-5.4             |
 | opencode | anthropic/claude-haiku-4-5 | anthropic/claude-sonnet-4-6 | anthropic/claude-opus-4-8 |
 
-Tiers are stable; model IDs get bumped in the Go registry when tools ship new versions. Codex users can override per tier via `codex.tiers.<tier>.model` in `~/.belmont/local-llms.json` (or `BELMONT_CODEX_MODEL_<TIER>` env vars). opencode defaults assume the Anthropic provider — users on another provider override per tier via `opencode.tiers.<tier>` in `~/.belmont/local-llms.json` (or `BELMONT_OPENCODE_MODEL_<TIER>` env vars).
+Tiers are stable; model IDs get bumped in the Go registry when tools ship new versions. Codex users can override per tier via `codex.tiers.<tier>.model`, `codex.tiers.<tier>.reasoning_effort`, and optional `codex.tiers.<tier>.service_tier` in `~/.belmont/local-llms.json` (or the corresponding `BELMONT_CODEX_*_<TIER>` env vars). opencode defaults assume the Anthropic provider — users on another provider override per tier via `opencode.tiers.<tier>` in `~/.belmont/local-llms.json` (or `BELMONT_OPENCODE_MODEL_<TIER>` env vars).
 
 ## Starting-point examples (non-definitive)
 

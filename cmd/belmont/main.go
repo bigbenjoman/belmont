@@ -47,7 +47,7 @@ var modelTiers = map[string]map[string]string{
 	},
 	"codex": {
 		"low":    "gpt-5.4-mini",
-		"medium": "gpt-5.3-codex",
+		"medium": "gpt-5.4",
 		"high":   "gpt-5.5",
 	},
 	"gemini": {
