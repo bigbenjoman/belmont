@@ -182,7 +182,7 @@ Optional helper:
 
 ## Model Tiers
 
-Per-agent model tiers (low/medium/high) are defined in `{base}/models.yaml`. If that file is absent, each agent uses its frontmatter default (Sonnet for most, Opus for reconciliation) and you can skip the rest of this section.
+Per-agent model tiers (low/medium/high) are defined in `{base}/models.yaml`. If that file is absent, each agent inherits the session model and you can skip the rest of this section.
 
 ### Model Tier Registry
 
@@ -238,7 +238,7 @@ Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi, opencode) run the entire sk
 
 **Why this is acceptable graceful degradation**: the user chose this CLI knowing it doesn't support per-agent dispatch. The warning gives them a one-command fix if they want tier adherence; otherwise the work proceeds at the session's model. Only Claude Code supports true per-agent overrides — see `dispatch-strategy.md` Model Tier Overrides for that path.
 
-When dispatching sub-agents (Step 3 below), apply the tier overrides per `dispatch-strategy.md → Model Tier Overrides`. Specifically: for each Task call, if the corresponding agent has an entry in `models.yaml` `tiers:`, include `model: "<alias>"` in the Task call using the tier-registry mapping. Agents not listed in `models.yaml` inherit their frontmatter default — do NOT pass `model:` for those.
+When dispatching sub-agents (Step 3 below), apply the tier overrides per `dispatch-strategy.md → Model Tier Overrides`. Specifically: for each Task call, if the corresponding agent has an entry in `models.yaml` `tiers:`, include `model: "<alias>"` in the Task call using the tier-registry mapping. Agents not listed in `models.yaml` inherit the session model — do NOT pass `model:` for those.
 
 ## Step 1: Find Next Milestone
 
@@ -324,7 +324,7 @@ If neither `TeamCreate` nor `Task` is available:
 
 ### Model Tier Overrides (Claude Code only)
 
-Each Belmont agent has a default model in its frontmatter (`model: sonnet` / `model: opus`). When running on Claude Code with Approach A or B, you can override that default per-dispatch via the Task tool's `model:` parameter — this takes precedence over frontmatter.
+Belmont agent files pin no model — a dispatched sub-agent therefore **inherits the session model** by default (the same model the orchestrator is running on). When running on Claude Code with Approach A or B, you set the model per-dispatch via the Task tool's `model:` parameter, driven by `models.yaml` — this takes precedence over the inherited session model.
 
 **When to pass `model:`**: read `.belmont/features/<slug>/models.yaml` at start-of-skill (if it exists) and translate each agent's tier into the appropriate model alias for this session:
 
@@ -332,7 +332,7 @@ Each Belmont agent has a default model in its frontmatter (`model: sonnet` / `mo
 - `medium` → `sonnet`
 - `high` → `opus`
 
-Then include `model: "<alias>"` in the Task call for each agent whose tier appears in `models.yaml`. Agents not listed in `models.yaml` inherit their frontmatter default — do NOT pass `model:` for those.
+Then include `model: "<alias>"` in the Task call for each agent whose tier appears in `models.yaml`. Agents not listed in `models.yaml` inherit the session model — do NOT pass `model:` for those.
 
 Example (Approach A):
 ```
@@ -341,7 +341,7 @@ Task(team_name: "...", name: "implementation-agent", subagent_type: "general-pur
      mode: "bypassPermissions", prompt: "...")
 ```
 
-**If `models.yaml` is absent**, omit `model:` entirely — agent frontmatter defaults apply.
+**If `models.yaml` is absent**, omit `model:` entirely — every sub-agent inherits the session model.
 
 **Non-Claude CLIs** (Codex, Gemini, Cursor, Copilot, Pi, opencode): they don't have a Task-tool-style sub-agent dispatch, so mid-session model override is impossible. Use the preflight partial (`tier-preflight.md`) instead, which surfaces a warning if the session model doesn't match the tier the skill expects. Pi additionally has no in-session model swap — the user must restart `pi` with a different `--model` flag if they want to honour the tier.
 

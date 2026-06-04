@@ -25,7 +25,7 @@ tiers:
 
 - **`planning`** *(string, usually `high`)* — records the tier used for product-plan and tech-plan. This is always `high` in practice because planning produces the spec every downstream agent executes against. Editing this value has no runtime effect (the Go CLI hardcodes `planningTier = "high"`); it exists as a permanent record of the decision.
 
-- **`tiers`** *(map of agent → tier)* — the core config. Each agent gets one of `low`, `medium`, or `high`. Unknown agents are ignored; missing agents fall back to their frontmatter default in `agents/belmont/<name>.md`. Recognized agents:
+- **`tiers`** *(map of agent → tier)* — the core config. Each agent gets one of `low`, `medium`, or `high`. Unknown agents are ignored; missing agents inherit the session model (Belmont agent files pin no model). Recognized agents:
   - `codebase` — exploration / pattern scanning
   - `design` — Figma extraction, token mapping, visual spec
   - `implementation` — code generation, acceptance validation
@@ -48,25 +48,31 @@ The Belmont Go CLI maps each tier to a CLI-specific model ID. See the `modelTier
 
 Tiers are stable; model IDs get bumped in the Go registry when tools ship new versions. Codex users can override per tier via `codex.tiers.<tier>.model`, `codex.tiers.<tier>.reasoning_effort`, and optional `codex.tiers.<tier>.service_tier` in `~/.belmont/local-llms.json` (or the corresponding `BELMONT_CODEX_*_<TIER>` env vars). opencode defaults assume the Anthropic provider — users on another provider override per tier via `opencode.tiers.<tier>` in `~/.belmont/local-llms.json` (or `BELMONT_OPENCODE_MODEL_<TIER>` env vars).
 
+## Tier economics: errors cost more than tokens
+
+When assigning tiers, optimize **end-to-end cost, not per-token price**. A failed milestone re-enters the implement → verify → review (→ debug) pipeline, and every retry reloads the full feature context across multiple agents — one avoided rework cycle pays for a lot of premium-tier tokens. Real-project telemetry (model-attributed commit history across large Belmont projects, mid-2026) measured ~1.5× the rework-commit ratio when the mid tier handled implementation versus the high tier, with multi-round fix chains where the mid tier's per-token discount was clearly underwater.
+
+**Claude-specific note (as of June 2026)**: in reasoning mode the mid tier's discount largely evaporates — independent benchmarks (Artificial Analysis) measured Sonnet 4.6 at ~90% of Opus 4.8's end-to-end evaluation cost for materially lower intelligence (52 vs 61) and slower output (45 vs 64 tok/s). On Claude, the useful axis is therefore `high` vs `low`: choose `high` wherever an error cascades (implementation, codebase analysis, verification, reconciliation) and `low` (Haiku — genuinely cheap and fast) for mechanical, low-blast-radius work. `medium` remains a healthy middle tier on other CLIs (e.g. gpt-5.4, gemini-2.5-flash). Re-check current benchmarks before treating this note as permanent.
+
 ## Starting-point examples (non-definitive)
 
 These are **illustrative heuristics only** — the planning model is expected to reason about the specific feature at hand, not pattern-match to a profile label.
 
-- **frontend-heavy** (rich interactive UI, lots of visual/Figma work): design=high, implementation=high, verification=high, codebase=medium, code-review=medium, reconciliation=high.
-- **backend-heavy** (APIs, data-layer, migrations): design=low (no UI), implementation=high, verification=medium (unit tests), codebase=medium, code-review=medium, reconciliation=high.
-- **infra** (config, CI, deployment, pipelines): everything medium, reconciliation=high.
+- **frontend-heavy** (rich interactive UI, lots of visual/Figma work): design=high, implementation=high, verification=high, codebase=high, code-review=medium, reconciliation=high.
+- **backend-heavy** (APIs, data-layer, migrations): design=low (no UI), implementation=high, verification=high (a false pass costs a full debug loop later), codebase=high, code-review=medium, reconciliation=high.
+- **infra** (config, CI, deployment, pipelines): implementation=high (config errors ship silently and surface as outages, not test failures), verification=high, codebase=medium, design=low, code-review=medium, reconciliation=high.
 - **docs** (content-only changes, README refreshes, ADRs): everything low, reconciliation=medium.
-- **refactor** (no behavior change, lots of code movement): implementation=high (reasoning about preservation), verification=medium, reconciliation=high (merge conflicts likely).
+- **refactor** (no behavior change, lots of code movement): implementation=high (reasoning about preservation), verification=high, reconciliation=high (merge conflicts likely).
 - **research** (exploration, prototyping): codebase=high (pattern inference), implementation=low (throwaway code), verification=low.
 
-Again, these are loose anchors. A "frontend-heavy" feature that's just restyling one button probably warrants all-`low` except reconciliation. A "docs" feature that rewrites the entire ADR catalog probably warrants `medium` implementation. Reason about the specific work.
+Again, these are loose anchors. A "frontend-heavy" feature that's just restyling one button probably warrants all-`low` except reconciliation. A "docs" feature that rewrites the entire ADR catalog probably warrants `high` implementation. Reason about the specific work — and when torn between two tiers for an agent whose mistakes trigger pipeline re-runs, take the higher one.
 
 ## Fallback behavior
 
-- If `models.yaml` is absent, each agent uses the `model:` value from `agents/belmont/<name>.md` frontmatter (Sonnet for most, Opus for reconciliation).
-- If `models.yaml` exists but omits an agent, that agent falls back to its frontmatter default.
+- If `models.yaml` is absent, Belmont agent files pin no model, so each sub-agent inherits the **session model** — the model the orchestrator (interactive Claude Code session, or the headless `claude -p` process in auto mode) is running on. Run Belmont on a strong model and the whole pipeline follows; use `models.yaml` to pin specific tiers per agent. **Exception**: in auto mode the Go CLI forces the high tier for planning and reconciliation regardless (`planningTier` / `reconciliationDefaultTier`), since both are high-blast-radius and not per-milestone.
+- If `models.yaml` exists but omits an agent, that agent inherits the session model.
 - If a tier value is invalid (`extreme`, typos, etc.), the runtime omits `--model` and the tool uses its own default model.
-- The user can accept Belmont defaults explicitly during tech-plan — in that case the skill does NOT create `models.yaml`, and the runtime falls through to frontmatter defaults.
+- The user can accept Belmont defaults explicitly during tech-plan — in that case the skill does NOT create `models.yaml`, and every agent falls through to the session model.
 
 ## Editing by hand
 

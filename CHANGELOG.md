@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.10.12
+
+**Released:** 2026-06-04
+
+### Changes since v0.10.10
+
+- docs/agent-pipeline: drop redundant per-agent Model annotation
+- AGENTS.md: correct model-tier note to inherit-by-default
+- Pin no model in agent frontmatter — inherit session model, configure via models.yaml
+- Default all agents to the high model tier (Opus)
+- Tune Codex model tiers for quality and speed
+- Require Codex plan-mode structured questions
+- Optimize Codex model tier configuration
+
+
+
 ## v0.10.10
 
 **Released:** 2026-06-03
