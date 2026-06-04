@@ -254,7 +254,7 @@ Decide per-agent model tiers for this feature so downstream work uses the right-
 3. **Confirm with the user via `AskUserQuestion`**. Present the recommendation as a compact table in the question body and offer three options:
    - (a) Accept recommendation as-is.
    - (b) Adjust specific agents — follow up with per-agent `AskUserQuestion` prompts for the ones the user wants to change (each with low/medium/high options).
-   - (c) Accept Belmont defaults — skip writing `models.yaml` so agent frontmatter (Sonnet for most, Opus for reconciliation) applies.
+   - (c) Accept Belmont defaults — skip writing `models.yaml`; every agent then inherits the session model (auto mode forces the high tier only for planning and reconciliation).
 
 4. **Write `.belmont/features/<slug>/models.yaml`** if the user picked (a) or (b). Format:
    ```yaml
@@ -269,9 +269,9 @@ Decide per-agent model tiers for this feature so downstream work uses the right-
      code-review: <low|medium|high>
      reconciliation: <low|medium|high>
    ```
-   If the user picked (c), do NOT create the file (or explicitly delete it if one exists from a prior session) so the runtime falls back to agent-frontmatter defaults.
+   If the user picked (c), do NOT create the file (or explicitly delete it if one exists from a prior session) so the runtime falls back to the session model.
 
-5. **Log the rationale** in the `## Decisions Log` section of `{base}/PROGRESS.md` — one line per agent that deviates from Sonnet, plus the profile label.
+5. **Log the rationale** in the `## Decisions Log` section of `{base}/PROGRESS.md` — one line per agent that deviates from the session model, plus the profile label.
 
 6. **Note to the user**: mention that the reconciliation tier applies at merge-time (not per-milestone), and that `planning` is always `high` by design.
 

@@ -29,13 +29,13 @@ Optional helper:
 
 ## Model Tiers
 
-Per-agent model tiers (low/medium/high) are defined in `{base}/models.yaml`. If that file is absent, each agent uses its frontmatter default (Sonnet for most) and you can skip the rest of this section.
+Per-agent model tiers (low/medium/high) are defined in `{base}/models.yaml`. If that file is absent, each agent inherits the session model and you can skip the rest of this section.
 
 <!-- @include tier-registry.md -->
 
 <!-- @include tier-preflight.md -->
 
-When dispatching the verification-agent and code-review-agent below, apply the tier overrides per `dispatch-strategy.md → Model Tier Overrides`. Specifically: if `models.yaml` lists `tiers.verification` or `tiers.code-review`, include `model: "<alias>"` in the corresponding Task call using the tier-registry mapping. Agents not listed inherit their frontmatter default — do NOT pass `model:` for those.
+When dispatching the verification-agent and code-review-agent below, apply the tier overrides per `dispatch-strategy.md → Model Tier Overrides`. Specifically: if `models.yaml` lists `tiers.verification` or `tiers.code-review`, include `model: "<alias>"` in the corresponding Task call using the tier-registry mapping. Agents not listed inherit the session model — do NOT pass `model:` for those.
 
 ## Focused Re-verification Mode
 

@@ -33,10 +33,10 @@ belmont/
 │   └── belmont/
 │       ├── codebase-agent.md    # Codebase scanning agent
 │       ├── design-agent.md      # Figma/design analysis agent
-│       ├── implementation-agent.md  # Implementation agent (default: opus)
+│       ├── implementation-agent.md  # Implementation agent (inherits session model; pin via models.yaml)
 │       ├── verification-agent.md    # Verification agent
 │       ├── code-review-agent.md     # Code review agent
-│       └── reconciliation-agent.md  # Merge-conflict resolution agent (default: opus)
+│       └── reconciliation-agent.md  # Merge-conflict resolution agent (auto mode runs this at the high tier)
 ├── scripts/
 │   ├── build.sh                 # Build with embedded content + version injection
 │   ├── release.sh               # Prepare release (changelog + tag)
