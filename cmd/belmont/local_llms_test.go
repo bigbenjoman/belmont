@@ -229,6 +229,118 @@ func TestResolveModelFlags_PiDispatch(t *testing.T) {
 	}
 }
 
+// clearCodexEnv unsets every BELMONT_CODEX_* env var the resolver reads, so a
+// test starts from a known-clean baseline.
+func clearCodexEnv(t *testing.T) {
+	t.Helper()
+	for _, v := range []string{
+		"BELMONT_CODEX_MODEL",
+		"BELMONT_CODEX_MODEL_LOW",
+		"BELMONT_CODEX_MODEL_MEDIUM",
+		"BELMONT_CODEX_MODEL_HIGH",
+	} {
+		t.Setenv(v, "")
+	}
+}
+
+func TestResolveCodexModelFlags_DefaultTiers(t *testing.T) {
+	withTempHome(t)
+	clearCodexEnv(t)
+	project := t.TempDir()
+
+	for tier, want := range modelTiers["codex"] {
+		flags := resolveCodexModelFlags(project, tier)
+		if len(flags) != 2 || flags[0] != "--model" || flags[1] != want {
+			t.Errorf("tier %s: expected [--model %s], got %v", tier, want, flags)
+		}
+	}
+}
+
+func TestResolveCodexModelFlags_EmptyTier_NoFlags(t *testing.T) {
+	withTempHome(t)
+	clearCodexEnv(t)
+	project := t.TempDir()
+
+	flags := resolveCodexModelFlags(project, "")
+	if len(flags) != 0 {
+		t.Errorf("expected no flags for empty tier, got %v", flags)
+	}
+}
+
+func TestResolveCodexModelFlags_UserFile(t *testing.T) {
+	home := withTempHome(t)
+	clearCodexEnv(t)
+	project := t.TempDir()
+
+	writeUserConfig(t, home, `{"codex": {"tiers": {"high": {"model": "gpt-5.5"}}}}`)
+
+	flags := resolveCodexModelFlags(project, "high")
+	if len(flags) != 2 || flags[1] != "gpt-5.5" {
+		t.Errorf("expected [--model gpt-5.5], got %v", flags)
+	}
+
+	flags = resolveCodexModelFlags(project, "low")
+	if len(flags) != 2 || flags[1] != modelTiers["codex"]["low"] {
+		t.Errorf("expected built-in low default, got %v", flags)
+	}
+}
+
+func TestResolveCodexModelFlags_ProjectOverridesUser(t *testing.T) {
+	home := withTempHome(t)
+	clearCodexEnv(t)
+	project := t.TempDir()
+
+	writeUserConfig(t, home, `{"codex": {"tiers": {"medium": {"model": "gpt-5.4"}}}}`)
+	writeProjectConfig(t, project, `{"codex": {"tiers": {"medium": {"model": "gpt-5.3-codex"}}}}`)
+
+	flags := resolveCodexModelFlags(project, "medium")
+	if len(flags) != 2 || flags[1] != "gpt-5.3-codex" {
+		t.Errorf("expected project override, got %v", flags)
+	}
+}
+
+func TestResolveCodexModelFlags_SingleEnvVarAppliesToAllTiers(t *testing.T) {
+	withTempHome(t)
+	clearCodexEnv(t)
+	project := t.TempDir()
+	t.Setenv("BELMONT_CODEX_MODEL", "gpt-5.4-mini")
+
+	for _, tier := range []string{"low", "medium", "high"} {
+		flags := resolveCodexModelFlags(project, tier)
+		if len(flags) != 2 || flags[1] != "gpt-5.4-mini" {
+			t.Errorf("tier %s: expected env override, got %v", tier, flags)
+		}
+	}
+}
+
+func TestResolveCodexModelFlags_PerTierEnvOverridesEverything(t *testing.T) {
+	home := withTempHome(t)
+	clearCodexEnv(t)
+	project := t.TempDir()
+
+	writeUserConfig(t, home, `{"codex": {"tiers": {"high": {"model": "gpt-5.4"}}}}`)
+	writeProjectConfig(t, project, `{"codex": {"tiers": {"high": {"model": "gpt-5.3-codex"}}}}`)
+	t.Setenv("BELMONT_CODEX_MODEL", "gpt-5.4-mini")
+	t.Setenv("BELMONT_CODEX_MODEL_HIGH", "gpt-5.5")
+
+	flags := resolveCodexModelFlags(project, "high")
+	if len(flags) != 2 || flags[1] != "gpt-5.5" {
+		t.Errorf("expected per-tier env var to win, got %v", flags)
+	}
+}
+
+func TestResolveModelFlags_CodexDispatch(t *testing.T) {
+	withTempHome(t)
+	clearCodexEnv(t)
+	project := t.TempDir()
+
+	t.Setenv("BELMONT_CODEX_MODEL_MEDIUM", "gpt-5.3-codex")
+	flags := resolveModelFlags("codex", "medium", project)
+	if len(flags) != 2 || flags[0] != "--model" || flags[1] != "gpt-5.3-codex" {
+		t.Errorf("expected resolveModelFlags to dispatch to codex chain, got %v", flags)
+	}
+}
+
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

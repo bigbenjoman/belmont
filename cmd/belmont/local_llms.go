@@ -9,8 +9,9 @@ import (
 
 // localLLMsConfig is the parsed shape of `local-llms.json`. Top-level keyed by
 // tool name so future tools that gain local-endpoint support can be added
-// without a schema break. Today Pi and opencode read from this file.
+// without a schema break. Today Pi, Codex, and opencode read from this file.
 type localLLMsConfig struct {
+	Codex    *toolLocalLLMs `json:"codex,omitempty"`
 	Pi       *toolLocalLLMs `json:"pi,omitempty"`
 	Opencode *toolLocalLLMs `json:"opencode,omitempty"`
 }
@@ -73,8 +74,15 @@ func loadLocalLLMs(projectRoot string) (*localLLMsConfig, error) {
 	}
 	merged := &localLLMsConfig{}
 	if user != nil {
+		merged.Codex = cloneToolConfig(user.Codex)
 		merged.Pi = cloneToolConfig(user.Pi)
 		merged.Opencode = cloneToolConfig(user.Opencode)
+	}
+	if proj != nil && proj.Codex != nil {
+		if merged.Codex == nil {
+			merged.Codex = &toolLocalLLMs{}
+		}
+		mergeToolTiers(merged.Codex, proj.Codex)
 	}
 	if proj != nil && proj.Pi != nil {
 		if merged.Pi == nil {
@@ -177,6 +185,53 @@ func resolvePiModelFlags(projectRoot, tier string) []string {
 		return []string{}
 	}
 	return flags
+}
+
+// resolveCodexModelFlags returns the `--model <model>` flag pair to pass to
+// `codex exec`, applying this priority order (highest first):
+//
+//  1. BELMONT_CODEX_MODEL_<TIER> env var (per-tier override,
+//     e.g. BELMONT_CODEX_MODEL_HIGH=gpt-5.5)
+//  2. BELMONT_CODEX_MODEL env var (single value applied to every tier)
+//  3. .belmont/local-llms.json `codex.tiers.<tier>` (project-level)
+//  4. ~/.belmont/local-llms.json `codex.tiers.<tier>` (user-level)
+//  5. the built-in `modelTiers["codex"]` defaults
+//  6. nothing — Codex uses the default model from its own config
+//
+// Codex model IDs are single model slugs. The `provider` field is ignored for
+// Codex so the shared local-llms schema stays compatible with Pi/opencode.
+func resolveCodexModelFlags(projectRoot, tier string) []string {
+	model := resolveCodexModel(projectRoot, tier)
+	if model == "" {
+		return []string{}
+	}
+	return []string{"--model", model}
+}
+
+func resolveCodexModel(projectRoot, tier string) string {
+	tierUpper := strings.ToUpper(strings.TrimSpace(tier))
+
+	if tierUpper != "" {
+		if v := os.Getenv("BELMONT_CODEX_MODEL_" + tierUpper); v != "" {
+			return v
+		}
+	}
+	if v := os.Getenv("BELMONT_CODEX_MODEL"); v != "" {
+		return v
+	}
+
+	tierKey := strings.ToLower(strings.TrimSpace(tier))
+	cfg, err := loadLocalLLMs(projectRoot)
+	if err == nil && cfg != nil && cfg.Codex != nil {
+		if entry, ok := cfg.Codex.Tiers[tierKey]; ok && entry.Model != "" {
+			return entry.Model
+		}
+	}
+
+	if tierKey == "" {
+		return ""
+	}
+	return modelTiers["codex"][tierKey]
 }
 
 // resolveOpencodeModelFlags returns the `--model <provider/model>` flag pair

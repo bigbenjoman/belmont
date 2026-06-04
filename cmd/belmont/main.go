@@ -48,7 +48,7 @@ var modelTiers = map[string]map[string]string{
 	"codex": {
 		"low":    "gpt-5.4-mini",
 		"medium": "gpt-5.3-codex",
-		"high":   "gpt-5.4",
+		"high":   "gpt-5.5",
 	},
 	"gemini": {
 		"low":    "gemini-2.5-flash-lite",
@@ -110,17 +110,21 @@ const reconciliationDefaultTier = "high"
 // with no tier, returns --model auto (copilot's explicit "pick a sensible
 // model" token).
 //
-// projectRoot is consulted only for Pi and opencode — see resolvePiModelFlags /
-// resolveOpencodeModelFlags for the resolution chain (env vars >
+// projectRoot is consulted only for Pi, Codex, and opencode — see
+// resolvePiModelFlags / resolveCodexModelFlags / resolveOpencodeModelFlags
+// for the resolution chain (env vars >
 // .belmont/local-llms.json > ~/.belmont/local-llms.json > tier default for
-// opencode / nil for Pi). Pass "" if no project context is available; both
-// tools still honour env vars and the user-level config file.
+// Codex + opencode / nil for Pi). Pass "" if no project context is available;
+// these tools still honour env vars and the user-level config file.
 func resolveModelFlags(tool, tier, projectRoot string) []string {
 	if !toolSupportsModel[tool] {
 		return nil
 	}
 	if tool == "pi" {
 		return resolvePiModelFlags(projectRoot, tier)
+	}
+	if tool == "codex" {
+		return resolveCodexModelFlags(projectRoot, tier)
 	}
 	if tool == "opencode" {
 		return resolveOpencodeModelFlags(projectRoot, tier)
