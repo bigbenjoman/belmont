@@ -122,11 +122,11 @@ When you run the implement skill, the orchestrator creates a MILESTONE file, the
 
 | Phase              | Agent                  | Model* | Reads                | Writes to MILESTONE                                  |
 |--------------------|------------------------|--------|----------------------|------------------------------------------------------|
-| 1. Codebase Scan   | `codebase-agent`       | Opus   | MILESTONE + codebase | `## Codebase Analysis`                               |
-| 2. Design Analysis | `design-agent`         | Opus   | MILESTONE + Figma    | `## Design Specifications`                           |
-| 3. Implementation  | `implementation-agent` | Opus   | MILESTONE (only)     | Code, unit tests, E2E tests, `## Implementation Log` |
+| 1. Codebase Scan   | `codebase-agent`       | Session | MILESTONE + codebase | `## Codebase Analysis`                               |
+| 2. Design Analysis | `design-agent`         | Session | MILESTONE + Figma    | `## Design Specifications`                           |
+| 3. Implementation  | `implementation-agent` | Session | MILESTONE (only)     | Code, unit tests, E2E tests, `## Implementation Log` |
 
-\* Default. Each feature can downgrade individual agents to cheaper tiers via `.belmont/features/<slug>/models.yaml` — see [Per-feature model tiers](docs/workflow.md). Defaults optimize for first-pass correctness: a failed milestone re-runs the whole pipeline, which costs far more tokens than the premium tier saves.
+\* Agents pin no model — each sub-agent inherits your **session model** by default (run Belmont on a strong model and the whole pipeline follows). Set per-feature tiers in `.belmont/features/<slug>/models.yaml` to pin specific models per agent — see [Per-feature model tiers](docs/workflow.md). When choosing tiers, optimize for first-pass correctness: a failed milestone re-runs the whole pipeline, which costs far more tokens than a premium tier saves.
 
 After implementation, the MILESTONE file is archived (renamed to `MILESTONE-[ID].done.md`) to prevent stale context from bleeding into the next milestone.
 
@@ -136,10 +136,10 @@ When you run the verify skill, two agents run:
 
 | Agent                | Model* | What It Does                                                                                                   |
 |----------------------|--------|----------------------------------------------------------------------------------------------------------------|
-| `verification-agent` | Opus   | Checks acceptance criteria, visual Figma comparison via Playwright headless, i18n keys                         |
-| `code-review-agent`  | Opus   | Runs build, test, and E2E test commands (auto-detects package manager), reviews code quality and PRD alignment |
+| `verification-agent` | Session | Checks acceptance criteria, visual Figma comparison via Playwright headless, i18n keys                         |
+| `code-review-agent`  | Session | Runs build, test, and E2E test commands (auto-detects package manager), reviews code quality and PRD alignment |
 
-\* Default — override per feature via `models.yaml`. A verification false-pass is the most expensive mistake in the pipeline (it surfaces later as a debug loop), so verification defaults high.
+\* Inherits your session model; pin per feature via `models.yaml`. A verification false-pass is the most expensive mistake in the pipeline (it surfaces later as a debug loop), so set verification `high` when you configure tiers.
 
 Both agents read the PRD, TECH_PLAN, and archived MILESTONE files for full context. Any issues found become follow-up tasks (plain `[ ]` entries) added to PROGRESS.md.
 

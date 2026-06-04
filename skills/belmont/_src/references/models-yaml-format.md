@@ -25,7 +25,7 @@ tiers:
 
 - **`planning`** *(string, usually `high`)* — records the tier used for product-plan and tech-plan. This is always `high` in practice because planning produces the spec every downstream agent executes against. Editing this value has no runtime effect (the Go CLI hardcodes `planningTier = "high"`); it exists as a permanent record of the decision.
 
-- **`tiers`** *(map of agent → tier)* — the core config. Each agent gets one of `low`, `medium`, or `high`. Unknown agents are ignored; missing agents fall back to their frontmatter default in `agents/belmont/<name>.md`. Recognized agents:
+- **`tiers`** *(map of agent → tier)* — the core config. Each agent gets one of `low`, `medium`, or `high`. Unknown agents are ignored; missing agents inherit the session model (Belmont agent files pin no model). Recognized agents:
   - `codebase` — exploration / pattern scanning
   - `design` — Figma extraction, token mapping, visual spec
   - `implementation` — code generation, acceptance validation
@@ -69,10 +69,10 @@ Again, these are loose anchors. A "frontend-heavy" feature that's just restyling
 
 ## Fallback behavior
 
-- If `models.yaml` is absent, each agent uses the `model:` value from `agents/belmont/<name>.md` frontmatter (Opus for all six agents — ad-hoc work without a tier plan is exactly where errors are most likely, so the default optimizes for first-pass correctness; use models.yaml to downgrade deliberately).
-- If `models.yaml` exists but omits an agent, that agent falls back to its frontmatter default.
+- If `models.yaml` is absent, Belmont agent files pin no model, so each sub-agent inherits the **session model** — the model the orchestrator (interactive Claude Code session, or the headless `claude -p` process in auto mode) is running on. Run Belmont on a strong model and the whole pipeline follows; use `models.yaml` to pin specific tiers per agent. **Exception**: in auto mode the Go CLI forces the high tier for planning and reconciliation regardless (`planningTier` / `reconciliationDefaultTier`), since both are high-blast-radius and not per-milestone.
+- If `models.yaml` exists but omits an agent, that agent inherits the session model.
 - If a tier value is invalid (`extreme`, typos, etc.), the runtime omits `--model` and the tool uses its own default model.
-- The user can accept Belmont defaults explicitly during tech-plan — in that case the skill does NOT create `models.yaml`, and the runtime falls through to frontmatter defaults.
+- The user can accept Belmont defaults explicitly during tech-plan — in that case the skill does NOT create `models.yaml`, and every agent falls through to the session model.
 
 ## Editing by hand
 
