@@ -114,15 +114,19 @@ Orchestrator
 
 Each agent reads **only the MILESTONE file** — the orchestrator extracts all relevant PRD and TECH_PLAN context into it upfront. Agents receive a minimal prompt (just identity + "read the MILESTONE file"). The orchestrator's context stays flat — it never accumulates the massive outputs from each phase. This helps save tokens & prevent hallucinations.
 
+> **Token-saving companion**: Belmont's agents are heavy consumers of command output (test runs, lints, git, file reads). Pairing Belmont with [RTK](https://www.rtk-ai.app/) (Rust Token Killer, `brew install rtk`) — a hook-based CLI proxy that filters command output before it reaches the model — typically halves tool-I/O input tokens (50–90% on test/lint output) with zero workflow change. This is the right lever for cutting token spend: trim the input side rather than downgrading agent models, since a cheaper model that fails a milestone re-runs the entire pipeline and costs more than it saves.
+
 ### Implementation Pipeline
 
 When you run the implement skill, the orchestrator creates a MILESTONE file, then dispatches 3 phases. Phases 1 and 2 run in parallel, Phase 3 runs after both complete:
 
-| Phase              | Agent                  | Model  | Reads                | Writes to MILESTONE                                  |
+| Phase              | Agent                  | Model* | Reads                | Writes to MILESTONE                                  |
 |--------------------|------------------------|--------|----------------------|------------------------------------------------------|
-| 1. Codebase Scan   | `codebase-agent`       | Sonnet | MILESTONE + codebase | `## Codebase Analysis`                               |
-| 2. Design Analysis | `design-agent`         | Sonnet | MILESTONE + Figma    | `## Design Specifications`                           |
+| 1. Codebase Scan   | `codebase-agent`       | Opus   | MILESTONE + codebase | `## Codebase Analysis`                               |
+| 2. Design Analysis | `design-agent`         | Opus   | MILESTONE + Figma    | `## Design Specifications`                           |
 | 3. Implementation  | `implementation-agent` | Opus   | MILESTONE (only)     | Code, unit tests, E2E tests, `## Implementation Log` |
+
+\* Default. Each feature can downgrade individual agents to cheaper tiers via `.belmont/features/<slug>/models.yaml` — see [Per-feature model tiers](docs/workflow.md). Defaults optimize for first-pass correctness: a failed milestone re-runs the whole pipeline, which costs far more tokens than the premium tier saves.
 
 After implementation, the MILESTONE file is archived (renamed to `MILESTONE-[ID].done.md`) to prevent stale context from bleeding into the next milestone.
 
@@ -130,10 +134,12 @@ After implementation, the MILESTONE file is archived (renamed to `MILESTONE-[ID]
 
 When you run the verify skill, two agents run:
 
-| Agent                | Model  | What It Does                                                                                                   |
+| Agent                | Model* | What It Does                                                                                                   |
 |----------------------|--------|----------------------------------------------------------------------------------------------------------------|
-| `verification-agent` | Sonnet | Checks acceptance criteria, visual Figma comparison via Playwright headless, i18n keys                         |
-| `code-review-agent`  | Sonnet | Runs build, test, and E2E test commands (auto-detects package manager), reviews code quality and PRD alignment |
+| `verification-agent` | Opus   | Checks acceptance criteria, visual Figma comparison via Playwright headless, i18n keys                         |
+| `code-review-agent`  | Opus   | Runs build, test, and E2E test commands (auto-detects package manager), reviews code quality and PRD alignment |
+
+\* Default — override per feature via `models.yaml`. A verification false-pass is the most expensive mistake in the pipeline (it surfaces later as a debug loop), so verification defaults high.
 
 Both agents read the PRD, TECH_PLAN, and archived MILESTONE files for full context. Any issues found become follow-up tasks (plain `[ ]` entries) added to PROGRESS.md.
 
@@ -433,6 +439,7 @@ See [Feature Auto](docs/feature-auto.md) for full documentation.
 - An AI coding tool (Claude Code, Codex, Cursor, Windsurf, Gemini, Copilot, Pi, opencode, or any tool that reads markdown)
 - [figma-mcp](https://github.com/nichochar/figma-mcp) (recommended) -- enables Belmont to load Figma designs, extract design tokens, and perform visual verification
 - [playwright-mcp](https://github.com/microsoft/playwright-mcp) (recommended) -- enables agents to interact with browsers for visual verification and E2E test debugging
+- [RTK](https://www.rtk-ai.app/) (recommended) -- hook-based CLI proxy that filters command output (tests, lints, git) before it reaches the model; typically halves tool-I/O input tokens across Belmont's agent pipeline
 - No Go required (pre-built binaries)
 - No Docker required
 - No Python required

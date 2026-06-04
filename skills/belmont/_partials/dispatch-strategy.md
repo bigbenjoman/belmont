@@ -54,7 +54,7 @@ If neither `TeamCreate` nor `Task` is available:
 
 ### Model Tier Overrides (Claude Code only)
 
-Each Belmont agent has a default model in its frontmatter (`model: sonnet` / `model: opus`). When running on Claude Code with Approach A or B, you can override that default per-dispatch via the Task tool's `model:` parameter — this takes precedence over frontmatter.
+Each Belmont agent has a default model in its frontmatter (`model: opus` for all six agents). When running on Claude Code with Approach A or B, you can override that default per-dispatch via the Task tool's `model:` parameter — this takes precedence over frontmatter.
 
 **When to pass `model:`**: read `.belmont/features/<slug>/models.yaml` at start-of-skill (if it exists) and translate each agent's tier into the appropriate model alias for this session:
 

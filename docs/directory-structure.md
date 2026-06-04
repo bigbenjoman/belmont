@@ -33,7 +33,7 @@ belmont/
 │   └── belmont/
 │       ├── codebase-agent.md    # Codebase scanning agent
 │       ├── design-agent.md      # Figma/design analysis agent
-│       ├── implementation-agent.md  # Implementation agent (default: sonnet)
+│       ├── implementation-agent.md  # Implementation agent (default: opus)
 │       ├── verification-agent.md    # Verification agent
 │       ├── code-review-agent.md     # Code review agent
 │       └── reconciliation-agent.md  # Merge-conflict resolution agent (default: opus)
