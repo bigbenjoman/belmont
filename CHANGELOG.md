@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.10.11
+
+**Released:** 2026-06-04
+
+### Changes since v0.10.10
+
+- Tune Codex model tiers for quality and speed
+- Require Codex plan-mode structured questions
+- Optimize Codex model tier configuration
+
+
+
 ## v0.10.10
 
 **Released:** 2026-06-03
