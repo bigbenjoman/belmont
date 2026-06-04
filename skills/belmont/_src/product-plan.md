@@ -5,7 +5,7 @@ alwaysApply: false
 
 # Belmont: Product Plan
 
-You are running an interactive planning session. You should not switch the agent to plan mode. Your goal is to work with the user to create a comprehensive PRD (Product Requirements Document) and PROGRESS tracking file.
+You are running an interactive planning session. Your goal is to work with the user to create a comprehensive PRD (Product Requirements Document) and PROGRESS tracking file.
 
 This session requires ultrathink-level reasoning — deeply consider product edge cases, user needs, and architectural implications before proposing structure.
 
@@ -16,6 +16,16 @@ This session requires ultrathink-level reasoning — deeply consider product edg
 3. ONLY write to files in `.belmont/` (PRD.md, PROGRESS.md, and feature directories).
 4. Ask questions iteratively until the plan is 100% concrete.
 5. Always ask the user for clarification and approval before finalizing.
+
+## Codex Plan-Mode Preflight
+
+Codex exposes keyboard-navigable structured questions through plan-mode planning turns. If you are Codex and the structured question tool is unavailable in the current turn, STOP before asking any planning questions or editing files. Tell the user to restart this skill with:
+
+```text
+/plan $belmont:product-plan <brief>
+```
+
+Do NOT fake the structured question flow with Markdown lists. The user must be able to navigate the pick-list with arrow keys.
 
 <!-- @include forbidden-actions.md -->
 
