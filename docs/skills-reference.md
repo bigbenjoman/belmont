@@ -46,6 +46,17 @@ Technical planning session. Creates a detailed implementation specification.
 
 **Output**: `.belmont/TECH_PLAN.md`, plus reconciliation edits to `{base}/PRD.md` and `{base}/PROGRESS.md`
 
+## `plan-apply`
+
+Codex-only compatibility skill for applying a `BELMONT_PLAN_PACKET` produced by a Codex plan-mode `product-plan` or `tech-plan` interview.
+
+- Does not ask new planning questions
+- Writes only explicit `.belmont/` paths named in the packet
+- Refuses malformed packets, source-code paths, or missing operation details
+- Lets Claude Code, opencode, Cursor, Windsurf, Gemini, GitHub Copilot, and Pi keep using `product-plan` and `tech-plan` directly
+
+**Output**: The `.belmont/` file writes already specified by the packet
+
 ## `implement`
 
 Implements the next pending milestone from the PRD.

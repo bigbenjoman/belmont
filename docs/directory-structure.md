@@ -18,6 +18,7 @@ belmont/
 │       ├── references/          # Detail loaded on demand by skills (generated)
 │       ├── product-plan.md      # Planning skill (generated)
 │       ├── tech-plan.md         # Tech plan skill (generated)
+│       ├── plan-apply.md        # Codex plan-mode handoff apply skill (generated)
 │       ├── implement.md         # Implementation skill (generated)
 │       ├── next.md              # Next task skill (generated)
 │       ├── verify.md            # Verification skill (generated)
@@ -75,7 +76,7 @@ your-project/
 │           │   └── SKILL.md  (+ references/, agents/openai.yaml)
 │           └── ...              # one folder per skill: working-backwards, product-plan, tech-plan,
 │                                # next, debug, debug-auto, debug-manual, status, review-plans,
-│                                # note, cleanup, reset
+│                                # plan-apply, note, cleanup, reset
 ├── .belmont/                    # Planning & state (commit to share with team)
 │   ├── PR_FAQ.md
 │   ├── PRD.md                   # Living spec (no status markers — purely requirements)

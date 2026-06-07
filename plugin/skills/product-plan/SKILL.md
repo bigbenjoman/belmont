@@ -28,6 +28,22 @@ Codex exposes keyboard-navigable structured questions through plan-mode planning
 
 Do NOT fake the structured question flow with Markdown lists. The user must be able to navigate the pick-list with arrow keys.
 
+### Codex write handoff
+
+This section is Codex-only. It does not apply to Claude Code, opencode, Cursor, Windsurf, Gemini, GitHub Copilot, Pi, or other agents that can both ask structured questions and write files in the same session.
+
+If you are Codex in plan mode and file editing is unavailable or inappropriate for the current planning turn:
+
+1. Complete the full structured interview exactly as this skill requires.
+2. Prepare the final `.belmont/` file contents or precise section updates.
+3. Instead of writing files directly, output a single fenced `BELMONT_PLAN_PACKET` for `$belmont:plan-apply`.
+4. Tell the user to exit plan mode and run:
+   ```text
+   $belmont:plan-apply
+   ```
+
+The packet must include every target `.belmont/` path, each operation (`create`, `replace`, or `update-section`), complete content for creates/replacements, exact section content for updates, the commit message, and the next recommended Belmont prompt. Do not leave decisions only in chat.
+
 ## FORBIDDEN ACTIONS
 - Creating component files
 - Editing existing code
@@ -372,7 +388,7 @@ If the existing PRD/PROGRESS already contains standalone verification/QA/testing
 7. Consider edge cases, dependencies, blockers. Be proactive — surface questions the user may not have thought to ask.
 8. Verify the **exit criteria** from the Dynamic Questioning framework: every relevant domain resolved (or explicitly marked skipped), every follow-up thread closed, user has explicitly confirmed nothing more to add, all answers captured in `## Clarifications`.
 9. Break the feature down into implementable milestones and tasks. Keep milestones small and focused. Group related tasks that can be completed in a single session.
-10. Write the finalized PRD.md and PROGRESS.md (in UPDATE mode, only add/modify — never replace). Include a `### Research Notes` subsection in `## Technical Context` if research was performed.
+10. Write the finalized PRD.md and PROGRESS.md (in UPDATE mode, only add/modify — never replace). Include a `### Research Notes` subsection in `## Technical Context` if research was performed. In Codex plan mode only, emit a `BELMONT_PLAN_PACKET` for `$belmont:plan-apply` instead of direct writes when file editing is unavailable.
 11. **Effort-profile hint (optional)**: if the feature is obviously heavy in a specific domain (frontend visual match, novel backend logic, infra/plumbing, docs-only, etc.), note this as a one-liner in the PRD under `## Technical Context` — e.g. "Effort profile (hint): frontend-heavy, heavy Figma fidelity." This is a hint only — tech-plan is authoritative for per-agent model tier assignment (see `/belmont:tech-plan` Phase 4.6). Do NOT pick tiers yourself.
 12. Exit — do NOT start implementation.
 
@@ -436,6 +452,7 @@ Final: Prompt user to "/clear" and then "/belmont:tech-plan"
    - If you are Codex, instead prompt: "/new" and then "belmont:tech-plan"
    - If you are opencode, instead prompt: "/new" and then "/belmont/tech-plan"
    - If this was the first feature in a new product, also mention they can create more features later by running `/belmont:product-plan` again
+   - If this Codex session emitted a `BELMONT_PLAN_PACKET`, prompt the user to leave plan mode and run `$belmont:plan-apply` first; the packet's `post_apply.next_prompt` should then point to the tech-plan prompt above.
 
 ## Important Considerations
 
@@ -486,4 +503,4 @@ Write the PROGRESS to `{base}/PROGRESS.md` (same base path as the PRD) with this
 
 ## Begin
 
-We are in plan mode. Please await the user's input describing what they want to build. After planning is complete, write the PRD.md and PROGRESS.md files and exit. Do NOT implement the plan.
+We are in plan mode. Please await the user's input describing what they want to build. After planning is complete, write the PRD.md and PROGRESS.md files and exit. If this is Codex plan mode and file editing is unavailable, emit a `BELMONT_PLAN_PACKET` for `$belmont:plan-apply` instead of writing directly. Do NOT implement the plan.
