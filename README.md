@@ -320,6 +320,7 @@ go run ./cmd/belmont install --source . --project /tmp/test-project --no-prompt
 | `working-backwards` | Amazon-style PR/FAQ document creation             |
 | `product-plan`      | Interactive PRD and PROGRESS creation             |
 | `tech-plan`         | Technical implementation plan                     |
+| `plan-apply`        | Codex-only apply step for plan-mode handoff packets |
 | `implement`         | Full milestone implementation pipeline (3 agents) |
 | `next`              | Implement a single task (lightweight)             |
 | `verify`            | Verification and code review                      |
