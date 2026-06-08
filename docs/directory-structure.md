@@ -98,6 +98,7 @@ your-project/
 │       └── belmont/              # one .md symlink per skill — each registers as /belmont:<skill>
 │           ├── implement.md   -> ../../../.agents/skills/belmont/implement/SKILL.md
 │           ├── verify.md      -> ../../../.agents/skills/belmont/verify/SKILL.md
+│           ├── loop.md           # Claude-only — a REAL file (not a symlink); kept off .agents/skills/ so other CLIs never list it
 │           └── ...               (per-skill symlinks)
 ├── .opencode/                   # opencode (if selected)
 │   └── command/
@@ -107,6 +108,8 @@ your-project/
 │           └── ...               (per-skill wrapper commands, not symlinks — see supported-tools.md)
 └── ...
 ```
+
+The `loop` skill is **Claude Code only** — it is written as a real `.claude/commands/belmont/loop.md` file (its content copied from the generated SKILL.md) and is deliberately **not** synced into `.agents/skills/belmont/`, so the other seven CLIs never discover or list it. It delegates to Claude Code's built-in `/loop`, which the others don't have.
 
 Codex, Cursor, Windsurf, Gemini, GitHub Copilot, Pi, and opencode all auto-discover `.agents/skills/belmont/<skill>/SKILL.md` natively (see [supported-tools.md](supported-tools.md)). opencode additionally gets the `.opencode/command/belmont/` wrapper commands above, because its TUI `/` autocomplete only lists commands, not skills. Codex additionally gets per-skill `agents/openai.yaml` UI metadata inside the canonical skill folders (`interface.display_name: "belmont:<skill>"`), so typing `$belmont` in its composer lists every skill — Codex's `/` menu only shows built-ins and can't be extended.
 

@@ -50,6 +50,7 @@ Skills become native slash commands:
 /belmont:implement          Implement next milestone (full pipeline)
 /belmont:next               Implement next single task (lightweight)
 /belmont:verify             Run verification and code review
+/belmont:loop <feature>     Claude-only — drive one feature to completion (implement→verify→next→status) via /loop
 /belmont:debug              Debug router (choose auto or manual)
 /belmont:debug-auto         Auto debug loop (agent-verified)
 /belmont:debug-manual       Manual debug loop (user-verified, faster)
@@ -62,6 +63,8 @@ Skills become native slash commands:
 ### Codex / Cursor / Windsurf / Gemini / GitHub Copilot / Pi / opencode
 
 All seven auto-discover `.agents/skills/belmont/<skill>/SKILL.md`. Open the tool in your project directory and prompt with a skill reference like `belmont:implement` — the CLI's Skills system surfaces and activates the skill via its `description:` frontmatter.
+
+> The `loop` skill is the one exception: it is **Claude Code only** (it delegates to Claude Code's built-in `/loop`), so Belmont deliberately keeps it off the shared `.agents/skills/` surface. These seven tools never list or install it — use `belmont auto` (headless) for the equivalent end-to-end drive.
 
 For Codex specifically, typing `$belmont` lists every Belmont skill in the composer's mention popup (see its section below); the `/skills` slash command also lists discovered skills. For Gemini, `/skills` does the same. For Cursor, you can also browse them via the Skills panel in the IDE. For opencode, every discovered skill is listed in the model's `<available_skills>` block and loaded on demand via the native `skill` tool — and opencode additionally gets first-class slash commands (`/belmont/<skill>`); see its section below.
 
