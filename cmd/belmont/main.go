@@ -3190,6 +3190,11 @@ func runInstall(args []string) error {
 		return err
 	}
 
+	// claude-only skill command content (name -> SKILL.md), written as real
+	// `.claude/commands/belmont/<skill>.md` files since these skills are kept
+	// off the shared `.agents/skills/` surface. Populated per install mode.
+	var claudeOnlyCmds map[string]string
+
 	if useEmbedded {
 		fmt.Println("Installing agents to .agents/belmont/...")
 		if err := syncEmbeddedDir(embeddedAgents, "agents/belmont", filepath.Join(projectRoot, ".agents", "belmont")); err != nil {
@@ -3204,6 +3209,7 @@ func runInstall(args []string) error {
 		if err := syncEmbeddedSkillsFolderDir(embeddedSkills, "skills/belmont", skillsTarget); err != nil {
 			return err
 		}
+		claudeOnlyCmds = collectClaudeOnlyCommandsEmbedded(embeddedSkills, "skills/belmont")
 		fmt.Println("")
 	} else {
 		sourceRoot, err := resolveSourceRoot(source)
@@ -3240,6 +3246,7 @@ func runInstall(args []string) error {
 		if err := syncSkillsFolderDir(skillsSource, skillsTarget); err != nil {
 			return err
 		}
+		claudeOnlyCmds = collectClaudeOnlyCommandsSource(skillsSource)
 		fmt.Println("")
 	}
 
@@ -3252,7 +3259,7 @@ func runInstall(args []string) error {
 	}
 
 	for _, tool := range selectedTools {
-		if err := setupTool(projectRoot, tool); err != nil {
+		if err := setupTool(projectRoot, tool, claudeOnlyCmds); err != nil {
 			return err
 		}
 		fmt.Println("")
@@ -3286,7 +3293,8 @@ func runInstall(args []string) error {
 			case "claude":
 				fmt.Println("  Claude Code  .claude/agents/belmont -> ../../.agents/belmont")
 				fmt.Println("               .claude/commands/belmont/<skill>.md -> ../../../.agents/skills/belmont/<skill>/SKILL.md (per-skill)")
-				fmt.Println("    Use: /belmont:working-backwards, /belmont:product-plan, /belmont:tech-plan, /belmont:implement, /belmont:next, /belmont:verify, /belmont:debug, /belmont:debug-auto, /belmont:debug-manual, /belmont:status")
+				fmt.Println("               .claude/commands/belmont/loop.md (Claude-only — drives a feature to completion via /loop)")
+				fmt.Println("    Use: /belmont:working-backwards, /belmont:product-plan, /belmont:tech-plan, /belmont:implement, /belmont:next, /belmont:verify, /belmont:loop, /belmont:debug, /belmont:debug-auto, /belmont:debug-manual, /belmont:status")
 			case "codex":
 				fmt.Println("  Codex        .agents/skills/belmont/<name>/SKILL.md (auto-discovered)")
 				fmt.Println("    Use: prompt belmont:<skill> — Codex resolves via /skills")
@@ -3788,6 +3796,54 @@ func syncMarkdownDir(sourceDir, targetDir string) error {
 	return nil
 }
 
+// claudeOnlySkills lists skills that must NOT be exposed through the shared
+// `.agents/skills/belmont/` discovery surface (which every supported CLI scans)
+// because they depend on Claude-Code-only mechanics. These skills are skipped
+// by syncSkillsFolderDir / syncEmbeddedSkillsFolderDir so non-Claude tools
+// never list or load them. Claude Code still gets them as real
+// `.claude/commands/belmont/<skill>.md` slash-command files (written from the
+// generated SKILL.md content, not symlinked into `.agents/skills/`, since they
+// don't live there). See knowledge/cross-cutting/skill-format.md.
+//
+// `loop` delegates to Claude Code's built-in `/loop` skill (self-paced via
+// ScheduleWakeup) — those mechanics don't exist on Codex/Cursor/Gemini/etc.,
+// so exposing it there would only produce a broken interactive experience.
+var claudeOnlySkills = map[string]bool{
+	"loop": true,
+}
+
+// collectClaudeOnlyCommandsSource reads the generated SKILL.md content for each
+// claude-only skill from a source skills dir (`<root>/skills/belmont`). The
+// returned map (skill name -> SKILL.md content) is written verbatim as real
+// Claude slash-command files by linkClaudeCommands. A claude-only skill whose
+// generated SKILL.md is missing is skipped silently (generation runs first).
+func collectClaudeOnlyCommandsSource(skillsSource string) map[string]string {
+	out := map[string]string{}
+	for name := range claudeOnlySkills {
+		data, err := os.ReadFile(filepath.Join(skillsSource, name, "SKILL.md"))
+		if err != nil {
+			continue
+		}
+		out[name] = string(data)
+	}
+	return out
+}
+
+// collectClaudeOnlyCommandsEmbedded is the embed.FS counterpart of
+// collectClaudeOnlyCommandsSource. `root` is the embedded skills root
+// (`skills/belmont`).
+func collectClaudeOnlyCommandsEmbedded(embedFS embed.FS, root string) map[string]string {
+	out := map[string]string{}
+	for name := range claudeOnlySkills {
+		data, err := fs.ReadFile(embedFS, root+"/"+name+"/SKILL.md")
+		if err != nil {
+			continue
+		}
+		out[name] = string(data)
+	}
+	return out
+}
+
 // syncSkillsFolderDir syncs the agentskills.io folder layout from source to
 // target. Walks `<sourceDir>/<name>/SKILL.md` entries and copies each skill
 // folder (SKILL.md plus its references/ subdir if present) into the target.
@@ -3810,6 +3866,12 @@ func syncSkillsFolderDir(sourceDir, targetDir string) error {
 	sourceFolders := make(map[string]struct{})
 	for _, entry := range entries {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "references" {
+			continue
+		}
+		// Claude-only skills are not exposed on the shared `.agents/skills/`
+		// surface. Skipping here (without recording in sourceFolders) also lets
+		// the stale-prune below remove any copy left by an older install.
+		if claudeOnlySkills[entry.Name()] {
 			continue
 		}
 		skillSrc := filepath.Join(sourceDir, entry.Name(), "SKILL.md")
@@ -3893,6 +3955,12 @@ func syncEmbeddedSkillsFolderDir(embedFS embed.FS, root string, targetDir string
 	sourceFolders := make(map[string]struct{})
 	for _, entry := range entries {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "references" {
+			continue
+		}
+		// Claude-only skills are not exposed on the shared `.agents/skills/`
+		// surface (see claudeOnlySkills). Skipping here also lets the
+		// stale-prune below remove any copy left by an older install.
+		if claudeOnlySkills[entry.Name()] {
 			continue
 		}
 		skillPath := root + "/" + entry.Name() + "/SKILL.md"
@@ -4043,7 +4111,7 @@ func syncReferencesDir(sourceDir, targetDir string) error {
 	return nil
 }
 
-func setupTool(projectRoot, tool string) error {
+func setupTool(projectRoot, tool string, claudeOnlyCmds map[string]string) error {
 	switch tool {
 	case "claude":
 		fmt.Println("Linking Claude Code...")
@@ -4067,7 +4135,7 @@ func setupTool(projectRoot, tool string) error {
 		// `references/<file>.md` paths still resolve correctly because Claude
 		// reads through the symlink and the references/ subdir lives next to
 		// the resolved SKILL.md.
-		if err := linkClaudeCommands(projectRoot, skillsTarget); err != nil {
+		if err := linkClaudeCommands(projectRoot, skillsTarget, claudeOnlyCmds); err != nil {
 			return err
 		}
 	case "codex":
@@ -4135,11 +4203,14 @@ func setupTool(projectRoot, tool string) error {
 // (subfolder under `.claude/commands/` becomes the namespace prefix). The
 // agentskills.io frontmatter (`name:`, `description:`) on SKILL.md is also
 // valid frontmatter for Claude Code slash commands, so no rewriting is needed.
-func linkClaudeCommands(projectRoot, skillsTarget string) error {
+// claudeOnlyCmds maps claude-only skill names to their SKILL.md content; these
+// are written as real command files (not symlinks) because the skills are
+// deliberately absent from `.agents/skills/belmont/`.
+func linkClaudeCommands(projectRoot, skillsTarget string, claudeOnlyCmds map[string]string) error {
 	return syncSkillCommands(projectRoot, skillsTarget, filepath.Join(".claude", "commands", "belmont"),
 		func(cmdPath, skillFile, skill string) error {
 			return ensureSymlink(cmdPath, skillFile, false)
-		})
+		}, claudeOnlyCmds)
 }
 
 // linkOpencodeCommands creates per-skill wrapper command files at
@@ -4162,8 +4233,10 @@ func linkClaudeCommands(projectRoot, skillsTarget string) error {
 // which also keeps the skill's relative `references/` paths resolving from
 // the real skill directory.
 func linkOpencodeCommands(projectRoot, skillsTarget string) error {
+	// opencode gets no claude-only skills (loop relies on Claude's /loop), so
+	// the extra-commands map is nil.
 	return syncSkillCommands(projectRoot, skillsTarget, filepath.Join(".opencode", "command", "belmont"),
-		writeOpencodeCommandFile)
+		writeOpencodeCommandFile, nil)
 }
 
 // writeOpencodeCommandFile generates the wrapper command file for one skill.
@@ -4284,10 +4357,16 @@ func skillDescription(skillFile string) string {
 // `<commandsRelDir>/<skill>.md` via the write callback (symlink for Claude
 // Code, generated wrapper file for opencode).
 //
+// `extra` holds commands for skills that are NOT present in `skillsTarget`
+// (claude-only skills, deliberately kept off the shared `.agents/skills/`
+// surface): each is written as a real file with the given content. Pass nil
+// when there are none. extras are folded into the `wanted` set so the prune
+// pass below doesn't delete them.
+//
 // Stale .md entries inside the commands dir (left over from removed or
 // renamed skills) are pruned so the slash-command surface always matches
 // the current skill set.
-func syncSkillCommands(projectRoot, skillsTarget, commandsRelDir string, write func(cmdPath, skillFile, skill string) error) error {
+func syncSkillCommands(projectRoot, skillsTarget, commandsRelDir string, write func(cmdPath, skillFile, skill string) error, extra map[string]string) error {
 	commandsDir := filepath.Join(projectRoot, commandsRelDir)
 	if err := os.MkdirAll(commandsDir, 0o755); err != nil {
 		return fmt.Errorf("create commands dir: %w", err)
@@ -4318,6 +4397,30 @@ func syncSkillCommands(projectRoot, skillsTarget, commandsRelDir string, write f
 			return err
 		}
 		wanted[name+".md"] = true
+	}
+
+	// Claude-only (or otherwise off-surface) skills: write their command file
+	// as a real file from the supplied content. A pre-existing symlink at the
+	// path (e.g. from an older install where the skill lived under
+	// `.agents/skills/`) is removed first so we don't write through it.
+	for name, content := range extra {
+		cmdPath := filepath.Join(commandsDir, name+".md")
+		wanted[name+".md"] = true
+		if st, err := os.Lstat(cmdPath); err == nil {
+			if st.Mode()&os.ModeSymlink != 0 {
+				fmt.Printf("  ~ %s (replacing symlink with command file)\n", filepath.Join(commandsRelDir, name+".md"))
+				if err := os.Remove(cmdPath); err != nil {
+					return err
+				}
+			} else if existing, err := os.ReadFile(cmdPath); err == nil && string(existing) == content {
+				fmt.Printf("  = %s (command ok)\n", filepath.Join(commandsRelDir, name+".md"))
+				continue
+			}
+		}
+		if err := os.WriteFile(cmdPath, []byte(content), 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("  + %s (claude-only)\n", filepath.Join(commandsRelDir, name+".md"))
 	}
 
 	// Prune stale .md entries that no longer match a skill.

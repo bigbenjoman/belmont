@@ -293,7 +293,7 @@ func TestLinkClaudeCommands_SymlinksPerSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := linkClaudeCommands(dir, skillsTarget); err != nil {
+	if err := linkClaudeCommands(dir, skillsTarget, nil); err != nil {
 		t.Fatalf("linkClaudeCommands: %v", err)
 	}
 
@@ -336,7 +336,7 @@ func TestLinkClaudeCommands_PrunesStaleEntries(t *testing.T) {
 	// Plant a stale .md from a previous install (e.g., a renamed/removed skill).
 	mustWrite(t, filepath.Join(dir, ".claude/commands/belmont/old-skill.md"), "stale\n")
 
-	if err := linkClaudeCommands(dir, skillsTarget); err != nil {
+	if err := linkClaudeCommands(dir, skillsTarget, nil); err != nil {
 		t.Fatalf("linkClaudeCommands: %v", err)
 	}
 
@@ -345,6 +345,78 @@ func TestLinkClaudeCommands_PrunesStaleEntries(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(dir, ".claude/commands/belmont/implement.md")); err != nil {
 		t.Errorf("expected current slash-command symlink to exist: %v", err)
+	}
+}
+
+func TestLinkClaudeCommands_WritesClaudeOnlyAsRealFile(t *testing.T) {
+	dir := t.TempDir()
+	skillsTarget := filepath.Join(dir, ".agents/skills/belmont")
+	mustWrite(t, filepath.Join(skillsTarget, "implement/SKILL.md"), "---\nname: implement\ndescription: x\n---\nbody\n")
+
+	loopContent := "---\nname: loop\ndescription: drive a feature\n---\nloop body\n"
+	extra := map[string]string{"loop": loopContent}
+
+	if err := linkClaudeCommands(dir, skillsTarget, extra); err != nil {
+		t.Fatalf("linkClaudeCommands: %v", err)
+	}
+
+	// The shared skill is a symlink.
+	implPath := filepath.Join(dir, ".claude/commands/belmont/implement.md")
+	if st, err := os.Lstat(implPath); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("implement.md should be a symlink, got %v / err %v", st.Mode(), err)
+	}
+
+	// The claude-only skill is a REAL file (not a symlink) with the supplied
+	// content — it has no .agents/skills/belmont/loop/ target to point at.
+	loopPath := filepath.Join(dir, ".claude/commands/belmont/loop.md")
+	st, err := os.Lstat(loopPath)
+	if err != nil {
+		t.Fatalf("expected loop.md command file: %v", err)
+	}
+	if st.Mode()&os.ModeSymlink != 0 {
+		t.Errorf("loop.md must be a real file, not a symlink")
+	}
+	got, err := os.ReadFile(loopPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != loopContent {
+		t.Errorf("loop.md content = %q, want %q", got, loopContent)
+	}
+
+	// loop must NOT be synced into the shared .agents/skills/ surface (other
+	// CLIs would discover it there). The test only planted implement/, so
+	// confirm linkClaudeCommands didn't create a loop skill folder.
+	if _, err := os.Stat(filepath.Join(skillsTarget, "loop", "SKILL.md")); err == nil {
+		t.Errorf("loop must not appear under .agents/skills/belmont/")
+	}
+
+	// Re-running is idempotent and the claude-only file survives the prune.
+	if err := linkClaudeCommands(dir, skillsTarget, extra); err != nil {
+		t.Fatalf("second linkClaudeCommands: %v", err)
+	}
+	if _, err := os.Lstat(loopPath); err != nil {
+		t.Errorf("loop.md should survive re-run prune: %v", err)
+	}
+}
+
+func TestSyncSkillsFolderDir_SkipsClaudeOnly(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+	mustWrite(t, filepath.Join(src, "implement/SKILL.md"), "---\nname: implement\n---\nbody\n")
+	mustWrite(t, filepath.Join(src, "loop/SKILL.md"), "---\nname: loop\n---\nbody\n")
+	// Plant a stale loop copy in the target from a hypothetical older install.
+	mustWrite(t, filepath.Join(dst, "loop/SKILL.md"), "old\n")
+
+	if err := syncSkillsFolderDir(src, dst); err != nil {
+		t.Fatalf("syncSkillsFolderDir: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dst, "implement/SKILL.md")); err != nil {
+		t.Errorf("implement should be synced: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "loop/SKILL.md")); err == nil {
+		t.Errorf("claude-only loop must be skipped AND any stale copy pruned from .agents/skills/")
 	}
 }
 
