@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.10.13
+
+**Released:** 2026-06-08
+
+### Changes since v0.10.12
+
+- Add Claude-only /belmont:loop skill
+
+
+
 ## v0.10.12
 
 **Released:** 2026-06-04
