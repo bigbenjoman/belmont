@@ -37,10 +37,10 @@ If you are Codex in plan mode and file editing is unavailable or inappropriate f
 
 1. Complete the full structured technical interview exactly as this skill requires, including model-tier confirmation.
 2. Prepare the final `.belmont/` file contents or precise section updates, including PRD/PROGRESS reconciliation and `models.yaml` decisions when applicable.
-3. Instead of writing files directly, output a single fenced `BELMONT_PLAN_PACKET` for `$belmont:plan-apply`.
+3. Instead of writing files directly, output a single fenced `BELMONT_PLAN_PACKET` for `$belmont:codex-plan-apply`.
 4. Tell the user to exit plan mode and run:
    ```text
-   $belmont:plan-apply
+   $belmont:codex-plan-apply
    ```
 
 The packet must include every target `.belmont/` path, each operation (`create`, `replace`, or `update-section`), complete content for creates/replacements, exact section content for updates, the commit message, and the next recommended Belmont prompt. Do not leave decisions only in chat.
@@ -468,7 +468,7 @@ If something in the PRD is ambiguous or incomplete, ask for clarification — bu
 ### Phase 4 - Write Plan
 
 - Say: "I will now write the technical plan."
-- In Codex plan mode only, if file editing is unavailable, perform the same planning and reconciliation work but emit a `BELMONT_PLAN_PACKET` for `$belmont:plan-apply` instead of direct writes. Other agents should write the files directly.
+- In Codex plan mode only, if file editing is unavailable, perform the same planning and reconciliation work but emit a `BELMONT_PLAN_PACKET` for `$belmont:codex-plan-apply` instead of direct writes. Other agents should write the files directly.
 
 **Scenario A — First run (no master TECH_PLAN):**
 1. Write `.belmont/TECH_PLAN.md` using the **Master TECH_PLAN.md Format** below.
@@ -569,7 +569,7 @@ After completing all updates to `.belmont/` planning files, commit them:
 - Final: Prompt user to "/clear" and "/belmont:implement" (also mention `/belmont:review-plans` is recommended for safety before implementation)
     - If you are Codex, instead prompt: "/new" and then "belmont:implement" and "belmont:review-plans"
     - If you are opencode, instead prompt: "/new" and then "/belmont/implement" and "/belmont/review-plans"
-    - If this Codex session emitted a `BELMONT_PLAN_PACKET`, prompt the user to leave plan mode and run `$belmont:plan-apply` first; the packet's `post_apply.next_prompt` should then point to review/implementation.
+    - If this Codex session emitted a `BELMONT_PLAN_PACKET`, prompt the user to leave plan mode and run `$belmont:codex-plan-apply` first; the packet's `post_apply.next_prompt` should then point to review/implementation.
 
 ## Master TECH_PLAN.md Format
 

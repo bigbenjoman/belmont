@@ -1,10 +1,10 @@
 ---
-name: plan-apply
+name: codex-plan-apply
 description: Apply a Codex-only Belmont planning handoff packet after a plan-mode product-plan or tech-plan interview; write only the explicit .belmont files named in the packet without asking new planning questions.
 alwaysApply: false
 ---
 
-# Belmont: Plan Apply
+# Belmont: Codex Plan Apply
 
 Use this skill only when the user provides a `BELMONT_PLAN_PACKET` produced by a Codex plan-mode Belmont planning session.
 

@@ -35,6 +35,7 @@ Curated operational knowledge for working on Belmont itself. Scan the table belo
 | [cross-cutting/monorepo-workspaces.md](cross-cutting/monorepo-workspaces.md) | cli, skills, agents | touch `detectWorkspaces` / `resolveWorkspaces` / `seedWorkspaceEnv` / `monorepoEnvVars`, modify `worktreeHooks.Workspaces`, or change how skills/agents read the BELMONT_MONOREPO* env vars |
 | [cross-cutting/debug-spec-reconciliation.md](cross-cutting/debug-spec-reconciliation.md) | skills, state | change `debug-manual.md`, `debug-scope-rules.md`, `feature-detection-multi.md`, or `references/debug-manual-spec-reconcile.md`; weaken or extend the spec-edit relaxation; or wire `debug-manual` into a non-interactive code path |
 | [cross-cutting/model-tier-economics.md](cross-cutting/model-tier-economics.md) | agents, skills, cli, auto-mode | add a `model:` pin to any `agents/belmont/*.md`, change the `modelTiers` registry or `planningTier`/`reconciliationDefaultTier`, touch how `models.yaml` tiers resolve to a dispatch model, or trade model quality against token cost |
+| [cross-cutting/codex-plan-handoff.md](cross-cutting/codex-plan-handoff.md) | skills, cli | touch `codex-plan-apply`, the `BELMONT_PLAN_PACKET` emit logic in `product-plan`/`tech-plan`, or design how a tool-specific skill is scoped to one CLI without mechanical install gating |
 
 ### Meta
 

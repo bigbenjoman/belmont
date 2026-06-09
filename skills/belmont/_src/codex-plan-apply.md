@@ -3,7 +3,7 @@ description: Apply a Codex-only Belmont planning handoff packet after a plan-mod
 alwaysApply: false
 ---
 
-# Belmont: Plan Apply
+# Belmont: Codex Plan Apply
 
 Use this skill only when the user provides a `BELMONT_PLAN_PACKET` produced by a Codex plan-mode Belmont planning session.
 
