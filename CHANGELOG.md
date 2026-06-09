@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.10.14
+
+**Released:** 2026-06-09
+
+### Changes since v0.10.13
+
+- Rename plan-apply -> codex-plan-apply; add knowledge entry
+- Add Codex plan handoff apply skill
+
+
+
 ## v0.10.13
 
 **Released:** 2026-06-08
