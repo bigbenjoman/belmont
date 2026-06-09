@@ -46,7 +46,7 @@ Technical planning session. Creates a detailed implementation specification.
 
 **Output**: `.belmont/TECH_PLAN.md`, plus reconciliation edits to `{base}/PRD.md` and `{base}/PROGRESS.md`
 
-## `plan-apply`
+## `codex-plan-apply`
 
 Codex-only compatibility skill for applying a `BELMONT_PLAN_PACKET` produced by a Codex plan-mode `product-plan` or `tech-plan` interview.
 
