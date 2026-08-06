@@ -82,31 +82,31 @@ for agent_file in "$AGENTS_SRC"/*.md; do
 
     # Extract first heading for description, and transform frontmatter
     awk '
-    BEGIN { in_fm=0; fm_done=0; first_line=1; got_desc=0 }
-    {
-        if (first_line && $0 == "---") {
-            in_fm=1
-            first_line=0
-            next
-        }
-        if (in_fm && $0 == "---") {
-            in_fm=0
-            fm_done=1
-            # Write new frontmatter
-            print "---"
-            print "name: " AGENT_NAME
-            for (i in fm_lines) print fm_lines[i]
-            print "---"
-            next
-        }
-        if (in_fm) {
-            fm_lines[++fm_count] = $0
-            next
-        }
-        if (fm_done) {
-            print $0
-        }
+    BEGIN { in_fm=0; fm_done=0; fm_count=0 }
+    # Line 1 decides whether this file has frontmatter. Keying on NR==1 means
+    # the test cannot re-trigger on a "---" further down the body.
+    NR==1 && $0 == "---" { in_fm=1; next }
+    # No frontmatter: synthesize one so the plugin copy is still addressable,
+    # then emit the body verbatim.
+    NR==1 && $0 != "---" {
+        print "---"
+        print "name: " AGENT_NAME
+        print "---"
+        fm_done=1
+        print $0
+        next
     }
+    in_fm && $0 == "---" {
+        in_fm=0
+        fm_done=1
+        print "---"
+        print "name: " AGENT_NAME
+        for (i = 1; i <= fm_count; i++) print fm_lines[i]
+        print "---"
+        next
+    }
+    in_fm   { fm_lines[++fm_count] = $0; next }
+    fm_done { print $0 }
     ' AGENT_NAME="$name" "$agent_file" > "$PLUGIN_DIR/agents/$filename"
 
     echo "  agent: $name"
@@ -134,6 +134,16 @@ if [ "$CHECK_MODE" = true ]; then
         if [ ! -f "$existing" ]; then
             echo "MISSING: $rel_path"
             has_diff=true
+        elif [ "$rel_path" = ".claude-plugin/plugin.json" ]; then
+            # plugin.json carries the release version, which --check callers do
+            # not know. Compare every field except "version" so the gate reports
+            # real drift instead of failing on an unmodified tree.
+            if ! diff -q \
+                <(grep -v '"version"' "$generated") \
+                <(grep -v '"version"' "$existing") >/dev/null 2>&1; then
+                echo "STALE: $rel_path"
+                has_diff=true
+            fi
         elif ! diff -q "$generated" "$existing" >/dev/null 2>&1; then
             echo "STALE: $rel_path"
             has_diff=true
