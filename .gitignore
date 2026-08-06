@@ -19,3 +19,6 @@ skills/belmont/*/
 
 # Local Claude settings
 .claude/
+
+# macOS
+.DS_Store
