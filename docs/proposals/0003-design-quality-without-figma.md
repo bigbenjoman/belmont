@@ -1,10 +1,10 @@
 # PR 1 — Design quality without Figma
 
-**Revision 3.** v2 was re-reviewed against the codebase; v3 resolves what that found. Changes in §12.
+**Revision 4.** v3 was reviewed again and found NO-GO on four blockers. v4 resolves all four by reverting the contract-file design: the durability it was meant to buy does not exist, and the move broke the agent's strongest guard. Changes in §12.
 
 **Type:** prose only (agents, one skill source, one new reference). No Go changes.
 **Size:** ~450 lines net across 6 tracked files + regenerated `plugin/` + 1 knowledge entry. (v1 understated this at ~300 / 3 files.)
-**Sequencing:** depends on **0006** — the plugin generator must work before edited agents can ship to the plugin surface. Land **first of the three** thereafter. PR 2's token baseline must already include Mode B (see §11).
+**Sequencing:** depends on **0006** (PR #21, open) — the plugin generator must work before edited agents ship intact to the plugin surface. Per the round-3 build order, land **after 0005 and 0004**; 0004 then measures its baseline pre-Mode-B and re-baselines afterwards (see §11).
 
 ---
 
@@ -41,20 +41,28 @@ This PR separates the two and changes nothing about the failed-load path.
 
 ## 4. Design
 
-### 4.1 Contract storage — the v1 blocker
+### 4.1 Contract storage — keep it in MILESTONE, fix the overwrite
 
-v1 put the contract in MILESTONE's `## Design Specifications`. That is destroyed on the first fix round: `skills/belmont/_src/next.md:162` archives to the **same** `MILESTONE-<ID>.done.md` path and overwrites the section with `[Not populated — lightweight mode skips the design agent]` (`next.md:114-118`). Both `actionFixAll` (`main.go:7197`) and `actionImplementNext` (`:7174`) emit `/belmont:next`, so the contract dies before the re-verify that most needs it — and also disappears for code-review-agent, `belmont reverify` and debug-manual.
+v1 put the contract in MILESTONE. v2/v3 moved it to `{base}/DESIGN-CONTRACT-<M>.md` for durability. **v4 moves it back**, because the durability argument was wrong and the move broke a hard rule.
 
-**Split the output by lifetime:**
+**The durability gain was illusory.** `copyBelmontStateToWorktree` (`main.go:9980`) does `os.RemoveAll(dstFeature)` on every `[r]`-resume and restores only `STEERING.md`. A `DESIGN-CONTRACT-M1.md` in the feature dir is wiped exactly like everything else — and so is `MILESTONE-M1.done.md`. Both artifacts have the **same** resume profile, so a separate file buys nothing and adds a lifecycle.
 
-| Artifact | Path | Lifetime | Consumer |
-|---|---|---|---|
-| **Design contract** — shared tokens, a11y floor, UX strategy, microcopy rules | `{base}/DESIGN-CONTRACT-<MilestoneID>.md` | durable; never written by `next.md` | verification-agent Phase 2, code-review-agent, reverify |
-| **Per-task design sections** — `### Design: [Task ID]` with component specs | MILESTONE `## Design Specifications`, as today | per-run | implementation-agent (`:79` looks up its per-task section) |
+**The move broke the single-writer rule.** `design-agent.md:5-15` (`## FORBIDDEN ACTIONS (HARD RULES)`) states the agent must not write to any file except MILESTONE, and that its only writable output is the `## Design Specifications` section. That is read first and is stronger than the later `:137`/`:260` restatements. Relaxing it to permit a second output path weakens the strongest guard in the agent for no gain.
 
-This preserves the existing downstream contract (`design-agent.md:232` mandates one section per active task; `implementation-agent.md:79` reads it), so v1's claim that "downstream consumers need no structural change" becomes true rather than assumed.
+**The real defect was never storage — it was `next.md` overwriting.** `next.md:162` archives to the same `MILESTONE-<ID>.done.md` path and says explicitly to overwrite an existing file, and `:114-118` writes `[Not populated — lightweight mode skips the design agent]` into `## Design Specifications`. Both `actionFixAll` (`main.go:7197`) and `actionImplementNext` (`:7174`) emit `/belmont:next`, so the contract died before the re-verify that most needed it.
 
-MILESTONE's `## Design Specifications` opens with a pointer line — `**Design Contract**: {base}/DESIGN-CONTRACT-<M>.md` — so any agent reading MILESTONE can find it.
+**Fix: make `next.md` merge rather than clobber.** When archiving over an existing `MILESTONE-<ID>.done.md`, carry forward any `## Codebase Analysis` and `## Design Specifications` sections that are already populated, and write the `[Not populated — lightweight mode…]` placeholder only when the target section is absent or already a placeholder. That is a prose change to one skill source, and it fixes the loss for `code-review-agent`, `belmont reverify` and `debug-manual` too — all of which read the archive.
+
+**Structure inside MILESTONE:**
+
+| Part | Where | Consumer |
+|---|---|---|
+| Token contract, a11y floor, UX strategy, microcopy rules | `## Design Specifications` → `### Design Contract` | verification-agent Phase 2, code-review-agent, reverify |
+| Per-task `### Design: [Task ID]` sections | `## Design Specifications`, as today | implementation-agent (`:79`) |
+
+Downstream consumers need no structural change: `design-agent.md:232` still mandates one section per active task, and `implementation-agent.md:79` still finds its per-task section.
+
+**Out of scope, worth its own issue:** worktree-local `.belmont` state does not survive `[r]`-resume. This predates this proposal and affects MILESTONE archives equally. Do not let it be conflated with a Mode B defect.
 
 ### 4.2 Mode selection
 
@@ -68,10 +76,10 @@ Mode A is unchanged, including every failure rule.
 
 ### 4.3 Mode B contract format
 
-`{base}/DESIGN-CONTRACT-<M>.md`:
+Written into MILESTONE `## Design Specifications`, ahead of the per-task sections:
 
 ```markdown
-# Design Contract — <MilestoneID>
+### Design Contract
 **Mode**: B (derived — no Figma references)
 **Generated**: <ISO date>
 
@@ -104,7 +112,7 @@ MILESTONE per-task section, unchanged shape:
 ```markdown
 ### Design: [Task ID] — [Task Name]
 **Mode**: B
-**Contract**: {base}/DESIGN-CONTRACT-<M>.md
+**Contract**: see `### Design Contract` above
 
 #### [ComponentName] — [NEW | MODIFIED]
 | State | Spec |
@@ -124,7 +132,7 @@ MILESTONE per-task section, unchanged shape:
 Three-way, replacing v1's two-way:
 
 - **References found** → existing comparison flow, unchanged.
-- **No references, `DESIGN-CONTRACT-<M>.md` exists** → contract checks (below).
+- **No references, but the archived MILESTONE carries a `### Design Contract`** → contract checks (below).
 - **No references, no contract** → existing acceptance-criteria fallback, unchanged. This is the failed-load path and it must keep working.
 
 **Close the escape clause.** `verification-agent.md:131` currently permits a pass on acceptance criteria alone whenever no references exist. Narrow it to "no design references **and no Mode B contract**", and add a fourth enforcement rule mirroring `:129-130`: *a Mode B contract exists but contract checks were not performed ⇒ MUST be FAIL/INCOMPLETE*.
@@ -176,12 +184,12 @@ Add to `references/models-yaml-format.md` and the tech-plan tier heuristics: **n
 | File | Change |
 |---|---|
 | `agents/belmont/design-agent.md` | Mode A/B selection; replace `## Handling No Design` with Mode B; write contract file + per-task sections |
-| `agents/belmont/references/design-no-figma.md` | **New.** Mode B detail. Note this is the **first** `agents/belmont/references/` dir — confirm `scripts/build.sh` copies it |
+| `agents/belmont/design-agent.md` (Mode B body) | Mode B detail is **inlined**, not split into a reference file. No `agents/belmont/references/` mechanism exists — `generate-plugin.sh:78` globs agents as flat `*.md`, and inventing the directory would drag a generator change into a prose PR. Keep the Mode B section terse and last so Mode A runs pay little |
 | `agents/belmont/verification-agent.md` | Three-way Phase 2; narrow `:131`; fourth enforcement rule; attestation field; lint/typecheck in Phase 4 |
 | `agents/belmont/implementation-agent.md` | Mode B self-check branch |
 | `skills/belmont/_src/verify.md` | Step 1b detects the contract |
 | `skills/belmont/_src/references/models-yaml-format.md` | Mode B tier guidance |
-| `agents/belmont/design-agent.md` `## Important Rules` | `:260` ("DO NOT create, edit, or write to any file other than the MILESTONE file") and `:137` forbid the contract write. Permit the `DESIGN-CONTRACT-<M>.md` path in both. Leave `:259` alone — it is not violated |
+| `skills/belmont/_src/next.md` | Step 5 archive merges rather than overwrites `## Design Specifications` / `## Codebase Analysis` when they are already populated (§4.1) |
 | `skills/belmont/_src/implement.md` | Phase 2 purpose line (`:96`) is stale under Mode B |
 | `plugin/` | Regenerate — `plugin/agents/{design,verification,implementation}-agent.md` and `plugin/skills/verify/` are git-tracked. **Requires 0006**; before it, four plugin agents generate as 0 bytes |
 | `knowledge/cross-cutting/design-authority.md` | **New** entry |
@@ -225,7 +233,7 @@ grep -c "Figma" .belmont/features/<slug>/PRD.md   # expect 0
 ```
 
 **Step 1 — auto, Mode B.** `belmont auto --feature <slug> --from M1 --to M1`
-Expect `.belmont/features/<slug>/DESIGN-CONTRACT-M1.md` exists with a populated Token Contract and `**Source**` naming a real file or `none`; the archived `MILESTONE-M1.done.md` (implement archives before auto returns — `implement.md:167-168`, `main.go:6593`) contains per-task `### Design:` sections with `**Mode**: B` and a contract pointer.
+Expect the archived `MILESTONE-M1.done.md` (implement archives before auto returns — `implement.md:167-168`, `main.go:6593`) to contain, under `## Design Specifications`, a `### Design Contract` with a populated Token Contract and `**Source**` naming a real file or `none`, followed by per-task `### Design:` sections marked `**Mode**: B`.
 Fail: only "no design references were provided" → Mode B did not trigger.
 
 **Step 2 — the gate fires.** Same run's verify report `## Visual Verification` shows per-row pass/fail/UNVERIFIABLE and the attestation reads `Contract checks performed: YES against …`.
@@ -233,8 +241,8 @@ Fail: `NO` or the acceptance-criteria fallback → `:131` was not narrowed.
 
 **Step 3 — contract survives a fix round (the v1 blocker).**
 Force one FWLUP round so `/belmont:next` runs and re-archives MILESTONE.
-Expect `DESIGN-CONTRACT-M1.md` still present and unmodified; the second verify still reports contract checks.
-Fail: contract missing → it is being written to a clobbered path.
+Expect the re-archived `MILESTONE-M1.done.md` to still carry a populated `### Design Contract` — not the `[Not populated — lightweight mode…]` placeholder — and the second verify to still report contract checks.
+Fail: placeholder text where the contract was → the `next.md` merge (§4.1) is not working.
 
 **Step 4 — interactive.** `git checkout -b smoke/pr1-interactive $BASE`, then `claude` → `/belmont:implement --feature <slug>` → `/belmont:verify --feature <slug>`.
 Branching from `$BASE` matters: after Step 1, M1 is `[v]` and committed, and `implement.md:42-46` selects the first *pending* milestone, so a branch off Step 1's HEAD would silently run M2.
@@ -255,8 +263,8 @@ Steps 1–4 already constitute the Claude-in-both-modes sanity check.
 
 **Behaviour**
 - [ ] Mode keyed on PRD URL presence, never on load outcome; recorded per task
-- [ ] Contract written to `{base}/DESIGN-CONTRACT-<M>.md`; per-task sections stay in MILESTONE
-- [ ] Contract survives a `/belmont:next` fix round (smoke Step 3)
+- [ ] Contract written into MILESTONE `## Design Specifications` → `### Design Contract`; per-task sections unchanged. **No new file, no write-rule relaxation** — `design-agent.md:5-15` stays as-is
+- [ ] `next.md` archive merges rather than overwrites; contract survives a `/belmont:next` fix round (smoke Step 3)
 - [ ] Contract reuses an existing token source and names it in `**Source**`
 - [ ] Nine-state table for created components; state-delta for modified; omissions carry a reason
 - [ ] Phase 2 is three-way; acceptance-criteria fallback retained unchanged for the no-contract case
@@ -271,7 +279,7 @@ Steps 1–4 already constitute the Claude-in-both-modes sanity check.
 - [ ] Findings use the existing Critical/Warning/Polish ladder — no new severity
 
 **Non-regression**
-- [ ] `git diff` on `design-agent.md` confined to mode selection, the replaced `## Handling No Design` section, **and the `## Important Rules` write-rule amendment at `:137`/`:260`**
+- [ ] `git diff` on `design-agent.md` confined to mode selection and the replaced `## Handling No Design` section. `## FORBIDDEN ACTIONS` (`:5-15`) and `## Important Rules` (`:137`/`:260`) are **untouched** — if a diff appears there, the contract is being written outside MILESTONE
 - [ ] Mode A structural assertion passes (smoke Step 5)
 - [ ] Failed load still BLOCKS, invents nothing, creates no contract (smoke Step 6)
 - [ ] `SKIPPED` still forbidden as a Figma node status
@@ -285,7 +293,7 @@ Steps 1–4 already constitute the Claude-in-both-modes sanity check.
 - [ ] `./scripts/generate-skills.sh --check` and `./scripts/generate-plugin.sh --check` pass (`plugin.json` STALE is the only legitimate diff; restore from main before committing)
 - [ ] `go build ./cmd/belmont` and `go test ./cmd/belmont` green
 - [ ] `test -f <project>/.agents/belmont/references/design-no-figma.md` after install
-- [ ] `test -f plugin/agents/references/design-no-figma.md` after regeneration (needs 0006's agents `references/` branch; `scripts/build.sh` already handles the install surface)
+- [ ] No new files under `agents/belmont/` — Mode B is inlined, so `generate-plugin.sh` needs no change and the `--check` gate stays satisfiable
 - [ ] Auto, interactive and plugin surfaces all exercised
 - [ ] `design-authority.md` created with `Don't re-do`; routing row added; `model-tier-economics.md` amended
 - [ ] `AGENTS.md` invariants list updated (edit `AGENTS.md`, not the `CLAUDE.md` symlink)
@@ -326,6 +334,16 @@ Mitigations: the §4.3 output cap; recording MILESTONE + contract byte size in t
 | Smoke asserts live `MILESTONE.md`, no clean-tree commit, branches from wrong SHA, `--tool` for interactive codex | All corrected |
 | DoD "Mode A byte-identical" | Unsatisfiable — replaced with confined `git diff` + structural assertion |
 | ~300 lines / 3 files | ~450 lines / 6 files + plugin |
+
+### v3 → v4
+
+| v3 | v4 |
+|---|---|
+| Contract in `{base}/DESIGN-CONTRACT-<M>.md` "durable" | False — `copyBelmontStateToWorktree` wipes the feature dir on `[r]`-resume, preserving only STEERING.md. MILESTONE archives have the identical profile, so the separate file bought nothing |
+| Write rule relaxed at `:137`/`:260` | Unnecessary once the contract is back in MILESTONE. `:5-15` — read first and stronger — stays untouched |
+| DoD confined the diff so fixing `:5-15` would fail it | Contradiction gone; DoD now asserts those sections are unchanged |
+| `agents/belmont/references/design-no-figma.md` | Inlined. No such mechanism exists; the DoD asserting the file and the DoD asserting `--check` passes were mutually exclusive |
+| `next.md` out of scope | In scope — the real defect was always its clobbering archive, not where the contract lived |
 
 ### v2 → v3
 
