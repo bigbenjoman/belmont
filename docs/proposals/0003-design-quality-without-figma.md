@@ -163,7 +163,11 @@ Mode B increases hand-written UI volume, and nothing in Phases 0–6 runs the ta
 
 ### 4.7 Model tier interaction
 
-`knowledge/cross-cutting/model-tier-economics.md` steers users toward `low` for "mechanical, low-blast-radius work" — which is how design-agent reads today, and `low` maps to haiku. Under Mode B the design agent authors the contract that mechanically gates the milestone, so its blast radius changes. Add guidance to `references/models-yaml-format.md` and the tech-plan tier heuristics: **bias `high` when a milestone has UI and no Figma.** Add a `Revisions` line to the tier entry.
+Agents inherit the session model; `models.yaml` is the single visible override (PR #18, `ad5f84c`). The governing doctrine is **errors cost more than tokens**, measured: Sonnet 4.x produces 57% first-pass-correct code against Opus 4.x at 77% — a 43% vs 23% rework rate, ~1.9× as often — and Sonnet 5.x is no better. In Belmont a rework is a triage → fix-all → re-verify cycle: three extra cold-start phases each reloading full context, so it costs multiples of the phase it replaces.
+
+Mode B sharpens this. Today design-agent reads as mechanical extraction, which invites a `low` (haiku) pin. Under Mode B it **authors the contract that mechanically gates the milestone** — the highest-blast-radius output in the pipeline. A cheap contract produces expensive rework in every downstream phase.
+
+Add to `references/models-yaml-format.md` and the tech-plan tier heuristics: **never downgrade design-agent on a milestone with UI and no Figma; leave it inheriting the session model, or pin `high`.** Add a `Revisions` line to `model-tier-economics.md`.
 
 ## 5. Scope
 

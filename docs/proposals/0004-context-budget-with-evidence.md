@@ -122,7 +122,7 @@ Applies to `implement.md`, `verify.md` **and `next.md`**:
 ### Out of scope — deferred
 
 1. **Task-scoped spec extract for sub-agents.** The remaining 3 of 7 reads. Needs Tier-2 measurement first.
-2. **Default `models.yaml` tiering.** This would **reverse a merged decision** — #18 merged 2026-06-04 removing frontmatter pins in favour of session-model inheritance. It is a reversal to argue, not a gap to fill. (v1 wrongly described #18 as open.)
+2. **Default `models.yaml` tiering.** Deferred permanently, not pending evidence — the evidence already exists and points the other way. #18 (merged 2026-06-04) removed frontmatter pins in favour of session-model inheritance precisely because downgrading is a false economy: **Sonnet 4.x is 57% first-pass-correct vs Opus 4.x at 77%**, ~1.9× the rework rate, and Sonnet 5.x is no better. A rework here costs a triage → fix-all → re-verify cycle, so the per-token saving is erased several times over. **The token lever is input-side — progressive disclosure and lazy context loading, which is what this PR does — never model downgrade.** `low`/haiku stays defensible only for genuinely mechanical work whose output gates nothing.
 3. **Merging implement and verify into one process.** Confirmed real: `runScopeGuard` / `runEvidenceCheck` fire per `executeLoopAction` (`main.go:6881-6882`, `:6975-6976`, `:6985-6986`) and would need to fire per logical phase inside a merged run.
 
 ## 6. Both invocation paths
