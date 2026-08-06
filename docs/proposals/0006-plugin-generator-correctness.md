@@ -2,7 +2,7 @@
 
 **Type:** bug fix — one bash script, plus the regenerated `plugin/` tree it produces.
 **Size:** ~15 lines of awk, one new copy loop, one `--check` argument. Large regenerated diff.
-**Sequencing:** **lands first.** 0003, 0004 and 0005 all consume a working generator.
+**Standalone.** No dependencies; nothing depends on it.
 
 ---
 
@@ -47,7 +47,7 @@ Nothing prints unless `fm_done` is true. Therefore:
 
 **When it broke.** The awk logic is unchanged since at least April, so the flaw was dormant for months — every agent happened to begin with `---\nmodel: …\n---`, which satisfied the line-1 guard invisibly. `ad5f84c` (PR #18, "Pin no model in agent frontmatter", 2026-06-04) removed that frontmatter from all six agents. **PR #18 is not itself wrong** — agent frontmatter genuinely is not read at runtime in either invocation path, so removing a pin that pins nothing was correct. It touched neither `scripts/generate-plugin.sh` nor `plugin/`, so there was no review-time signal; the damage materialised at the next release (`f69e784`, v0.10.12, same day) when `release.sh` regenerated the tree and `plugin/agents/verification-agent.md` went 22,431 bytes → 0. The real defect is an undocumented coupling between two files with no test spanning them — which is why the DoD asserts plugin line count equals source + 3.
 
-**Second, latent bug.** `for (i in fm_lines) print fm_lines[i]` iterates in awk's unspecified order. Harmless today because no source agent has frontmatter to reorder — but wrong the moment one does, which 0003 makes likely.
+**Second, latent bug.** `for (i in fm_lines) print fm_lines[i]` iterates in awk's unspecified order. Harmless today because no source agent has frontmatter to reorder — but wrong the moment one does, and the synthesised frontmatter in the fix makes that path live.
 
 **Third bug.** `--check` compares against a `plugin.json` stamped with `VERSION`, which defaults to `dev` (`generate-plugin.sh:20`) while the committed file says `0.10.14`. So a bare `./scripts/generate-plugin.sh --check` **exits 1 on unmodified main** — meaning any DoD requiring it to pass is unsatisfiable without committing `"version": "dev"` into a tracked release artifact.
 
@@ -99,11 +99,7 @@ content
 
 `FORBIDDEN ACTIONS` is present in the fixed `design-agent.md` output (`grep -c` = 1).
 
-### 3.2 Agents `references/` branch
-
-The skills loop copies `references/` (`generate-plugin.sh:70-73`); the agents loop does not. 0003 introduces `agents/belmont/references/design-no-figma.md`, which would therefore never reach `plugin/`. Mirror the skills-loop branch into the agents loop.
-
-### 3.3 Version-aware `--check`
+### 3.2 Version-aware `--check`
 
 Make `--check` compare `plugin.json` on every field except `version`, or require the version argument and document it. Either way `./scripts/generate-plugin.sh --check 0.10.14` must exit 0 on unmodified `main` — verified that it does today, while the bare form exits 1.
 
@@ -113,7 +109,7 @@ Preferred: ignore `version` in the `--check` comparison, so the gate is honest w
 
 | File | Change |
 |---|---|
-| `scripts/generate-plugin.sh` | awk fix (§3.1), agents `references/` branch (§3.2), version-aware `--check` (§3.3) |
+| `scripts/generate-plugin.sh` | awk fix (§3.1), version-aware `--check` (§3.2) |
 | `plugin/agents/*.md` | regenerated — 4 files go 0 → full, 2 go partial → full |
 | `plugin/skills/**` | regenerated; expect no change beyond `plugin.json` |
 | `knowledge/cross-cutting/skill-format.md` | amend — `--check` semantics and the agents-frontmatter contract |
@@ -184,7 +180,6 @@ Expect no difference against a baseline captured from `main`.
 - [ ] `NR==1` keying — the first-line branch cannot re-trigger mid-body
 - [ ] Frontmatter-less agents get `---` / `name: <n>` / `---` synthesised and their body printed in full
 - [ ] Frontmatter replay uses an ordered numeric loop, not `for..in`
-- [ ] Agents loop copies `references/` like the skills loop
 - [ ] `--check` ignores `version` (or requires it) and exits 0 on unmodified `main`
 
 **Evidence**
@@ -211,13 +206,3 @@ Expect no difference against a baseline captured from `main`.
 | `--check` change masks a legitimate version drift | Prefer ignoring only `version`; `release.sh` still stamps it explicitly |
 | Synthesised frontmatter conflicts with a future real one | Control case tested; `name:` is injected first and existing keys preserved |
 | Plugin consumers cached the broken tree | Note in the PR that a plugin reinstall is needed; consider a release note |
-
-## 10. Relationship to the other proposals
-
-| Proposal | What this unblocks |
-|---|---|
-| 0003 | Its `agents/belmont/references/` file can reach `plugin/`; its edited agents ship intact rather than truncated |
-| 0004 | Its `generate-plugin.sh --check` DoD becomes satisfiable |
-| 0005 | Its CI gate on `--check` becomes meaningful rather than always-failing |
-
-Land this first. It is also worth raising on its own merits regardless of whether the other three proceed — it is a shipping defect in the published distribution, not a design question.
