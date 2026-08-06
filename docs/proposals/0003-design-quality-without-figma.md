@@ -315,9 +315,11 @@ Steps 1–4 already constitute the Claude-in-both-modes sanity check.
 
 These two PRs push token cost in opposite directions. Mode B *adds* to `## Design Specifications` and a contract file, both read on the sub-agent fan-out path PR 2 explicitly defers; PR 2 cuts only the orchestrator reads. On a UI-heavy no-Figma milestone the net could be higher.
 
-Mitigations: the §4.3 output cap; recording MILESTONE + contract byte size in this PR's DoD; and **landing 0003 first** so 0004's measured baseline already includes Mode B. 0004 names this in its Problem section.
+> **Amended 2026-08-06 — supersedes the ordering claim below.** The author set the build order to `0005 → 0004 → 0003`, so this PR now lands **after** 0004, not before it. The consequences move onto this PR: 0004's reduction is measured pre-Mode-B and is an upper bound, and **this PR owes the re-baseline** that establishes the real post-Mode-B figure. Carry that into this PR's DoD when it is rewritten for rev 5. Note also that the rev 5 restructure — moving design derivation into `tech-plan`, one pass per feature — may remove this PR's per-task cost from the fan-out path 0004 defers, in which case the re-baseline shows no delta. Unknown until rev 5 is written.
 
-**Shared files.** 0004 edits `_src/verify.md` at `:110`/`:147`, four lines from this PR's Mode B insertion at `:114` — inside default diff context, so they will conflict. Both regenerate tracked `plugin/skills/verify/SKILL.md`. 0005 edits `_src/references/models-yaml-format.md`, which this PR also touches. Resolve plugin conflicts by regeneration, never by hand — `generate-plugin.sh:35` does `rm -rf`.
+Mitigations: the §4.3 output cap; recording MILESTONE + contract byte size in this PR's DoD; and ~~**landing 0003 first** so 0004's measured baseline already includes Mode B~~ — reversed, see the amendment above.
+
+**Shared files.** 0004 edits `_src/verify.md` at `:110`/`:147`, four lines from this PR's Mode B insertion at `:114` — inside default diff context, so they will conflict. Under the current order 0004 lands first, so **this PR rebases onto 0004**. Both regenerate tracked `plugin/skills/verify/SKILL.md`. 0005 edits `_src/references/models-yaml-format.md`, which this PR also touches. Resolve plugin conflicts by regeneration, never by hand — `generate-plugin.sh:35` does `rm -rf`.
 
 ## 12. Changes from v1
 

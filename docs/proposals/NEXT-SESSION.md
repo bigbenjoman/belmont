@@ -14,7 +14,7 @@ Written at the end of a long planning session. Assumes you know nothing about it
 | File | State |
 |---|---|
 | `0003-design-quality-without-figma.md` | rev 4 — **needs a rev 5 restructure, see below** |
-| `0004-context-budget-with-evidence.md` | rev 4 — GO |
+| `0004-context-budget-with-evidence.md` | rev 5 — GO (v5 = ordering amendment, see "Resolved decision" below) |
 | `0005-maintainability.md` | rev 4 — GO |
 | `0006-plugin-generator-correctness.md` | shipped as PR #21 |
 | `redteam-round3.md` | the review that produced rev 4 |
@@ -35,7 +35,7 @@ gh pr view 21 --repo blake-simpson/belmont --json state
 
 ## Task A — housekeeping (2 minutes, do first)
 
-`docs/proposals/README.md` is stale: it says the specs are at revision 3 and orders them `0003 → 0004 → 0005`. All three are rev 4 and the order is `0005 → 0004 → 0003`. Fix and commit on `docs/pr-proposals`.
+**DONE — 2026-08-06.** `README.md` said revision 3 and ordered the specs `0003 → 0004 → 0005`; both were wrong. Fixed, plus two further stale claims it did not name (PRs #12/#13 described as open — both closed; "reviewed twice" — three rounds). The ordering fix cascaded into `0003` §11, `0004` (bumped to rev 5) and this file — see "Resolved decision" below. Revisions are now 0003 rev 4, **0004 rev 5**, 0005 rev 4.
 
 ## Task B — implement 0005
 
@@ -96,6 +96,16 @@ These specs went through three adversarial review rounds. Every round found defe
 - A review agent claimed `cmd/belmont/tools.go` already existed. **It never has** — zero commits, any branch. The claim was accepted without checking and shipped into two revisions. Do not trust a finding — from a review, a spec, or a previous session — without running the command yourself.
 - Two purity-proof mechanisms were specified before being run, and both were impossible. The current one (0005 §4.1) *is* verified, but re-verify before the DoD depends on it.
 
-## Open decision for the user — ask, don't assume
+## Resolved decision — 0003 ↔ 0004 baseline order (2026-08-06)
 
-0004 currently measures its token baseline **before** 0003's Mode B lands, then re-baselines. That contradicts what 0003 §11 originally argued. Confirm which is wanted before implementing 0004 (not needed for 0005).
+**This section previously mislocated the defect.** It said 0004 "currently measures its token baseline before 0003's Mode B lands, then re-baselines." That plan did exist — but in **`0003:7`**, not in 0004. 0004 rev 4 said the opposite in four places (`:7`, `:36`, `:238`, `:243`), and so did **0003 §11**, which contradicted 0003's own header. The round-3 order was applied to 0003's Sequencing line and nowhere else, leaving one spec self-contradictory and the other stale. Three files disagreed; none of them was simply "current".
+
+Lesson for the next session: when a claim spans two documents, grep **both** and diff them against each other. This was found by grepping 0004 for a claim attributed to it, finding the opposite, and only then grepping 0003.
+
+**Resolution:** the author confirmed `0005 → 0004 → 0003`. The specs were amended to match, and 0004 bumped to rev 5:
+
+- 0004 baselines **pre-Mode-B**; its reduction is an **upper bound** and must be reported as one.
+- A **re-baseline after 0003** is owed — a follow-up obligation in 0004's DoD, inherited into 0003's. Not a merge gate for 0004; the code it measures will not exist yet.
+- 0003's rev 5 restructure may dissolve the dependency (design derived once in `tech-plan`, so Mode B stops touching 0004's deferred fan-out path). **Unverified** — rev 5 is unwritten. Do not assume it.
+
+Nothing here affects 0005.

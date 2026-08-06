@@ -1,10 +1,10 @@
 # PR 2 — Context budget, with evidence
 
-**Revision 4.** v2 dropped Optimisation B (its rationale was empirically false); v3 resolved the second review; v4 makes the Tier-2 gate executable and the plugin check able to fail. Changes in §11.
+**Revision 5.** v2 dropped Optimisation B (its rationale was empirically false); v3 resolved the second review; v4 made the Tier-2 gate executable and the plugin check able to fail; v5 reverses the 0003 ordering and replaces the single Mode-B-inclusive baseline with a measure-then-re-baseline pair. Changes in §11.
 
 **Type:** test harness (Go, test-only) + prose (three skill sources).
 **Size:** harness dominates. Skill edits ~60 lines. **No non-test Go changes.**
-**Sequencing:** depends on **0006** (its `--check` DoD is unsatisfiable until the generator is fixed) and lands **after 0003** (baseline must include Mode B). **Blocks nothing** — with Optimisation B dropped, this PR no longer touches `main.go`, so the PR 2 / PR 3 conflict disappears.
+**Sequencing:** depends on **0006** (its `--check` DoD is unsatisfiable until the generator is fixed) and lands **after 0005, before 0003** — build order `0005 → 0004 → 0003`, set by the author on 2026-08-06. Through v4 this PR required 0003 first so the baseline would include Mode B; that is reversed. The baseline is now measured **pre-Mode-B**, and a **re-baseline is owed once 0003 lands** (§2, §8, §10). **Blocks nothing** — with Optimisation B dropped, this PR no longer touches `main.go`, so the PR 2 / PR 3 conflict disappears.
 
 ---
 
@@ -33,7 +33,11 @@ Then implement fans out to 3 sub-agents and verify to 2, each re-reading PRD and
 
 **Honest reach.** This PR's remedy touches **4 of those 7**. `verify.md` issues the read instruction inside both its sub-agent dispatch prompts, so fixing the orchestrator fixes those two as well. The 3 untouched are `implement.md`'s sub-agents — that is the deferred task-scoped spec extract (§8), and it is named here rather than left implied.
 
-**Known addition from 0003.** Mode B adds a contract file and per-task design sections on the sub-agent fan-out path this PR defers, so the baseline measured here already includes that cost. Net reduction is reported against a Mode B milestone, not a pre-0003 one.
+**Known addition from 0003 — measured later, not here.** Mode B adds design content on the sub-agent fan-out path this PR defers. Through v4 this PR landed after 0003 so the baseline would absorb that cost; the build order is now `0005 → 0004 → 0003`, so it does not. Consequences, stated plainly:
+
+- The reduction reported by this PR is measured against a **pre-0003 milestone** and is therefore an **upper bound** on what survives once 0003 lands.
+- A **re-baseline after 0003** is owed, and is in this PR's DoD (§8) as a follow-up obligation rather than a merge gate — it cannot run before the code it measures exists.
+- 0003 is itself slated for a **rev 5 restructure** that moves design derivation out of `implement` Phase 2 and into `tech-plan` — one design pass per feature instead of one per milestone. If that lands as described, Mode B stops adding per-task cost to the fan-out path this PR defers, and the re-baseline may show no Mode B delta here at all. That is a reason the re-baseline is cheap to defer, not a reason to skip it: the restructure is not yet written, so its token profile is unknown.
 
 **Only 3 of 16 skill sources have this pattern.** Fixing two would leave `next.md` as the sole outlier, which is why it is in scope.
 
@@ -115,7 +119,7 @@ Applies to `implement.md`, `verify.md` **and `next.md`**:
 
 **Preflight correction.** v1 required checking overlap against open PRs #4–#7. Verified via `gh pr list`: **#4–#7 were closed unmerged on 2026-04-21, superseded by merged #8** ("skills: token-saver — MILESTONE coordinator + references/ convention"). The only open PRs are #10–#13 and none touches a `.go` file. Sequence against **#8's merged state**. **PR state as measured 2026-08-06:** #4–#7 closed unmerged (superseded by merged #8); #18 merged; #10–#13 **all closed unmerged**; the only open PR is **#21** (plugin generator fix), which touches `scripts/generate-plugin.sh` and `plugin/agents/` and is therefore disjoint from this PR's scope. **No open PR overlaps this work.** Re-measure with `gh pr list --state open` at branch time rather than trusting this paragraph — it has now been wrong twice.
 
-**Shared file with 0003.** This PR's conditional-archive edits land at `_src/verify.md:110`/`:147`; 0003 inserts its Mode B block at `:114`. Four lines apart, inside default diff context. Rebase onto 0003 and fold this wording into its restructured block.
+**Shared file with 0003.** This PR's conditional-archive edits land at `_src/verify.md:110`/`:147`; 0003 inserts its Mode B block at `:114`. Four lines apart, inside default diff context, so they will conflict. Under the current order **this PR lands first**, so 0003 rebases onto it and folds its Mode B block around this wording — the reverse of what v4 said. Verify the line numbers at branch time; 0003's rev 5 restructure may move its insertion point out of `verify.md` entirely.
 
 `steering.md` no longer needs amending — Optimisation B is gone, so both injection sites (`main.go:6887` and `executeTriageAction` at `:7026-7027`) are untouched, and the existing `steeringHeader()` marker (`:11317-11326`, `## URGENT — User steering (higher priority than NOTES.md)`) stands unchanged.
 
@@ -205,6 +209,8 @@ Expect `✓ injected → <path>` from the steer command, then `[STEERING] inject
 - [ ] NOTES / `implement-milestone-template.md` conflict explicitly resolved, not deferred
 - [ ] Exact per-orchestrator/per-sub-agent baseline table in the PR description (implement 7, verify 5, next 6)
 - [ ] Measured reduction recorded; states plainly it reaches 4 of 7 reads
+- [ ] Reduction reported as a **pre-0003 upper bound**, in those terms, in the PR description — the baseline does not include Mode B under the `0005 → 0004 → 0003` order
+- [ ] Re-baseline obligation recorded in the PR description **and** carried into 0003's DoD, naming the exact command to re-run and the number it supersedes. Not a merge gate for this PR: the code it measures does not exist yet
 - [ ] Identical final PROGRESS state vs baseline (smoke Step 2)
 
 **Mechanics**
@@ -235,12 +241,13 @@ Expect `✓ injected → <path>` from the steer command, then `[STEERING] inject
 | NOTES silently lost | Template in scope; decision explicit; `implementation-agent.md:56-61` is a partial backstop, not a fix |
 | Harness green but blind | `failing-acceptance` fixture; Tier-2 gating stated openly |
 | Fixtures encode wrong expectations | Must be green on unmodified `main` (Step 1) |
-| Net token cost rises via PR 1 | PR 1 lands first so the baseline includes Mode B; PR 1 caps its own output |
+| Net token cost rises via PR 1 | PR 1 now lands **after** this PR, so the baseline cannot absorb Mode B. Reduction is reported as an upper bound; re-baseline owed post-0003 (§8); PR 1 caps its own output |
+| Reduction claim quietly overstated once PR 1 lands | Upper-bound framing is required in the PR description, not optional — a bare "N% reduction" with no pre-0003 qualifier is a DoD failure |
 | Harness becomes flaky and ignored | State-only assertions; live cases opt-in |
 
 ## 10. Interaction with PR 1 and PR 3
 
-- **PR 1** adds to the sub-agent fan-out path this PR defers. Land PR 1 first; its Mode B output is part of this PR's measured baseline.
+- **PR 1** adds to the sub-agent fan-out path this PR defers. **This PR lands first** (order set 2026-08-06), so PR 1's Mode B output is *not* in this PR's measured baseline — see §2. PR 1 inherits the re-baseline obligation: its own DoD should record the post-Mode-B remeasurement, since it is the change that invalidates this PR's number. The `_src/verify.md` conflict (§5) is unaffected by the order — whichever lands second rebases onto the first.
 - **PR 3** — v1 created a conflict by editing `executeLoopAction`, which PR 3 relocates. With Optimisation B dropped this PR touches no non-test Go, so the conflict is gone. PR 3 consumes this harness in its CI workflow.
 
 ## 11. Changes from v1
@@ -263,6 +270,18 @@ Expect `✓ injected → <path>` from the steer command, then `[STEERING] inject
 | Smoke Step 2 broken four ways | Rewritten with rebuild, reinstall, `$BASE`, PROGRESS-file diff |
 | `belmont steer <positional>` | `--message` |
 | `plugin/` unmentioned | In scope |
+
+### v4 → v5
+
+Ordering change only — no design, scope or harness change. Made after the author set the build order to `0005 → 0004 → 0003` on 2026-08-06.
+
+| v4 | v5 |
+|---|---|
+| Lands **after 0003**; baseline includes Mode B | Lands **before 0003**; baseline is pre-Mode-B |
+| Reduction reported against a Mode B milestone | Reduction reported as a **pre-0003 upper bound**, with a re-baseline owed post-0003 (DoD) |
+| Risk row "PR 1 lands first so the baseline includes Mode B" | Inverted; second row added for the overstated-claim risk the new order creates |
+| §10 "Land PR 1 first" | This PR first; PR 1 inherits the re-baseline obligation |
+| §5 "Rebase onto 0003" | 0003 rebases onto this; its insertion point may move under 0003's rev 5 |
 
 ### v3 → v4
 
