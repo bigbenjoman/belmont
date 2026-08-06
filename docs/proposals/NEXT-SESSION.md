@@ -13,7 +13,7 @@ Written at the end of a long planning session. Assumes you know nothing about it
 
 | File | State |
 |---|---|
-| `0003-design-quality-without-figma.md` | **rev 5 — written 2026-08-06.** Awaits one adversarial pass, then GO |
+| `0003-design-quality-without-figma.md` | **rev 5 — DO NOT IMPLEMENT.** Adversarial pass found an inverted durability claim; needs rev 6. Read [`rev5-REVIEW-STATE.md`](rev5-REVIEW-STATE.md) first |
 | `0003-DESIGN-RESTRUCTURE.md` | background brief; four of its facts were refuted — see its header |
 | `0004-context-budget-with-evidence.md` | rev 5 — GO (v5 = ordering amendment, see "Resolved decision" below) |
 | `0005-maintainability.md` | rev 4 — GO |
