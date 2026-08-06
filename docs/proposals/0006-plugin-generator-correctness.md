@@ -51,17 +51,9 @@ Nothing prints unless `fm_done` is true. Therefore:
 
 **Third bug.** `--check` compares against a `plugin.json` stamped with `VERSION`, which defaults to `dev` (`generate-plugin.sh:20`) while the committed file says `0.10.14`. So a bare `./scripts/generate-plugin.sh --check` **exits 1 on unmodified main** — meaning any DoD requiring it to pass is unsatisfiable without committing `"version": "dev"` into a tracked release artifact.
 
-## 3. Rationale from the graph-engineering method
+## 3. Design
 
-**The cheapest skeptic is a mechanical one (§3).** `--check` exists precisely to be the gate that catches generator drift, and it has been structurally incapable of catching the largest possible drift — total content loss — because it compares a broken generator against its own broken output. A checker that cannot fail is not a checker.
-
-**Rare gates stay read (§8).** `--check` currently reports `STALE: plugin.json` on every clean run. A gate that always shows a benign failure trains everyone to ignore it, which is how four empty files reached production undetected.
-
-**Bottleneck-at-a-time (§9).** This is the shared prerequisite: 0003 edits agents mirrored into `plugin/`, 0004 edits skills mirrored into `plugin/`, 0005 gates CI on `--check`. Fixing the generator once unblocks all three.
-
-## 4. Design
-
-### 4.1 The awk fix — verified before specifying
+### 3.1 The awk fix — verified before specifying
 
 ```awk
 BEGIN { in_fm=0; fm_done=0; fm_count=0 }
@@ -107,38 +99,38 @@ content
 
 `FORBIDDEN ACTIONS` is present in the fixed `design-agent.md` output (`grep -c` = 1).
 
-### 4.2 Agents `references/` branch
+### 3.2 Agents `references/` branch
 
 The skills loop copies `references/` (`generate-plugin.sh:70-73`); the agents loop does not. 0003 introduces `agents/belmont/references/design-no-figma.md`, which would therefore never reach `plugin/`. Mirror the skills-loop branch into the agents loop.
 
-### 4.3 Version-aware `--check`
+### 3.3 Version-aware `--check`
 
 Make `--check` compare `plugin.json` on every field except `version`, or require the version argument and document it. Either way `./scripts/generate-plugin.sh --check 0.10.14` must exit 0 on unmodified `main` — verified that it does today, while the bare form exits 1.
 
 Preferred: ignore `version` in the `--check` comparison, so the gate is honest without callers needing to know the current release number. State the choice in the PR description; a reviewer may prefer explicitness over convenience.
 
-## 5. Scope
+## 4. Scope
 
 | File | Change |
 |---|---|
-| `scripts/generate-plugin.sh` | awk fix (§4.1), agents `references/` branch (§4.2), version-aware `--check` (§4.3) |
+| `scripts/generate-plugin.sh` | awk fix (§3.1), agents `references/` branch (§3.2), version-aware `--check` (§3.3) |
 | `plugin/agents/*.md` | regenerated — 4 files go 0 → full, 2 go partial → full |
 | `plugin/skills/**` | regenerated; expect no change beyond `plugin.json` |
 | `knowledge/cross-cutting/skill-format.md` | amend — `--check` semantics and the agents-frontmatter contract |
 
 **Out of scope:** adding frontmatter to source agents (the generator synthesises it); any agent or skill content change; any Go change.
 
-## 6. Both invocation paths
+## 5. Both invocation paths
 
-Neither auto nor interactive mode reads `plugin/` — they read `.agents/` and `.claude/`, which are produced by `belmont install` and are unaffected. **The plugin tree is a third distribution surface**, and it is the only one this PR touches. Prove all three are unaffected-or-fixed in §8 rather than asserting it.
+Neither auto nor interactive mode reads `plugin/` — they read `.agents/` and `.claude/`, which are produced by `belmont install` and are unaffected. **The plugin tree is a third distribution surface**, and it is the only one this PR touches. Prove all three are unaffected-or-fixed in §7 rather than asserting it.
 
-## 7. Docs and knowledge
+## 6. Docs and knowledge
 
 - `docs/directory-structure.md` — if it describes `plugin/`
 - `AGENTS.md` — the Skills Generation section, if it documents `--check` semantics
 - `knowledge/cross-cutting/skill-format.md` — `Don't re-do` gains: relying on `--check` to catch generator bugs (rejected — it compares a generator against its own output, so it is blind to systematic faults); adding frontmatter to every source agent (rejected — synthesis keeps sources clean)
 
-## 8. Author smoke test
+## 7. Author smoke test
 
 **Step 1 — reproduce the bug on `main`.**
 ```bash
@@ -186,7 +178,7 @@ Expect no difference against a baseline captured from `main`.
 
 **Step 7 — auto and interactive sanity.** One `belmont auto --from M1 --to M1` and one interactive `/belmont:implement` on a disposable branch, confirming no behaviour change.
 
-## 9. Definition of Done
+## 8. Definition of Done
 
 **Fix**
 - [ ] `NR==1` keying — the first-line branch cannot re-trigger mid-body
@@ -211,7 +203,7 @@ Expect no difference against a baseline captured from `main`.
 - [ ] `skill-format.md` amended with a `Revisions` line
 - [ ] PR description opens with the published-size table and the GitHub API citation
 
-## 10. Risks
+## 9. Risks
 
 | Risk | Mitigation |
 |---|---|
@@ -220,7 +212,7 @@ Expect no difference against a baseline captured from `main`.
 | Synthesised frontmatter conflicts with a future real one | Control case tested; `name:` is injected first and existing keys preserved |
 | Plugin consumers cached the broken tree | Note in the PR that a plugin reinstall is needed; consider a release note |
 
-## 11. Relationship to the other proposals
+## 10. Relationship to the other proposals
 
 | Proposal | What this unblocks |
 |---|---|

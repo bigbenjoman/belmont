@@ -2,6 +2,8 @@
 
 Design specifications written before implementation. Each proposal states the problem, the design, the scope, both invocation paths, an author smoke test, and a Definition of Done — so the approach can be reviewed and agreed before any code is written.
 
+Proposals that argue for a change in approach carry a rationale section. Bug fixes do not — a defect justifies itself, and framing one as a design argument only obscures it.
+
 ## Numbering
 
 Sequential, four digits, never reused. `0001` and `0002` are claimed by the open design RFCs in PRs #12 and #13.
@@ -13,13 +15,13 @@ Sequential, four digits, never reused. `0001` and `0002` are claimed by the open
 | 0003 | [Design quality without Figma](0003-design-quality-without-figma.md) | Draft — revision 3 |
 | 0004 | [Context budget, with evidence](0004-context-budget-with-evidence.md) | Draft — revision 3 |
 | 0005 | [Maintainability](0005-maintainability.md) | Draft — revision 3 |
-| 0006 | [Plugin generator correctness](0006-plugin-generator-correctness.md) | Draft — bug fix, ready |
+| 0006 | [Plugin generator correctness](0006-plugin-generator-correctness.md) | Bug fix — ready to send |
 
 ## Sequencing
 
 **0006 → 0003 → 0004 → 0005.**
 
-- **0006 lands first.** It fixes a live shipping defect — four of six plugin agents are published as empty files — and every other proposal depends on a working generator. It also stands on its own merits, independent of the rest.
+- **0006 lands first, and is not really part of this series.** It is a plain bug fix: four of six plugin agents are published as empty files. It carries no design rationale because it needs none — the justification is the defect. The other three happen to depend on a working generator, which is why it is sequenced here at all.
 - **0003 next.** It *adds* tokens on the sub-agent fan-out path, so 0004's measured baseline must already include it.
 - **0004 blocks nothing.** It touches no non-test Go, so it does not conflict with 0005's relocation of `executeLoopAction`.
 - **0005 lands last** and owns `.github/workflows/ci.yml`, which 0004's eval harness wires into.
