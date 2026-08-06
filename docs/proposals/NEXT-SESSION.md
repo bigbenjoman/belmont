@@ -49,6 +49,12 @@ Follow `docs/proposals/0005-maintainability.md`. Split `cmd/belmont/main.go` (12
 
 ## Task C — 0003 needs restructuring first (do NOT implement rev 4)
 
+> **Read [`0003-DESIGN-RESTRUCTURE.md`](0003-DESIGN-RESTRUCTURE.md) first.** It is the
+> full standalone brief for this change — current pipeline vs proposed, what each agent
+> and skill does afterwards, where artifacts live, the three user requirements with their
+> constraints, and what not to do. The summary below is orientation only.
+
+
 The user proposed moving UX/UI design from `implement` Phase 2 into **`tech-plan`, after `product-plan`**. This is better than rev 4 and dissolves problems rev 4 patches. Verified:
 
 | Fact | Evidence |
