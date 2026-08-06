@@ -1,6 +1,6 @@
 # PR 2 — Context budget, with evidence
 
-**Revision 3.** v2 dropped Optimisation B (its rationale was empirically false); v3 resolves what the second review found. Changes in §11.
+**Revision 4.** v2 dropped Optimisation B (its rationale was empirically false); v3 resolved the second review; v4 makes the Tier-2 gate executable and the plugin check able to fail. Changes in §11.
 
 **Type:** test harness (Go, test-only) + prose (three skill sources).
 **Size:** harness dominates. Skill edits ~60 lines. **No non-test Go changes.**
@@ -113,7 +113,7 @@ Applies to `implement.md`, `verify.md` **and `next.md`**:
 | Plugin | Regenerate — `plugin/skills/{implement,verify,next}/SKILL.md` are git-tracked |
 | Knowledge | **New** `meta/evals.md`, **new** `cross-cutting/context-budget.md` |
 
-**Preflight correction.** v1 required checking overlap against open PRs #4–#7. Verified via `gh pr list`: **#4–#7 were closed unmerged on 2026-04-21, superseded by merged #8** ("skills: token-saver — MILESTONE coordinator + references/ convention"). The only open PRs are #10–#13 and none touches a `.go` file. Sequence against **#8's merged state**. Replace the preflight with a narrower live check: **#10 and #11 still sit on `_src/next.md`, and #11 carries `plugin/skills/next/SKILL.md`** — both of which this PR now edits and regenerates. Record the overlap in the PR description rather than claiming none.
+**Preflight correction.** v1 required checking overlap against open PRs #4–#7. Verified via `gh pr list`: **#4–#7 were closed unmerged on 2026-04-21, superseded by merged #8** ("skills: token-saver — MILESTONE coordinator + references/ convention"). The only open PRs are #10–#13 and none touches a `.go` file. Sequence against **#8's merged state**. **PR state as measured 2026-08-06:** #4–#7 closed unmerged (superseded by merged #8); #18 merged; #10–#13 **all closed unmerged**; the only open PR is **#21** (plugin generator fix), which touches `scripts/generate-plugin.sh` and `plugin/agents/` and is therefore disjoint from this PR's scope. **No open PR overlaps this work.** Re-measure with `gh pr list --state open` at branch time rather than trusting this paragraph — it has now been wrong twice.
 
 **Shared file with 0003.** This PR's conditional-archive edits land at `_src/verify.md:110`/`:147`; 0003 inserts its Mode B block at `:114`. Four lines apart, inside default diff context. Rebase onto 0003 and fold this wording into its restructured block.
 
@@ -148,6 +148,7 @@ belmont install --source ~/belmont --no-prompt && git add -A && git commit -m "b
 BASE=$(git rev-parse HEAD)
 belmont auto --feature <slug> --from M1 --to M1
 cp .belmont/features/<slug>/PROGRESS.md /tmp/pr2-progress-before.md
+cd ~/belmont && git checkout -- plugin/   # build.sh re-stamps plugin.json; do not carry it into the branch
 ```
 Record files read per orchestrator from the run log.
 
@@ -164,6 +165,7 @@ cd ~/path/to/real-project && git checkout -b smoke/pr2-after $BASE
 belmont install --source ~/belmont --no-prompt && git add -A && git commit -m "post-change install"
 belmont auto --feature <slug> --from M1 --to M1
 diff /tmp/pr2-progress-before.md .belmont/features/<slug>/PROGRESS.md
+cd ~/belmont && git checkout -- plugin/   # same cleanup after the second build
 ```
 Expect: no diff in final task states; measurably fewer file reads. Branching from `$BASE` and reinstalling are both load-bearing.
 
@@ -207,8 +209,14 @@ Expect `✓ injected → <path>` from the steer command, then `[STEERING] inject
 
 **Mechanics**
 - [ ] `./scripts/generate-skills.sh --check` passes
-- [ ] `./scripts/generate-plugin.sh --check` passes — **requires 0006**; the bare form exits 1 on unmodified `main` because `VERSION` defaults to `dev` while the committed `plugin.json` says `0.10.14`. Until 0006 lands, pin: `--check 0.10.14`
-- [ ] Tier 2 actually executed: `BELMONT_EVAL_LIVE=1 go test -tags eval ./cmd/belmont`, N ≥ 3, **before Commit 2 (baseline) and after (post-change)**, both results pasted in the PR description. Commit 2 is gated on execution, not on the description mentioning it
+- [ ] `./scripts/generate-plugin.sh 0.10.14 && git diff --exit-code plugin/` — **not** `--check`. After 0006, `--check` ignores the `version` field, so it would pass over a `plugin.json` accidentally re-stamped to `0.0.0-smoke` or `dev` by a `build.sh` run during the smoke test. `git diff --exit-code` catches that; `--check` cannot. Exposure is the marketplace git surface (`marketplace.json` points at `./plugin`), not the release tarball, which `release.yml` regenerates from the tag
+- [ ] Tier 2 actually executed, **before Commit 2 (baseline) and after (post-change)**, both results pasted in the PR description. Commit 2 is gated on execution, not on the description mentioning it:
+
+  ```bash
+  BELMONT_EVAL_LIVE=1 go test -tags eval -timeout 0 -run TestEvalLive ./cmd/belmont
+  ```
+
+  `-timeout 0` is **required**: Go's default is a 10-minute budget for the whole test binary, and `executeLoopAction` has no watchdog of its own. On a timeout panic `killProcessGroup` never fires, so the live `claude -p` child is orphaned and keeps consuming budget. Name the fixtures that run live (`single-milestone-clean`, `mid-milestone`, `failing-acceptance` — the three whose transitions depend on agent output), and state expected wall-clock and token cost per run so an implementer can judge before starting
 - [ ] Tier-2 fixture setup runs the source-mode installer so the fixture has a skill surface — a bare `t.TempDir()` repo has no `.agents/skills/`, so a live agent could never read the Optimisation-A prose
 - [ ] Reuses `runGit` from `commit_update_test.go:13` — no duplicate helper
 - [ ] `go build ./cmd/belmont`, `go test ./cmd/belmont` green
@@ -216,7 +224,7 @@ Expect `✓ injected → <path>` from the steer command, then `[STEERING] inject
 - [ ] Auto, interactive and plugin surfaces exercised
 - [ ] `meta/evals.md` + `cross-cutting/context-budget.md` created; routing rows added
 - [ ] `AGENTS.md` updated (Verify section; `CLAUDE.md` is a symlink)
-- [ ] PR description records the PR-status check (#4–#7 closed, #8 merged) and names the three deferrals
+- [ ] PR description records a PR-status check performed **at branch time** (`gh pr list --state open`) and names the three deferrals
 - [ ] PR description states this PR touches **no non-test Go** and therefore does not block PR 3
 
 ## 9. Risks
@@ -256,6 +264,15 @@ Expect `✓ injected → <path>` from the steer command, then `[STEERING] inject
 | `belmont steer <positional>` | `--message` |
 | `plugin/` unmentioned | In scope |
 
+### v3 → v4
+
+| v3 | v4 |
+|---|---|
+| Tier 2 gate would panic at Go's 10-minute default and orphan the `claude -p` child | `-timeout 0`, named live fixtures, stated cost |
+| `--check` DoD blind to a re-stamped `plugin.json` | `generate-plugin.sh 0.10.14 && git diff --exit-code plugin/` |
+| Smoke `build.sh` runs left `plugin.json` dirty | `git checkout -- plugin/` after Steps 0 and 2 |
+| #10/#11 cited as open | All closed; only #21 open and disjoint. Re-measure at branch time |
+
 ### v2 → v3
 
 | v2 | v3 |
@@ -263,6 +280,6 @@ Expect `✓ injected → <path>` from the steer command, then `[STEERING] inject
 | `--check` DoD unsatisfiable on main | Depends on **0006**; pin `--check 0.10.14` until then |
 | "Tier 2 licenses Optimisation A", never required to run | Executed `BELMONT_EVAL_LIVE=1` N≥3 gate before and after Commit 2 |
 | Tier-2 fixtures had no skill surface | Fixture setup runs the source-mode installer |
-| Preflight deleted wholesale | #10/#11 sit on `_src/next.md`; #11 on `plugin/skills/next/SKILL.md` |
+| Preflight deleted wholesale | Re-measured: #10–#13 all closed, only #21 open and disjoint. Re-measure at branch time |
 | Mode B addition not disclosed in Problem | Disclosed; reduction reported against a Mode B milestone |
 | — | Reuses `runGit` from `commit_update_test.go:13` |

@@ -1,6 +1,6 @@
 # PR 3 — Maintainability
 
-**Revision 3.** v1 and v2 both specified proof mechanisms that could not work. v3's is verified against controls before being written down — see §4.1. Changes in §12.
+**Revision 4.** v1 and v2 specified proof mechanisms that could not work; v3's is verified against controls before being written down (§4.1). v4 removes a fabricated claim v3 carried and completes the boundary table. Changes in §12.
 
 **Type:** mechanical refactor (zero behaviour change) + lint + CI.
 **Size:** very large diff, near-zero semantic content. Reviewed per-commit, one extracted file at a time.
@@ -90,8 +90,14 @@ Files move; the package does not. **The stdlib-only rule in `AGENTS.md` constrai
 | `steer.go` | `belmont steer`, `consumePendingSteering`, STEERING.md lifecycle |
 | `toolexec.go` | `toolHeadlessArgs`, `buildToolCommand`, `adaptPromptForTool`, `resolveModelFlags`, `modelTiers` |
 | `status.go` | `status`, `sync`, `validate`, JSON output |
+| `reverify.go` | `runReverifyCmd` (`:10746`, ~288 lines) |
+| `monorepo.go` | `detectWorkspaces` (`:781`), `resolveWorkspaces` (`:1509`), `seedWorkspaceEnv` (`:681`) |
+| `multifeature.go` | `runAutoMultiFeature` (`:5700`), `computeFeatureWaves`, readiness scanning |
+| `reconcile.go` | `runReconciliationAgent` (`:9179`), `runReconciliationAnalysis` (`:9231`), `recover` |
 
-Two v1 errors corrected. **`decideNextAction` does not exist** — the real functions are `decideLoopAction` (`:6563`), `decideLoopActionSmart` (`:7465`), `decideLoopActionAI` (`:7724`) and `checkHardGuardrails` (`:7707`), ~498 lines containing the file's 3rd- and 7th-largest functions; they get their own `auto_decide.go` rather than a third of `main.go`'s 1,500-line budget. **`executeTriageAction` (`:6996`, ~146 lines)** was unassigned in v1 and now sits with `executeLoopAction`. **`cmd/belmont/tools.go` already exists**, hence `toolexec.go`.
+**Placement rule for anything not named above:** a declaration goes to the file owning its nearest caller; if callers span domains, it stays in `main.go`. Every declaration must have a stated home before commit 1 — an unassigned symbol is a re-cut, not a judgement call at commit time.
+
+Two v1 errors corrected. **`decideNextAction` does not exist** — the real functions are `decideLoopAction` (`:6563`), `decideLoopActionSmart` (`:7465`), `decideLoopActionAI` (`:7724`) and `checkHardGuardrails` (`:7707`), ~498 lines containing the file's 3rd- and 7th-largest functions; they get their own `auto_decide.go` rather than a third of `main.go`'s 1,500-line budget. **`executeTriageAction` (`:6996`, ~146 lines)** was unassigned in v1 and now sits with `executeLoopAction`. `toolexec.go` is named for its contents rather than `tools.go`, which is vague. (A round-2 review claimed `cmd/belmont/tools.go` already existed and forced the rename. That was **false** — `ls` and `git log --all` both confirm the file has never existed. The claim was accepted without checking and is recorded here so the error is not repeated.)
 
 Treat the table as a proposal. The reviewer's opinion on boundaries *is* the substance of this PR; re-cut on request.
 
@@ -166,7 +172,15 @@ BASE=$(git rev-parse HEAD)      # M1 still pending here — every run forks from
 
 **Step 2 — auto end-to-end, at commit 11.** From `$BASE`, run `belmont auto --feature <slug> --from M1 --to M1` on pre- and post-split binaries. Assert **behaviourally** — phases executed, guard fired, worktrees and ports created — not by JSON byte-equality.
 
-**Step 3 — scope guard, with the timing window respected.** `snapshotProgress` runs at the *top* of `executeLoopAction` (`:6867`), so a heading added between phases is baked into the baseline and `diffScopeViolations` finds nothing by design. Wait for the phase line to appear, then append `### M99: Injected` plus one task, then assert three things: stderr `[SCOPE-GUARD] reverted 1 violation(s)`; `grep -c 'M99' PROGRESS.md` = 0; a `(pending)` STEERING.md entry naming M99.
+**Step 3 — scope guard, with the timing window respected.** `snapshotProgress` runs at the *top* of `executeLoopAction` (`:6867`), so a heading added between phases is baked into the baseline and `diffScopeViolations` finds nothing by design. Wait for the phase line to appear, then append `### M99: Injected` plus one task, then assert three things:
+
+```bash
+# the guard line is ANSI-coloured — main.go:12247 emits ESC[33m[SCOPE-GUARD]ESC[0m
+# so a literal grep for "[SCOPE-GUARD] reverted" will NOT match. Strip first:
+sed 's/\x1b\[[0-9;]*m//g' run.log | grep -F '[SCOPE-GUARD] reverted'
+grep -c 'M99' PROGRESS.md || true      # expect 0; bare grep -c exits 1 under set -e
+grep -F '(pending)' STEERING.md | grep -F 'M99'
+```
 **Absence of the `[SCOPE-GUARD]` line means the edit landed outside the window — retry, do not record a pass.**
 This manual step is the **only** coverage of the read → revert → write → amend → STEERING wiring; no test calls `runScopeGuard`. Keep it; do not substitute unit tests.
 
@@ -176,7 +190,7 @@ This manual step is the **only** coverage of the read → revert → write → a
 
 **Step 6 — install path.** `belmont install --source ~/belmont --project /tmp/pr3-install --no-prompt`; confirm `.agents/skills/belmont/`, per-skill slash commands, and `loop` as a real file not a symlink.
 
-**Step 7 — other tools.** 7a: `belmont auto --tool codex` from `$BASE`. 7b: interactive `codex` → `$belmont` popup → `$implement`. (`--tool` is a CLI flag — `:5287`, `:10755`, `:11081` — with no REPL meaning, and Codex has no `/belmont:` command; v1's "repeat Step 4 with `--tool codex`" was not executable. Steps 2 and 4 already are the Claude-both-modes check, so v1's extra clause was redundant.) Note Step 2 omits `--tool`, so `detectTool()` (`:6316`) picks claude.
+**Step 7 — other tools.** 7a: `belmont auto --feature <slug> --from M1 --to M1 --tool codex` from `$BASE`. The `--feature` flag is **required** — `runAutoCmd` rejects a bare invocation at `main.go:5311-5312` before any shell-out, so the Codex leg would never run. 7b: interactive `codex` → `$belmont` popup → `$implement`. (`--tool` is a CLI flag — `:5287`, `:10755`, `:11081` — with no REPL meaning, and Codex has no `/belmont:` command; v1's "repeat Step 4 with `--tool codex`" was not executable. Steps 2 and 4 already are the Claude-both-modes check, so v1's extra clause was redundant.) Note Step 2 omits `--tool`, so `detectTool()` (`:6316`) picks claude.
 
 **Step 8 — cross-platform.** `GOOS=windows go build ./cmd/belmont` plus the other four targets, and `GOOS=windows go vet ./...` (passes today).
 
@@ -185,12 +199,12 @@ This manual step is the **only** coverage of the read → revert → write → a
 **Split**
 - [ ] `main.go` under ~1,500 lines; no new file over ~2,000
 - [ ] Package unchanged — files moved, no new packages
-- [ ] One commit per extracted file; `git show --stat` shows a legible `main.go -N / newfile.go +N` pair
-- [ ] Decl-set diff empty **at commits 1–10**; at commit 11 the diff shows exactly the 8 U1000 deletions + the SA4006 line and nothing else
+- [ ] **One commit per §4.3 row** (not a fixed count — the table may be re-cut); `git show --stat` shows a legible `main.go -N / newfile.go +N` pair
+- [ ] Decl-set diff empty at **every extraction commit**; at the final lint commit the diff shows exactly the 8 U1000 deletions + the SA4006 line and nothing else
 - [ ] `scripts/declsum/main.go` re-verified against both controls (legitimate move, double predicate inversion) before the DoD is relied on
 - [ ] Zero logic edits — no renames, no signature changes, no reformatting
 - [ ] `decideLoopAction*` + `checkHardGuardrails` in `auto_decide.go`; `executeTriageAction` assigned
-- [ ] No collision with the existing `cmd/belmont/tools.go`
+- [ ] No new filename collides with an existing file. The six non-test files today are `main.go`, `local_llms.go`, `embed.go`, `embed_dev.go`, `process_unix.go`, `process_windows.go` — verify with `ls cmd/belmont/*.go` at branch time rather than trusting this list
 - [ ] Boundaries align with knowledge-tree domains
 
 **Skills / plugin**
@@ -240,7 +254,7 @@ This manual step is the **only** coverage of the read → revert → write → a
 | `git diff -M` renders renames | It does not — zero renames at full scale. Replaced with one commit per extracted file |
 | `decideNextAction` | Does not exist — `decideLoopAction`/`Smart`/`AI` + `checkHardGuardrails`, own file |
 | `executeTriageAction` unassigned | Assigned to `auto_loop.go` |
-| `tools.go` | Collides with an existing file — `toolexec.go` |
+| `tools.go` | Renamed `toolexec.go` for specificity. The v2 justification — that `tools.go` already existed — was a fabricated claim accepted from a review without verification; it does not exist |
 | "Neither commit touches skills" | Three sources hard-code `main.go`; plugin tree mirrors them |
 | 8 knowledge entries | 15, from grep |
 | "no linter" appears twice in CLAUDE.md | Once, at `AGENTS.md:81` (`CLAUDE.md` is a symlink) |
@@ -253,6 +267,16 @@ This manual step is the **only** coverage of the read → revert → write → a
 | Host-only build coverage | 5-platform matrix + `GOOS=windows go vet` |
 | No CI | This PR owns `.github/workflows/ci.yml` |
 | No rollback or blame story | `git blame -C -C`; rollback is re-concatenation |
+
+### v3 → v4
+
+| v3 | v4 |
+|---|---|
+| `tools.go` collision (3 sites) | Fabricated — the file has never existed. Claim deleted, DoD restated against the real six |
+| Boundary table missing reverify, monorepo, multi-feature, reconcile | Rows added, plus a placement rule for unnamed declarations |
+| "commits 1–10" hard-coded | "one commit per §4.3 row" — the table is re-cuttable |
+| Step 3 grep would fail on a working guard | ANSI-strip + `grep -F`; `\|\| true` on `grep -c` |
+| Step 7a `--tool codex` without `--feature` | Rejected at `main.go:5311`; command corrected |
 
 ### v2 → v3
 
