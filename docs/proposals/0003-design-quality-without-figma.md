@@ -37,7 +37,19 @@ v1–v4 correctly separated these, then put the fix in the wrong place. **The se
 
 **State as durable artifacts.** The contract must live where it survives worktree creation, `[r]`-resume and merge — see §4.1, which is now an evidence question rather than an assertion.
 
-**Design content source.** The token scales, state inventory, microcopy rules and a11y floor in `references/design-authority-baseline.md` are Belmont-original prose stating published standards: WCAG 2.1 SC 1.4.3 (4.5:1 body, 3:1 large), SC 2.5.5 (44×44 targets), SC 2.4.7 (visible focus), the 8pt spacing grid, ratio-derived type scales, and the 60-30-10 colour convention. The curation was **inspired by the `ux-designer` and `ui-designer` skills by [Yummy Labs](https://www.yummy-labs.com/)**; credit them by name in the reference header and the PR description. **Do not vendor their files.** They are distributed as a download with no stated licence, no repository and no redistribution grant, so the default is all-rights-reserved and copying them into this repo is not ours to do. If written permission is later obtained, vendoring with attribution can replace the baseline file in a follow-up.
+**Design content source and attribution.** The rules in `references/design-authority-baseline.md` are Belmont-original prose stating published standards: WCAG 2.1 SC 1.4.3 (4.5:1 body, 3:1 large text), SC 2.5.5 (44×44 targets), SC 2.4.7 (visible focus), SC 2.3.3 (motion from interaction), the 8pt spacing grid, ratio-derived type scales, and the 60-30-10 colour convention.
+
+The *curation* — which rules matter, and how they compose into a checkable contract — is drawn from the **[Yummy Labs](https://www.yummy-labs.com/) Claude design skills**. Credit them by name and link in the reference file header, in `design-authority.md`, and in the PR description:
+
+| Skill | What it contributes to the contract |
+|---|---|
+| [ui-designer](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | Token contract — spacing grid, type scale, colour roles, radius, elevation; the "existing design system is LAW" rule; the banned-defaults list |
+| [ux-designer](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | UX strategy — user, emotional state, hero element, primary action, risk; all-states enumeration |
+| [ux-copywriter](https://yummy-design.notion.site/Claude-UX-Copywriter-Skill-31962791470980989abdcd6312890920) | Microcopy rules — outcome-verb buttons, three-part errors, empty states, destructive confirmations |
+| [ux-motion](https://yummy-design.notion.site/Claude-UX-Motion-Skill-32662791470980618a4edec08b04b436) | Motion contract — duration bands by interaction class, easing by product voice, reduced-motion |
+| [interactive-prototype](https://yummy-design.notion.site/Claude-prototype-skill-35f62791470980cc8fffe64e6a5e5894) | Interaction completeness — gesture and transition states a static spec omits |
+
+**Do not vendor their files.** All five are distributed as downloads with **no LICENSE, no repository and no redistribution grant** — verified against the actual packages, not just the site — so the default is all-rights-reserved and copying them into this repo is not ours to do. Belmont states the same rules in its own words and credits the source. If written permission is later obtained (`yummylabs@yummydesign.xyz`), vendoring with attribution can replace the baseline file in a follow-up.
 
 ## 4. Design
 
@@ -87,15 +99,21 @@ Rules, each of which exists because something in the codebase would otherwise br
 
 Placed in the new `skills/belmont/_src/references/design-authority-baseline.md` and cited from the tech-plan body as a literal `references/design-authority-baseline.md` path — `generate-skills.sh:140` greps the generated SKILL.md for exactly that pattern and ships only what it finds.
 
-> Take the **first** tier whose inputs are available. Check by **name**, in your available skills. Do not probe the filesystem.
+> Check by **name**, in your available skills. Do not probe the filesystem. Load **every** tier-1 skill that is present — they cover different sections of the contract and are not alternatives to each other.
 >
-> - **Tier 1 — enrichment.** If `ux-designer` and/or `ui-designer` are available, load them and let them drive the contract.
+> - **Tier 1 — enrichment, per contract section.** Load whichever of these are available:
+>   `ui-designer` → Token Contract · `ux-designer` → UX Strategy and state inventory · `ux-copywriter` → Microcopy Rules · `ux-motion` → Motion Contract · `interactive-prototype` → interaction and gesture states.
+>   A section whose skill is absent falls back to the baseline rules for that section alone — enrichment is **per-section, not all-or-nothing**.
 > - **Tier 1b — enrichment, conditional.** If `frontend-design` is available, load it for aesthetic direction. Load `dataviz` **only** if this feature renders charts. Load `vercel:shadcn` **only** if the project already depends on shadcn — evidence being a `components.json` at repo root or a shadcn entry in the package manifest, not a guess.
-> - **Tier 2 — normative floor, all tools.** Apply the baseline rules in this file.
+> - **Tier 2 — normative floor, all tools, always.** Apply the baseline rules in this file. Tier 2 is not a fallback that runs *instead of* tier 1; it is the floor that runs *underneath* it. A tier-1 skill may add detail or argue for a deviation, and must record the deviation — it may never lower the a11y floor.
 >
-> Tier 2 is normative. Tiers 1/1b only enrich. **The contract schema is identical either way and no downstream consumer may branch on which tier ran.**
+> **The contract schema is identical whichever tiers ran, and no downstream consumer may branch on it.**
 >
-> Record the outcome on an `**Authorities**:` line — e.g. `baseline; ux-designer; ui-designer`, or `baseline (no design skills available in this session)`. Never omit it and never silently skip, mirroring `verification-agent.md:93`.
+> Record the outcome on an `**Authorities**:` line, naming the skill per section — e.g.
+> `baseline; ui-designer (tokens); ux-copywriter (microcopy)`, or `baseline only (no design skills available in this session)`.
+> Never omit it and never silently skip, mirroring `verification-agent.md:93`.
+
+**Why per-section rather than all-or-nothing.** The five skills are complementary, not redundant: one owns tokens, one owns flow, one owns copy, one owns motion, one owns interaction completeness. Treating them as a single "design authority available / unavailable" switch would mean a user with four of the five gets the baseline for all five sections. It also keeps the degradation honest — the `Authorities` line shows exactly which sections were enriched, so a reviewer can see that microcopy was baseline-only while tokens were not.
 
 **Why the fallback is normative and not the fallback.** `ux-designer` and `ui-designer` are user-scope personal skills at `~/.claude/skills/`. They exist for one person. Wording requirement (1) as "invoke the skills, falling back to a checklist" would make the shipped behaviour for essentially every user the untested branch.
 
@@ -111,7 +129,7 @@ Written into `{base}/TECH_PLAN.md`. The feature template's `## Design Tokens (fr
 ## Design Contract
 **Mode**: [A — Figma-derived | B — derived, no Figma | N/A — no UI in this feature]
 **Source**: [tailwind.config.ts | globals.css | components.json | Figma <file> | none — established here]
-**Authorities**: baseline[; ux-designer; ui-designer; frontend-design]
+**Authorities**: baseline[; ui-designer (tokens); ux-designer (strategy); ux-copywriter (microcopy); ux-motion (motion); interactive-prototype (interaction); frontend-design (aesthetic)]
 **Approval**: [approved <ISO date> | unreviewed (headless replan <ISO date>)]
 
 ### Token Contract
@@ -131,9 +149,17 @@ every interactive element (SC 2.4.7) · every input has a visible label, never p
 User · emotional state on arrival · hero element · primary action · biggest UX risk. Five lines.
 
 ### Microcopy Rules
-Buttons: verb matching outcome. Errors: what happened / why / what next.
-Empty states: what appears here, why it's empty, the action to fill it.
-Destructive confirmations: name what is destroyed.
+Buttons: verb matching the outcome, never "Submit". Errors: what happened / why / what next, and
+never blame or jokes. Empty states: what appears here, why it's empty, the action to fill it.
+Destructive confirmations: name what is destroyed. Possessive framing for user-owned objects.
+
+### Motion Contract
+Duration bands — instant feedback ≤ 100ms · state change 150–200ms · context shift 250–300ms ·
+page transition 300–400ms. Anything above 400ms must justify itself.
+Easing — one documented curve per class (enter / exit / move). Bounce and overshoot are opt-in per
+product voice, never a default.
+Performance — animate `transform` and `opacity` only. Animating layout properties is a defect.
+Reduced motion — `prefers-reduced-motion: reduce` removes movement, never functionality (WCAG SC 2.3.3).
 ```
 
 **Derivation order — reuse before invention:** probe `tailwind.config.*`, CSS custom properties, `components.json`, theme files; if found, **record** it and never invent a competing scale; only where nothing exists, establish the defaults and set `**Source**: none`.
@@ -172,6 +198,9 @@ Note the distinction rev 5 must not blur: verification-agent **already reads** T
 | Labels present, not placeholder-only | `browser_evaluate` DOM inspection |
 | Radius consistent, nested smaller | `browser_evaluate` |
 | Enumerated states present | exercise each state, screenshot |
+| Transition durations within declared bands | `browser_evaluate` → `getComputedStyle` `transitionDuration` / `animationDuration` |
+| Only `transform`/`opacity` animated | `browser_evaluate` → `transitionProperty` / `animationName` keyframe inspection |
+| Reduced motion removes movement, not function | emulate `prefers-reduced-motion: reduce`, re-run the state pass, assert the element still reaches its end state |
 
 **Fix the stale MCP tool names in the same PR.** `verification-agent.md:93-94` and `implementation-agent.md:192-193` name `mcp__playwright__browser_*`, which does not exist; the installed plugin exposes `mcp__plugin_playwright_playwright__browser_*`. The same files already use the correct `mcp__plugin_figma_figma__` prefix, so these are simply stale — and every row above depends on them.
 
@@ -206,7 +235,7 @@ Three consequences:
 |---|---|
 | `skills/belmont/_src/tech-plan.md` | Phase 3.5; ALLOWED ACTIONS + `design-preview.html`; CRITICAL RULE 6; fix skill names at `:160`; Phase 4.6 prose |
 | `skills/belmont/_src/references/tech-plan-feature-format.md` | Generalise `## Design Tokens (from Figma)` → `## Design Contract`; add contract branch to the Figma-only verification checklist |
-| `skills/belmont/_src/references/design-authority-baseline.md` | **New** — the ladder + baseline rules, Belmont-original, crediting Yummy Labs |
+| `skills/belmont/_src/references/design-authority-baseline.md` | **New** — the per-section ladder + baseline rules for all five contract sections (tokens, strategy, microcopy, motion, interaction), Belmont-original prose, crediting the five Yummy Labs skills by name and link |
 | `skills/belmont/_src/product-plan.md` | Fix the same wrong skill names at `:165` |
 | `agents/belmont/design-agent.md` | Mode A/B both consume the contract; replace `## Handling No Design`; read master TECH_PLAN. `FORBIDDEN ACTIONS` untouched |
 | `agents/belmont/verification-agent.md` | Three-way Phase 2; narrow `:131`; fourth enforcement rule; attestation field; focused-reverify exemption; fix Playwright MCP names |
@@ -301,9 +330,11 @@ Steps 1–6 are the Claude-in-both-modes check.
 
 **Authority and portability**
 - [ ] `references/design-authority-baseline.md` created, cited from the tech-plan body as a literal `references/…` path, and present in `skills/belmont/tech-plan/references/` after generation
-- [ ] Tier 2 is normative; contract schema identical across tiers; no downstream consumer branches on tier
-- [ ] `**Authorities**` line always present, never silently omitted
-- [ ] Baseline is Belmont-original prose citing public standards; Yummy Labs credited; **no file from `~/.claude/skills/` copied into the repo**
+- [ ] Tier 2 is normative and runs underneath tier 1, never instead of it; contract schema identical across tiers; no downstream consumer branches on tier
+- [ ] Enrichment is **per-section** — all five tier-1 skills named and mapped to the contract section each feeds; a missing skill degrades only its own section
+- [ ] `**Authorities**` line always present and names the skill per section, never silently omitted
+- [ ] `### Motion Contract` present in the contract schema and the feature template, with its three check rows in verification
+- [ ] Baseline is Belmont-original prose citing public standards; **all five** Yummy Labs skills credited by name and link in the reference header, `design-authority.md` and the PR description; **no file from `~/.claude/skills/` copied into the repo**
 - [ ] `vercel-react-best-practices` → `vercel:react-best-practices` and the bogus `security` entry fixed in both `tech-plan.md:160` and `product-plan.md:165`
 
 **Gate**
@@ -377,4 +408,6 @@ The restructure plausibly *reduces* the fan-out cost 0004 defers: design derivat
 | Auto mode "bypasses skill discovery; Belmont injects the skill body" | False (`AGENTS.md:26`, `dual-invocation-paths.md:9`). Bare slash reference; only steering is injected. Correcting both is in scope |
 | `_src/verify.md` "Phase 2" | verify.md has **Steps**, not Phases. Phase 2 belongs to `verification-agent.md`. Every edit now names its file |
 | "~450 lines / 6 files" | ~520 / 9 tracked sources + 2 corrections |
-| Design numbers sourced from `ux-designer`/`ui-designer` | Same rules, Belmont-original prose citing WCAG/public conventions, crediting Yummy Labs. Their files are unlicensed and must not be vendored |
+| Design numbers sourced from `ux-designer`/`ui-designer` | Same rules, Belmont-original prose citing WCAG/public conventions. **All five** Yummy Labs skills credited with links, one per contract section. All five verified to carry no LICENSE, so none may be vendored |
+| No motion in the contract | `### Motion Contract` added — duration bands, easing per class, transform/opacity only, reduced-motion — fed by `ux-motion` and checked by three new verification rows |
+| Design authority was one all-or-nothing switch | **Per-section** enrichment: five skills each own a contract section, and a missing skill degrades only its own section. The `Authorities` line records which |
