@@ -13,7 +13,8 @@ Written at the end of a long planning session. Assumes you know nothing about it
 
 | File | State |
 |---|---|
-| `0003-design-quality-without-figma.md` | rev 4 — **needs a rev 5 restructure, see below** |
+| `0003-design-quality-without-figma.md` | **rev 5 — written 2026-08-06.** Awaits one adversarial pass, then GO |
+| `0003-DESIGN-RESTRUCTURE.md` | background brief; four of its facts were refuted — see its header |
 | `0004-context-budget-with-evidence.md` | rev 5 — GO (v5 = ordering amendment, see "Resolved decision" below) |
 | `0005-maintainability.md` | rev 4 — GO |
 | `0006-plugin-generator-correctness.md` | shipped as PR #21 |
@@ -55,13 +56,15 @@ Follow `docs/proposals/0005-maintainability.md`. Split `cmd/belmont/main.go` (12
 > constraints, and what not to do. The summary below is orientation only.
 
 
-The user proposed moving UX/UI design from `implement` Phase 2 into **`tech-plan`, after `product-plan`**. This is better than rev 4 and dissolves problems rev 4 patches. Verified:
+**DONE — rev 5 written 2026-08-06.** The spec now describes the restructure. Remaining: one adversarial pass, then implement (after PR #21). What follows is the original orientation, with its errors marked.
 
-| Fact | Evidence |
-|---|---|
-| `tech-plan` is already interactive | `_src/tech-plan.md` includes `user-questions.md` + `dynamic-questioning.md` |
-| `TECH_PLAN.md` is **master-owned** | Copied master → worktree, so restored on `[r]`-resume — unlike MILESTONE, which is worktree-created and wiped by `copyBelmontStateToWorktree` (`main.go:9980`, `os.RemoveAll`, preserves only `STEERING.md`) |
-| Planning is forced to Opus | `planningTier = "high"` (`main.go:102`) |
+The user proposed moving UX/UI design from `implement` Phase 2 into **`tech-plan`, after `product-plan`**. This is better than rev 4 and dissolves problems rev 4 patches. The three facts below were checked against the code when rev 5 was written — two needed correcting:
+
+| Fact | Evidence | Verdict |
+|---|---|---|
+| `tech-plan` is already interactive | `_src/tech-plan.md:53,55` includes `user-questions.md` + `dynamic-questioning.md` | ✅ holds |
+| `TECH_PLAN.md` is **master-owned** | ~~`main.go:9980`~~ → the `os.RemoveAll(dstFeature)` is at **`main.go:10010`**, the restoring `copyDir` at `:10011` | ⚠️ conclusion right, mechanism wrong. The axis is **master-authored vs worktree-authored**. `{base}/TECH_PLAN.md` is *inside* the wiped dir and survives only because master is the copy source; a worktree-local write to it dies exactly like MILESTONE |
+| Planning is forced to Opus | `planningTier = "high"` (`main.go:102`), consumed by `tierForAction` for `actionReplan` only (`:249-252`) | ❌ **auto-mode only.** The interactive path this restructure relies on inherits the session model. The tier guidance does **not** become unnecessary |
 
 **Why it is better**
 
@@ -100,6 +103,8 @@ The user proposed moving UX/UI design from `implement` Phase 2 into **`tech-plan
 These specs went through three adversarial review rounds. Every round found defects, and several were **introduced by the previous round's fixes**. Two specific traps:
 
 - A review agent claimed `cmd/belmont/tools.go` already existed. **It never has** — zero commits, any branch. The claim was accepted without checking and shipped into two revisions. Do not trust a finding — from a review, a spec, or a previous session — without running the command yourself.
+- **When a claim spans two documents, grep both and diff them.** Keep this rule permanently; it is not specific to one round. A claim gets written once, cited elsewhere, and the citation outlives the correction. Both instances so far were found this way and neither was visible from one file: the `0003`↔`0004` build order disagreed across *three* documents with no single "current" one, and `main.go:9980` — the wrong line for an `os.RemoveAll` that lives at `:10010` — had propagated into **four**. A document that reads as authoritative is not evidence; the code is.
+- **A predicted failure is a claim too, and cheaper to test than to reason about.** Three revisions asserted that 0003 and 0004 "will conflict" in `_src/verify.md` because their edits sit inside default diff context. Reproducing it took one scratch repo and showed the rebase is clean — the context rule governs `git am`/`git apply`, not the three-way merge. Nobody had run it.
 - Two purity-proof mechanisms were specified before being run, and both were impossible. The current one (0005 §4.1) *is* verified, but re-verify before the DoD depends on it.
 
 ## Resolved decision — 0003 ↔ 0004 baseline order (2026-08-06)

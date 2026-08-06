@@ -1,8 +1,19 @@
 # 0003 — UX/UI design restructure brief
 
-Standalone brief for the design change. Read this **before** `0003-design-quality-without-figma.md`, which is still at rev 4 and describes the **superseded** design.
+Standalone brief for the design change.
 
-If you take one thing from this file: **rev 4 puts design inside `implement`. That is what we are changing. Do not implement rev 4.**
+> **Status, 2026-08-06 — rev 5 is written.** `0003-design-quality-without-figma.md` now *is* the restructure; read it as the spec. This brief remains useful for the before/after framing in §3, but **four of its factual claims were refuted when rev 5 was verified against the code**, and its §5 requirement-3 options are now decided:
+>
+> | This brief says | Truth |
+> |---|---|
+> | `os.RemoveAll` at `main.go:9980` (§3 table, §8) | `:9980` is the function signature; the call is at **`:10010`**, the restoring `copyDir` at `:10011` |
+> | "MILESTONE is worktree-*created*, so `os.RemoveAll` destroys it" while TECH_PLAN is safe | The axis is **master-authored vs worktree-authored**, not created-where. `{base}/TECH_PLAN.md` is inside the wiped dir and survives only because master is the copy source. A worktree-local write to it dies identically |
+> | "Planning is forced to Opus … rev 4's `models.yaml` guidance becomes unnecessary" (§3 table) | `planningTier` applies to `actionReplan` only — i.e. **auto mode**. The interactive path this restructure depends on inherits the session model. The tier guidance survives |
+> | "non-Claude CLIs have no equivalent mechanism at all" (§5) | The mechanism exists nearly everywhere (opencode `skill` tool, Gemini `activate_skill`, others auto-activate). The **skills** are absent, not the mechanism |
+>
+> Also decided since: the reviewable artifact is a committed `design-preview.html`; the design rules are folded into the repo as Belmont-original prose crediting Yummy Labs, **not** vendored, because those skills carry no licence.
+
+If you take one thing from this file: **rev 4 put design inside `implement`. Rev 5 moves it to `tech-plan`.**
 
 ---
 
@@ -62,7 +73,7 @@ AFTER:
 | Fact | Evidence | Consequence |
 |---|---|---|
 | `tech-plan` is already interactive | `_src/tech-plan.md` includes `user-questions.md` and `dynamic-questioning.md` | The approval gate already exists. No new checkpoint machinery, no Go change. |
-| `TECH_PLAN.md` is **master-owned** | Copied master → worktree by `copyBelmontStateToWorktree`, so it is restored on `[r]`-resume. MILESTONE is worktree-*created*, so `os.RemoveAll` (`main.go:9980`) destroys it. | Durability is solved by construction, not patched. |
+| `{base}/TECH_PLAN.md` survives resume **if authored in master** | `copyBelmontStateToWorktree` (`main.go:9980`) does `os.RemoveAll(dstFeature)` at **`:10010`** then re-copies from master at **`:10011`**, preserving only `STEERING.md`. TECH_PLAN is *inside* the wiped dir — it survives because master is the copy source, not because it is exempt. | Durability holds only for master-authored content. A worktree-local write to that same path is destroyed like MILESTONE, so `implement` must be read-only against it. |
 | Planning is forced to Opus | `planningTier = "high"` (`main.go:102`) | The node authoring the contract runs on the strongest model automatically. Rev 4's `models.yaml` tier guidance becomes unnecessary. |
 
 Plus: **one design pass per feature instead of one per milestone.** Today design-agent re-derives tokens every milestone — wasteful, and nothing stops M1 and M4 from choosing different spacing scales.

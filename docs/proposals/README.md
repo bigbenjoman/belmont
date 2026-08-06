@@ -12,7 +12,8 @@ Sequential, four digits, never reused. `0001` and `0002` are claimed by the desi
 
 | # | Title | Status |
 |---|---|---|
-| 0003 | [Design quality without Figma](0003-design-quality-without-figma.md) | Draft — revision 4. **Do not implement as written**; needs a rev 5 restructure first |
+| 0003 | [Design quality without Figma](0003-design-quality-without-figma.md) | Draft — revision 5. Design moved from `implement` Phase 2 into `tech-plan`. Awaits one adversarial pass |
+| — | [0003 restructure brief](0003-DESIGN-RESTRUCTURE.md) | Background for rev 5. **Superseded in part** — see its header for the facts rev 5 corrected |
 | 0004 | [Context budget, with evidence](0004-context-budget-with-evidence.md) | Draft — revision 5 |
 | 0005 | [Maintainability](0005-maintainability.md) | Draft — revision 4 |
 | 0006 | [Plugin generator correctness](0006-plugin-generator-correctness.md) | Standalone bug fix — unrelated to the series. Shipped as PR #21 |
@@ -44,7 +45,9 @@ Through 0004 rev 4 this order was **reversed**: 0003 landed first so that 0004's
 
 ### Shared files
 
-0003 and 0004 both edit `skills/belmont/_src/verify.md` four lines apart — under the current order 0004 lands first, so 0003 rebases onto it. 0003 and 0005 both edit `_src/references/models-yaml-format.md` and append to `model-tier-economics.md`. 0003, 0004 and 0005 all append to `KNOWLEDGE.md`'s cross-cutting table; expect a trivial conflict and keep every row. Resolve `plugin/` conflicts by regeneration, never by hand — `generate-plugin.sh:35` does `rm -rf`.
+0003 and 0004 both edit `skills/belmont/_src/verify.md`. Revisions up to and including 0004 rev 4 claimed these edits "will conflict" because they sit four lines apart, inside default diff context. **That claim was tested on the real file and is false** — the rebase is clean at a three-line gap, and stays clean when the edits are widened. Default diff context governs `git am`/`git apply` of a patch file; rebase and merge use the three-way content merge, which ignores it. A conflict needs both sides to touch the same line. The claim has been removed from both specs.
+
+Genuine overlaps: 0003 and 0004 both edit `_src/next.md`; 0003 and 0005 both edit `_src/references/models-yaml-format.md` and append to `model-tier-economics.md`; all three append to `KNOWLEDGE.md`'s cross-cutting table — expect a trivial conflict there and keep every row. Resolve `plugin/` conflicts by regeneration, never by hand — `generate-plugin.sh:35` does `rm -rf`.
 
 ## Revision history
 
