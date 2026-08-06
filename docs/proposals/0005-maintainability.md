@@ -1,10 +1,10 @@
 # PR 3 — Maintainability
 
-**Revision 2.** Rewritten after adversarial review. **Both v1 proof mechanisms were impossible** and have been replaced. Changes in §12.
+**Revision 3.** v1 and v2 both specified proof mechanisms that could not work. v3's is verified against controls before being written down — see §4.1. Changes in §12.
 
 **Type:** mechanical refactor (zero behaviour change) + lint + CI.
 **Size:** very large diff, near-zero semantic content. Reviewed per-commit, one extracted file at a time.
-**Sequencing:** no PR dependency (see §1). Consumes PR 2's eval entry point in CI — rebase onto PR 2 if it has landed, otherwise drop that CI line.
+**Sequencing:** depends on **0006** (its CI gate on `generate-plugin.sh --check` is dishonest until the generator is fixed). No other PR dependency (see §1). Consumes PR 2's eval entry point in CI — rebase onto PR 2 if it has landed, otherwise drop that CI line.
 
 ---
 
@@ -36,20 +36,34 @@ Separately, `AGENTS.md:81` states there is no linter configured, so the code-rev
 
 ## 4. Design
 
-### 4.1 The new proof mechanism — normalized declaration-set diff
+### 4.1 The proof mechanism — `go/parser` declaration hashing
 
-Replaces `cmp`. Concatenate the package's non-test `.go` files, strip `package` / `import` / blank lines, sort top-level declarations, diff before against after. **Must be empty.**
+**Revision 3.** Two earlier mechanisms were specified and both failed. v1 used `cmp` on `-trimpath` binaries — impossible to pass (~40% of bytes differ on a verbatim move). v2 used a `sed`/`sort` text recipe that failed **in both directions**: `sed '/^import /d'` leaves indented import lines and the closing `)`, so every legitimate move diffed non-empty; `| sort` destroyed position, so a double predicate inversion printed `PURE MOVE`; and `grep -v '_test\.go'` filtered *lines*, not files.
+
+The replacement is a small Go tool using `go/parser`. For each top-level declaration in the package's non-test files it emits `name → sha256(canonical printer output)`, then sorts the pairs.
+
+- **Order-insensitive across files** — the sort means a declaration may live anywhere in the package.
+- **Order-sensitive within a declaration** — the hash covers the printed AST, so any statement reorder, pasted line or flipped operator changes it.
+- **Imports skipped** (`GenDecl` with `token.IMPORT`) — they legitimately duplicate across a split.
+- **Test files excluded at file level** via `strings.HasSuffix(f, "_test.go")`, not by line grep.
 
 ```bash
-decls() {  # $1 = git ref or worktree path
-  cat "$1"/cmd/belmont/*.go 2>/dev/null | grep -v '_test\.go' \
-    | sed '/^package /d; /^import /d; /^\s*$/d' | sort
-}
 git worktree add /tmp/pr3-base main
-diff <(decls /tmp/pr3-base) <(decls .) && echo "PURE MOVE"
+declsum /tmp/pr3-base/cmd/belmont > /tmp/base.txt
+declsum ./cmd/belmont > /tmp/after.txt
+diff /tmp/base.txt /tmp/after.txt && echo "PURE MOVE"
 ```
 
-Verified to prove a pure move **and** to catch an injected `!=`→`==` change. Do **not** substitute `go tool nm` symbol name+size sets — tested, and it misses that injected bug.
+**Verified against both controls before entering this spec** — a 398-declaration baseline over the real `cmd/belmont`:
+
+| Control | Result |
+|---|---|
+| Extract `milestoneAllDone` / `milestoneAllVerified` / `milestoneHasBlockers` / `milestoneNotStarted` verbatim into `state.go`, gofmt-clean | decl-set **identical** → `PURE MOVE` ✅ |
+| Same move, then invert two predicates (`== taskBlocked` → `!=`, `!= taskTodo` → `==`) — multiset-preserving, compiles clean | decl-set **differs** → caught ✅ |
+
+The second control is the exact case that defeated the v2 recipe.
+
+Ship the tool as `scripts/declsum/main.go` (its own `package main`, so it does not enter `cmd/belmont`), invoked from CI and the smoke test. Do **not** substitute `go tool nm` symbol name+size sets — tested, and they miss the inversion.
 
 Use `git worktree add`, not v1's `git stash` recipe: on a clean tree the stash is a no-op and both builds come from the split tree, printing a **false pass** (reproduced); on a dirty tree `git stash` does not stash untracked files, so the "before" build fails with `redeclared in this block`, `git stash pop` never runs, and the split is stranded in `stash@{0}`. Add `-buildvcs=false` to any comparison build.
 
@@ -172,7 +186,8 @@ This manual step is the **only** coverage of the read → revert → write → a
 - [ ] `main.go` under ~1,500 lines; no new file over ~2,000
 - [ ] Package unchanged — files moved, no new packages
 - [ ] One commit per extracted file; `git show --stat` shows a legible `main.go -N / newfile.go +N` pair
-- [ ] Decl-set diff empty **at every commit**; output pasted in the PR description
+- [ ] Decl-set diff empty **at commits 1–10**; at commit 11 the diff shows exactly the 8 U1000 deletions + the SA4006 line and nothing else
+- [ ] `scripts/declsum/main.go` re-verified against both controls (legitimate move, double predicate inversion) before the DoD is relied on
 - [ ] Zero logic edits — no renames, no signature changes, no reformatting
 - [ ] `decideLoopAction*` + `checkHardGuardrails` in `auto_decide.go`; `executeTriageAction` assigned
 - [ ] No collision with the existing `cmd/belmont/tools.go`
@@ -203,7 +218,7 @@ This manual step is the **only** coverage of the read → revert → write → a
 
 | Risk | Mitigation |
 |---|---|
-| A behaviour change hides in 12.6k moved lines | Decl-set diff at every commit — proven to catch an injected `!=`→`==` |
+| A behaviour change hides in 12.6k moved lines | `go/parser` decl hashing at commits 1–10, verified against a legitimate move and a double predicate inversion |
 | Reviewer rejects on the stdlib-only rule | Pre-empt in paragraph one: it constrains dependencies, not file count |
 | A platform-file re-cut breaks Windows silently | 5-platform matrix + `GOOS=windows go vet` in DoD and CI |
 | Knowledge routing goes stale | Driven from grep output, not a hand list |
@@ -213,7 +228,7 @@ This manual step is the **only** coverage of the read → revert → write → a
 
 ## 11. Interaction with PR 1 and PR 2
 
-- **PR 1** — no overlap.
+- **PR 1** — overlaps, contrary to v2. Both edit `_src/references/models-yaml-format.md` (0003 adds Mode B tier guidance beside the tier table this PR rewrites at `:38`) and both append to `model-tier-economics.md`'s `Revisions` footer. All four proposals also append to `KNOWLEDGE.md`'s cross-cutting table tail — expect a trivial conflict, keep every row.
 - **PR 2** — v1 conflicted because PR 2 edited `executeLoopAction`, which this PR relocates. PR 2 v2 dropped Optimisation B, so it touches no non-test Go and the conflict is gone. This PR's CI consumes PR 2's eval entry point; if PR 2 has not landed, drop that one CI line.
 
 ## 12. Changes from v1
@@ -238,3 +253,12 @@ This manual step is the **only** coverage of the read → revert → write → a
 | Host-only build coverage | 5-platform matrix + `GOOS=windows go vet` |
 | No CI | This PR owns `.github/workflows/ci.yml` |
 | No rollback or blame story | `git blame -C -C`; rollback is re-concatenation |
+
+### v2 → v3
+
+| v2 | v3 |
+|---|---|
+| `sed`/`sort` decl-set recipe | Broken both ways — imports leaked (every legit move failed), `sort` blind to a double predicate inversion, `grep -v '_test\.go'` filtered lines not files. Replaced with `go/parser` decl hashing, **verified against both controls** |
+| "empty at every commit" | Commits 1–10 only; commit 11 expects exactly the 8 U1000 deletions + SA4006 |
+| "PR 1 — no overlap" | False — both edit `models-yaml-format.md` and `model-tier-economics.md` |
+| No generator dependency | Depends on **0006** — the CI `--check` gate is dishonest until then |

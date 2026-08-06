@@ -1,10 +1,10 @@
 # PR 2 — Context budget, with evidence
 
-**Revision 2.** Rewritten after adversarial review. **Optimisation B is dropped entirely** — its rationale was empirically false. Changes from v1 in §11.
+**Revision 3.** v2 dropped Optimisation B (its rationale was empirically false); v3 resolves what the second review found. Changes in §11.
 
 **Type:** test harness (Go, test-only) + prose (three skill sources).
 **Size:** harness dominates. Skill edits ~60 lines. **No non-test Go changes.**
-**Sequencing:** land **after PR 1** (baseline must include Mode B). **Blocks nothing** — with Optimisation B dropped, this PR no longer touches `main.go`, so the PR 2 / PR 3 conflict disappears.
+**Sequencing:** depends on **0006** (its `--check` DoD is unsatisfiable until the generator is fixed) and lands **after 0003** (baseline must include Mode B). **Blocks nothing** — with Optimisation B dropped, this PR no longer touches `main.go`, so the PR 2 / PR 3 conflict disappears.
 
 ---
 
@@ -32,6 +32,8 @@ The wider lesson is the one this PR is about: an optimisation without a measurem
 Then implement fans out to 3 sub-agents and verify to 2, each re-reading PRD and TECH_PLAN independently — roughly seven full spec reads per milestone.
 
 **Honest reach.** This PR's remedy touches **4 of those 7**. `verify.md` issues the read instruction inside both its sub-agent dispatch prompts, so fixing the orchestrator fixes those two as well. The 3 untouched are `implement.md`'s sub-agents — that is the deferred task-scoped spec extract (§8), and it is named here rather than left implied.
+
+**Known addition from 0003.** Mode B adds a contract file and per-task design sections on the sub-agent fan-out path this PR defers, so the baseline measured here already includes that cost. Net reduction is reported against a Mode B milestone, not a pre-0003 one.
 
 **Only 3 of 16 skill sources have this pattern.** Fixing two would leave `next.md` as the sole outlier, which is why it is in scope.
 
@@ -111,7 +113,9 @@ Applies to `implement.md`, `verify.md` **and `next.md`**:
 | Plugin | Regenerate — `plugin/skills/{implement,verify,next}/SKILL.md` are git-tracked |
 | Knowledge | **New** `meta/evals.md`, **new** `cross-cutting/context-budget.md` |
 
-**Preflight correction.** v1 required checking overlap against open PRs #4–#7. Verified via `gh pr list`: **#4–#7 were closed unmerged on 2026-04-21, superseded by merged #8** ("skills: token-saver — MILESTONE coordinator + references/ convention"). The only open PRs are #10–#13 and none touches a `.go` file. Sequence against **#8's merged state**. Delete the preflight step; keep a line in the PR description recording that the check was done.
+**Preflight correction.** v1 required checking overlap against open PRs #4–#7. Verified via `gh pr list`: **#4–#7 were closed unmerged on 2026-04-21, superseded by merged #8** ("skills: token-saver — MILESTONE coordinator + references/ convention"). The only open PRs are #10–#13 and none touches a `.go` file. Sequence against **#8's merged state**. Replace the preflight with a narrower live check: **#10 and #11 still sit on `_src/next.md`, and #11 carries `plugin/skills/next/SKILL.md`** — both of which this PR now edits and regenerates. Record the overlap in the PR description rather than claiming none.
+
+**Shared file with 0003.** This PR's conditional-archive edits land at `_src/verify.md:110`/`:147`; 0003 inserts its Mode B block at `:114`. Four lines apart, inside default diff context. Rebase onto 0003 and fold this wording into its restructured block.
 
 `steering.md` no longer needs amending — Optimisation B is gone, so both injection sites (`main.go:6887` and `executeTriageAction` at `:7026-7027`) are untouched, and the existing `steeringHeader()` marker (`:11317-11326`, `## URGENT — User steering (higher priority than NOTES.md)`) stands unchanged.
 
@@ -200,7 +204,11 @@ Expect `✓ injected → <path>` from the steer command, then `[STEERING] inject
 - [ ] Identical final PROGRESS state vs baseline (smoke Step 2)
 
 **Mechanics**
-- [ ] `./scripts/generate-skills.sh --check` and `./scripts/generate-plugin.sh --check` pass
+- [ ] `./scripts/generate-skills.sh --check` passes
+- [ ] `./scripts/generate-plugin.sh --check` passes — **requires 0006**; the bare form exits 1 on unmodified `main` because `VERSION` defaults to `dev` while the committed `plugin.json` says `0.10.14`. Until 0006 lands, pin: `--check 0.10.14`
+- [ ] Tier 2 actually executed: `BELMONT_EVAL_LIVE=1 go test -tags eval ./cmd/belmont`, N ≥ 3, **before Commit 2 (baseline) and after (post-change)**, both results pasted in the PR description. Commit 2 is gated on execution, not on the description mentioning it
+- [ ] Tier-2 fixture setup runs the source-mode installer so the fixture has a skill surface — a bare `t.TempDir()` repo has no `.agents/skills/`, so a live agent could never read the Optimisation-A prose
+- [ ] Reuses `runGit` from `commit_update_test.go:13` — no duplicate helper
 - [ ] `go build ./cmd/belmont`, `go test ./cmd/belmont` green
 - [ ] Commits ordered harness → Optimisation A
 - [ ] Auto, interactive and plugin surfaces exercised
@@ -245,3 +253,14 @@ Expect `✓ injected → <path>` from the steer command, then `[STEERING] inject
 | Smoke Step 2 broken four ways | Rewritten with rebuild, reinstall, `$BASE`, PROGRESS-file diff |
 | `belmont steer <positional>` | `--message` |
 | `plugin/` unmentioned | In scope |
+
+### v2 → v3
+
+| v2 | v3 |
+|---|---|
+| `--check` DoD unsatisfiable on main | Depends on **0006**; pin `--check 0.10.14` until then |
+| "Tier 2 licenses Optimisation A", never required to run | Executed `BELMONT_EVAL_LIVE=1` N≥3 gate before and after Commit 2 |
+| Tier-2 fixtures had no skill surface | Fixture setup runs the source-mode installer |
+| Preflight deleted wholesale | #10/#11 sit on `_src/next.md`; #11 on `plugin/skills/next/SKILL.md` |
+| Mode B addition not disclosed in Problem | Disclosed; reduction reported against a Mode B milestone |
+| — | Reuses `runGit` from `commit_update_test.go:13` |

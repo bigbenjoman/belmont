@@ -1,10 +1,10 @@
 # PR 1 — Design quality without Figma
 
-**Revision 2.** Rewritten after adversarial review found four design-level blockers in v1. Changes from v1 are summarised in §12.
+**Revision 3.** v2 was re-reviewed against the codebase; v3 resolves what that found. Changes in §12.
 
 **Type:** prose only (agents, one skill source, one new reference). No Go changes.
 **Size:** ~450 lines net across 6 tracked files + regenerated `plugin/` + 1 knowledge entry. (v1 understated this at ~300 / 3 files.)
-**Sequencing:** land **first** of the three. PR 2's token baseline must already include Mode B (see §11).
+**Sequencing:** depends on **0006** — the plugin generator must work before edited agents can ship to the plugin surface. Land **first of the three** thereafter. PR 2's token baseline must already include Mode B (see §11).
 
 ---
 
@@ -177,7 +177,9 @@ Mode B increases hand-written UI volume, and nothing in Phases 0–6 runs the ta
 | `agents/belmont/implementation-agent.md` | Mode B self-check branch |
 | `skills/belmont/_src/verify.md` | Step 1b detects the contract |
 | `skills/belmont/_src/references/models-yaml-format.md` | Mode B tier guidance |
-| `plugin/` | Regenerate — `plugin/agents/{design,verification,implementation}-agent.md` and `plugin/skills/verify/` are git-tracked |
+| `agents/belmont/design-agent.md` `## Important Rules` | `:260` ("DO NOT create, edit, or write to any file other than the MILESTONE file") and `:137` forbid the contract write. Permit the `DESIGN-CONTRACT-<M>.md` path in both. Leave `:259` alone — it is not violated |
+| `skills/belmont/_src/implement.md` | Phase 2 purpose line (`:96`) is stale under Mode B |
+| `plugin/` | Regenerate — `plugin/agents/{design,verification,implementation}-agent.md` and `plugin/skills/verify/` are git-tracked. **Requires 0006**; before it, four plugin agents generate as 0 bytes |
 | `knowledge/cross-cutting/design-authority.md` | **New** entry |
 
 **Reference file placement (v1 blocker).** v1 put it under `skills/belmont/_src/references/`, where `generate-skills.sh:134-148` copies a reference only when a generated **SKILL.md body** names it. The consumer here is an agent file, so it would ship nowhere — verified empirically. It goes under `agents/belmont/references/`, which the `hasReferences` branch of `syncEmbeddedDir` (`main.go:4861-4872`) already mirrors, and is cited from `design-agent.md` by the explicit project-root path `.agents/belmont/references/design-no-figma.md` (sub-agent CWD is the project root).
@@ -265,7 +267,7 @@ Steps 1–4 already constitute the Claude-in-both-modes sanity check.
 - [ ] Findings use the existing Critical/Warning/Polish ladder — no new severity
 
 **Non-regression**
-- [ ] `git diff` on `design-agent.md` confined to mode selection + replaced section
+- [ ] `git diff` on `design-agent.md` confined to mode selection, the replaced `## Handling No Design` section, **and the `## Important Rules` write-rule amendment at `:137`/`:260`**
 - [ ] Mode A structural assertion passes (smoke Step 5)
 - [ ] Failed load still BLOCKS, invents nothing, creates no contract (smoke Step 6)
 - [ ] `SKIPPED` still forbidden as a Figma node status
@@ -279,7 +281,7 @@ Steps 1–4 already constitute the Claude-in-both-modes sanity check.
 - [ ] `./scripts/generate-skills.sh --check` and `./scripts/generate-plugin.sh --check` pass (`plugin.json` STALE is the only legitimate diff; restore from main before committing)
 - [ ] `go build ./cmd/belmont` and `go test ./cmd/belmont` green
 - [ ] `test -f <project>/.agents/belmont/references/design-no-figma.md` after install
-- [ ] `scripts/build.sh` confirmed to copy the new `agents/belmont/references/` dir
+- [ ] `test -f plugin/agents/references/design-no-figma.md` after regeneration (needs 0006's agents `references/` branch; `scripts/build.sh` already handles the install surface)
 - [ ] Auto, interactive and plugin surfaces all exercised
 - [ ] `design-authority.md` created with `Don't re-do`; routing row added; `model-tier-economics.md` amended
 - [ ] `AGENTS.md` invariants list updated (edit `AGENTS.md`, not the `CLAUDE.md` symlink)
@@ -301,7 +303,9 @@ Steps 1–4 already constitute the Claude-in-both-modes sanity check.
 
 These two PRs push token cost in opposite directions. Mode B *adds* to `## Design Specifications` and a contract file, both read on the sub-agent fan-out path PR 2 explicitly defers; PR 2 cuts only the orchestrator reads. On a UI-heavy no-Figma milestone the net could be higher.
 
-Mitigations: the §4.3 output cap; recording MILESTONE + contract byte size in this PR's DoD; and **landing PR 1 first** so PR 2's measured baseline already includes Mode B. PR 2 names this as a known addition in its Problem section.
+Mitigations: the §4.3 output cap; recording MILESTONE + contract byte size in this PR's DoD; and **landing 0003 first** so 0004's measured baseline already includes Mode B. 0004 names this in its Problem section.
+
+**Shared files.** 0004 edits `_src/verify.md` at `:110`/`:147`, four lines from this PR's Mode B insertion at `:114` — inside default diff context, so they will conflict. Both regenerate tracked `plugin/skills/verify/SKILL.md`. 0005 edits `_src/references/models-yaml-format.md`, which this PR also touches. Resolve plugin conflicts by regeneration, never by hand — `generate-plugin.sh:35` does `rm -rf`.
 
 ## 12. Changes from v1
 
@@ -318,3 +322,14 @@ Mitigations: the §4.3 output cap; recording MILESTONE + contract byte size in t
 | Smoke asserts live `MILESTONE.md`, no clean-tree commit, branches from wrong SHA, `--tool` for interactive codex | All corrected |
 | DoD "Mode A byte-identical" | Unsatisfiable — replaced with confined `git diff` + structural assertion |
 | ~300 lines / 3 files | ~450 lines / 6 files + plugin |
+
+### v2 → v3
+
+| v2 | v3 |
+|---|---|
+| Contract write vs `design-agent.md:260` | `:137`/`:260` now in scope; write-rule permits the contract path |
+| Non-regression DoD forbade the fix | Reworded to include the rules amendment |
+| `_src/implement.md` Phase 2 purpose line stale | In scope |
+| Plugin generator assumed working | Depends on **0006**; four plugin agents currently generate as 0 bytes |
+| DoD checked `build.sh` (already worked) | Asserts `plugin/agents/references/design-no-figma.md` |
+| "conflicts with nothing" | Shared-file rows for `verify.md` (0004) and `models-yaml-format.md` (0005) |
