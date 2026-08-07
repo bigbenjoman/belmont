@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -238,4 +240,418 @@ func parseMilestones(progress string) []milestone {
 	}
 
 	return milestones
+}
+
+// overlayLiveMilestones returns `base` with each milestone whose ID matches an
+// entry in `perMilestoneLive` replaced by that worktree's current view of the
+// milestone. Milestones with no active worktree are returned unchanged.
+// Overlaid milestones carry a LiveFrom pointer so renderers can annotate them.
+func overlayLiveMilestones(base []milestone, perMilestoneLive map[string]string) []milestone {
+	out := make([]milestone, 0, len(base))
+	for _, m := range base {
+		live, ok := perMilestoneLive[m.ID]
+		if !ok {
+			out = append(out, m)
+			continue
+		}
+		wtProgressPath := filepath.Join(live, "PROGRESS.md")
+		data, err := os.ReadFile(wtProgressPath)
+		if err != nil {
+			out = append(out, m) // worktree lost its PROGRESS.md — fall back to master
+			continue
+		}
+		wtMilestones := parseMilestones(string(data))
+		var replaced bool
+		for _, wm := range wtMilestones {
+			if wm.ID == m.ID {
+				wm.LiveFrom = live
+				out = append(out, wm)
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			// Worktree doesn't have this milestone (shouldn't happen) — keep master.
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func parseTaskOrder(id string) (int, int) {
+	re := regexp.MustCompile(`^P(\d+)-(\d+)`)
+	match := re.FindStringSubmatch(id)
+	if len(match) != 3 {
+		return 99, 99
+	}
+	return atoiDefault(match[1], 99), atoiDefault(match[2], 99)
+}
+
+func lastCompletedTask(tasks []task) *task {
+	var last *task
+	for i := range tasks {
+		if tasks[i].Status == taskDone || tasks[i].Status == taskVerified {
+			t := tasks[i]
+			last = &t
+		}
+	}
+	return last
+}
+
+func nextMilestone(milestones []milestone) *milestone {
+	for _, m := range milestones {
+		if !milestoneAllDone(m) {
+			mm := m
+			return &mm
+		}
+	}
+	return nil
+}
+
+func nextTask(tasks []task) *task {
+	for _, t := range tasks {
+		if t.Status == taskInProgress || t.Status == taskTodo {
+			tt := t
+			return &tt
+		}
+	}
+	return nil
+}
+
+// blockedTaskCount returns the number of tasks with [!] status across all milestones.
+func blockedTaskCount(milestones []milestone) int {
+	count := 0
+	for _, m := range milestones {
+		for _, t := range m.Tasks {
+			if t.Status == taskBlocked {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+// blockedTaskNames returns descriptions of blocked tasks for display.
+func blockedTaskNames(milestones []milestone) []string {
+	var names []string
+	for _, m := range milestones {
+		for _, t := range m.Tasks {
+			if t.Status == taskBlocked {
+				label := t.Name
+				if t.ID != "" {
+					label = t.ID + ": " + t.Name
+				}
+				names = append(names, label)
+			}
+		}
+	}
+	return names
+}
+
+func parseDecisions(progress string, limit int) []string {
+	lines := parseSectionLines(progress, "## Decisions Log")
+	if len(lines) <= limit {
+		return lines
+	}
+	return lines[len(lines)-limit:]
+}
+
+func parseSectionLines(doc, header string) []string {
+	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(header) + `\s*$`)
+	loc := re.FindStringIndex(doc)
+	if loc == nil {
+		return nil
+	}
+	rest := doc[loc[1]:]
+	lines := strings.Split(rest, "\n")
+	var results []string
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "## ") {
+			break
+		}
+		if trimmed == "" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(trimmed), "none") {
+			continue
+		}
+		trimmed = strings.TrimPrefix(trimmed, "-")
+		trimmed = strings.TrimPrefix(trimmed, "*")
+		trimmed = strings.TrimSpace(trimmed)
+		if trimmed != "" {
+			results = append(results, trimmed)
+		}
+	}
+	return results
+}
+
+func techPlanReady(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(content)) != ""
+}
+
+// fileHasRealContent checks if a file exists and has content beyond template/placeholder text.
+func fileHasRealContent(path string) bool {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	trimmed := strings.TrimSpace(string(content))
+	if trimmed == "" {
+		return false
+	}
+	// Check for known template/placeholder texts
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "run /belmont:") || strings.HasPrefix(lower, "run the /belmont:") {
+		return false
+	}
+	return true
+}
+
+func computeOverallStatus(tasks []task) string {
+	if len(tasks) == 0 {
+		return "Not Started"
+	}
+
+	allVerified := true
+	allDone := true
+	anyProgress := false
+	allBlocked := true
+
+	for _, t := range tasks {
+		if t.Status != taskVerified {
+			allVerified = false
+		}
+		if t.Status != taskDone && t.Status != taskVerified {
+			allDone = false
+		}
+		if t.Status == taskDone || t.Status == taskVerified || t.Status == taskInProgress {
+			anyProgress = true
+		}
+		if t.Status != taskBlocked {
+			allBlocked = false
+		}
+	}
+
+	if allVerified {
+		return "Verified"
+	}
+	if allDone {
+		return "Complete"
+	}
+	if allBlocked {
+		return "BLOCKED"
+	}
+	if anyProgress {
+		return "In Progress"
+	}
+	return "Not Started"
+}
+
+// isFeatureTerminal reports whether a feature is done — either all tasks
+// implemented ("Complete"), all tasks verified ("Verified"), or archived via
+// /belmont:cleanup ("Archived"). Terminal features are skipped by `auto --all`
+// and treated as dep-satisfying (but non-executing) in wave planning.
+func isFeatureTerminal(status string) bool {
+	switch status {
+	case "Complete", "Verified", "Archived":
+		return true
+	}
+	return false
+}
+
+func milestonesInRange(milestones []milestone, from, to string) []milestone {
+	if from == "" && to == "" {
+		return milestones
+	}
+
+	fromNum := parseMilestoneNum(from)
+	toNum := parseMilestoneNum(to)
+
+	var result []milestone
+	for _, m := range milestones {
+		num := parseMilestoneNum(m.ID)
+		if num < 0 {
+			continue
+		}
+		if fromNum >= 0 && num < fromNum {
+			continue
+		}
+		if toNum >= 0 && num > toNum {
+			continue
+		}
+		result = append(result, m)
+	}
+	return result
+}
+
+func parseMilestoneNum(id string) int {
+	if id == "" {
+		return -1
+	}
+	re := regexp.MustCompile(`(?i)M(\d+)`)
+	match := re.FindStringSubmatch(id)
+	if len(match) < 2 {
+		return -1
+	}
+	n, err := strconv.Atoi(match[1])
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// skipMilestoneInProgress marks all incomplete tasks in a milestone as done in PROGRESS.md.
+func skipMilestoneInProgress(root, feature, milestoneID string) error {
+	progressPath := filepath.Join(root, ".belmont", "features", feature, "PROGRESS.md")
+	content, err := os.ReadFile(progressPath)
+	if err != nil {
+		return fmt.Errorf("read PROGRESS.md: %w", err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	msRe := regexp.MustCompile(`(?i)^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
+	taskRe := regexp.MustCompile(`^(\s*-\s+)\[[ >!]\](\s+.*)$`)
+
+	inTarget := false
+	changed := false
+	for i, line := range lines {
+		if m := msRe.FindStringSubmatch(line); len(m) >= 2 {
+			inTarget = ("M" + m[1]) == milestoneID
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), "## ") {
+			inTarget = false
+			continue
+		}
+		if inTarget {
+			if taskMatch := taskRe.FindStringSubmatch(line); len(taskMatch) >= 3 {
+				lines[i] = taskMatch[1] + "[x]" + taskMatch[2]
+				changed = true
+			}
+		}
+	}
+
+	if !changed {
+		return fmt.Errorf("milestone %s not found or already done", milestoneID)
+	}
+
+	return os.WriteFile(progressPath, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+func detectFwlupTasks(root, feature string, report statusReport) bool {
+	fwlupRe := regexp.MustCompile(`(?i)FWLUP`)
+	// Check if any todo/in_progress tasks have FWLUP in their ID or name
+	for _, t := range report.Tasks {
+		if t.Status == taskTodo || t.Status == taskInProgress {
+			if fwlupRe.MatchString(t.ID) || fwlupRe.MatchString(t.Name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// extractMilestoneFromTaskID extracts the milestone ID from a task ID like "P5-M5-FWLUP-1" → "M5".
+func extractMilestoneFromTaskID(taskID string) string {
+	re := regexp.MustCompile(`P\d+-M(\d+)`)
+	m := re.FindStringSubmatch(taskID)
+	if len(m) >= 2 {
+		return "M" + m[1]
+	}
+	return ""
+}
+
+// detectFwlupTasksForMilestone checks for pending FWLUP tasks scoped to a specific milestone.
+func detectFwlupTasksForMilestone(root, feature string, report statusReport, milestoneID string) bool {
+	if milestoneID == "" {
+		return false
+	}
+	fwlupRe := regexp.MustCompile(`(?i)FWLUP`)
+	for _, t := range report.Tasks {
+		if t.Status == taskTodo || t.Status == taskInProgress {
+			if fwlupRe.MatchString(t.ID) || fwlupRe.MatchString(t.Name) {
+				// Tasks now carry their milestone ID from PROGRESS.md
+				if t.MilestoneID == milestoneID || extractMilestoneFromTaskID(t.ID) == milestoneID {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// pendingTasksInRange checks for incomplete tasks under milestones
+// that fall within the from/to range in the feature's PROGRESS.md.
+// When from and to are both empty, falls back to checking all milestones.
+func pendingTasksInRange(root, feature, from, to string) bool {
+	progressPath := filepath.Join(root, ".belmont", "features", feature, "PROGRESS.md")
+	data, err := os.ReadFile(progressPath)
+	if err != nil {
+		return false
+	}
+
+	fromNum := parseMilestoneNum(from)
+	toNum := parseMilestoneNum(to)
+
+	lines := strings.Split(string(data), "\n")
+	msRe := regexp.MustCompile(`(?i)^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
+	// Match any incomplete task: [ ], [>], [!]
+	taskRe := regexp.MustCompile(`^\s*-\s+\[[ >!]\]`)
+
+	inRange := fromNum < 0 && toNum < 0 // if no range, all milestones are in range
+	for _, line := range lines {
+		if m := msRe.FindStringSubmatch(line); len(m) >= 2 {
+			num, _ := strconv.Atoi(m[1])
+			inRange = (fromNum < 0 || num >= fromNum) && (toNum < 0 || num <= toNum)
+			continue
+		}
+		if inRange && taskRe.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
+
+// fwlupTasksInRange checks for unchecked FWLUP tasks under milestones within the from/to range.
+// When from and to are both empty, falls back to the global detectFwlupTasks.
+func fwlupTasksInRange(root, feature string, report statusReport, from, to string) bool {
+	if from == "" && to == "" {
+		return detectFwlupTasks(root, feature, report)
+	}
+
+	progressPath := filepath.Join(root, ".belmont", "features", feature, "PROGRESS.md")
+	data, err := os.ReadFile(progressPath)
+	if err != nil {
+		return false
+	}
+
+	fromNum := parseMilestoneNum(from)
+	toNum := parseMilestoneNum(to)
+
+	lines := strings.Split(string(data), "\n")
+	msRe := regexp.MustCompile(`(?i)^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
+	// Match any incomplete task with FWLUP in the text
+	fwlupTaskRe := regexp.MustCompile(`(?i)^\s*-\s+\[[ >!]\].*FWLUP`)
+
+	inRange := false
+	for _, line := range lines {
+		if m := msRe.FindStringSubmatch(line); len(m) >= 2 {
+			num, _ := strconv.Atoi(m[1])
+			inRange = (fromNum < 0 || num >= fromNum) && (toNum < 0 || num <= toNum)
+			continue
+		}
+		if inRange && fwlupTaskRe.MatchString(line) {
+			return true
+		}
+	}
+	return false
 }
