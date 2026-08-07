@@ -35,6 +35,28 @@ In `cmd/belmont/auto_parallel.go`:
 - **Missing merge overlap report**: two branches write the same file, git picks one arbitrarily, the other's work disappears. Only detectable later when the feature "looks wrong." (This was the hero-section.tsx overwrite in the about-2 run.)
 - **Missing live status overlay**: user has no way to observe parallel work in progress; has to wait until merge to see whether M2 is stuck or making progress. Blind flying on 30–60 minute wave durations.
 
+## Gotcha — `--max-parallel` does not by itself produce worktrees
+
+`runAutoCmd` only dispatches to `runAutoParallel` when at least one milestone in the selected range declares a dependency (the `hasExplicitDeps` loop in `cmd/belmont/autocmd.go`). With no `(depends: …)` anywhere, `--max-parallel 2` is silently ignored and the run goes through `runLoop` in the master tree.
+
+This matters most when writing a smoke test. A fixture with two independent milestones and `--max-parallel 2` looks like it covers the parallel path, creates no worktrees, and passes — proving nothing about `auto_parallel.go`, `worktree.go` or `copyBelmontStateToWorktree`. Observed exactly this on 2026-08-07 while validating the `main.go` split.
+
+To force a genuine concurrent wave, pre-mark a baseline milestone `[v]` and give two others the same dependency on it:
+
+```
+### M1: Baseline
+- [v] P1-M1-1 Baseline exists
+
+### M2: Thing A (depends: M1)
+- [ ] P1-M2-1 …
+
+### M3: Thing B (depends: M1)
+- [ ] P1-M3-1 …
+```
+
+M1 is skipped as already verified; M2 and M3 form one wave and get a worktree each. Confirm with `.belmont/auto.json` — it should report `mode: single-feature-parallel` with an entry per milestone.
+
+
 ## Don't re-do
 
 - **Master-tree shortcut for single-milestone waves.** Was in place as an optimization to save ~5–10s of worktree setup. Cost: asymmetric behavior per wave, scope-guard amends on the wrong branch, confused `belmont steer` targeting. Rejected in the same session it was diagnosed; do not bring it back even under a flag. If worktree setup ever becomes a real bottleneck, make setup faster.
@@ -63,3 +85,4 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestOverlayLiveMilestones_
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
 - 2026-05-12 — added `MaxParallel <= 1` inline-merge semantic (every unit still goes through a worktree; only the merge interleaves). Paired with `resume-rebase.md`. See [`auto-mode/multi-feature-scheduling.md`](multi-feature-scheduling.md) for the multi-feature-mode equivalent.
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
+- 2026-08-07 — recorded that `--max-parallel` is inert without an explicit `(depends: …)`; a smoke fixture without one exercises the master-tree path and silently proves nothing about worktrees.
