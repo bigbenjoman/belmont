@@ -22,6 +22,7 @@ Curated operational knowledge for working on Belmont itself. Scan the table belo
 | [auto-mode/clean-tree-preflight.md](auto-mode/clean-tree-preflight.md) | touch `requireCleanWorkingTree`, `commitBelmontUpdate`, `belmontManagedPaths`, the `--allow-dirty` / `--no-commit` flags, or weaken auto's startup contract that the working tree must be clean |
 | [auto-mode/multi-feature-scheduling.md](auto-mode/multi-feature-scheduling.md) | change `computeFeatureWaves`, `filterWaveByBlocked`, `runAutoMultiFeature`'s wave/skip plumbing, the pause→dependents cascade, `scanReadiness`, `resolveFeatureSlugs` ordering, or the `MaxParallel <= 1` serial-merge branch |
 | [auto-mode/resume-rebase.md](auto-mode/resume-rebase.md) | touch `rebaseWorktreeOnMain`, `announceWorktreeRebase`, `handleStaleWorktree`'s `[r]`-resume path, or the dirty-tree / conflict policy for picking up sibling merges on resume |
+| [auto-mode/worktree-state-isolation.md](auto-mode/worktree-state-isolation.md) | touch `untrackBelmontInWorktree`, `syncFeatureStateAfterMerge`, `commitWorktreeChanges`, or `copyBelmontStateToWorktree`'s git handling — or propose *any* git-exclude / gitignore mechanism for `.belmont/` inside a worktree |
 
 ### Cross-cutting (multiple domains)
 
