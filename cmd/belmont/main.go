@@ -10046,8 +10046,9 @@ func copyBelmontStateToWorktree(root, wtPath, slug string) error {
 	// commitWorktreeChanges' `git add -A` and travel back through the merge. That
 	// is load-bearing: MILESTONE.md is created inside the worktree, and it is the
 	// only return path on the `belmont recover` route, which does not call
-	// syncFeatureStateAfterMerge. The add/add conflict handling in mergeWorktreeBranch
-	// exists precisely because these files reach git.
+	// syncFeatureStateAfterMerge. When they do collide on a merge they surface as
+	// ordinary conflicts and route to the reconciliation agent — there is no
+	// .belmont-specific handling. See knowledge/auto-mode/worktree-state-isolation.md.
 	//
 	// A previous `writeWorktreeGitExcludes` tried to exclude them, but wrote to the
 	// per-worktree $GIT_DIR/info/exclude, which git never reads — it resolves
