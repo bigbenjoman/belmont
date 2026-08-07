@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build, test, lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build
+        run: go build ./cmd/belmont
+
+      - name: Test
+        run: go test ./cmd/belmont
+
+      - name: Vet
+        run: go vet ./...
+
+      # process_unix.go / process_windows.go are build-constrained. A deleted
+      # //go:build line leaves every host-only check green while breaking the
+      # Windows build, so vet the other GOOS explicitly.
+      - name: Vet (windows)
+        run: go vet ./...
+        env:
+          GOOS: windows
+
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Staticcheck
+        run: $(go env GOPATH)/bin/staticcheck ./...
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l cmd/ scripts/ 2>/dev/null || true)
+          if [ -n "$unformatted" ]; then
+            echo "Not gofmt-clean:"; echo "$unformatted"; exit 1
+          fi
+
+  generated:
+    name: Generated content is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Skills are generated from _src/ and _partials/
+        run: ./scripts/generate-skills.sh --check
+
+      # Guards the defect fixed in #21: four of six plugin agents shipped as
+      # 0-byte files for two months because no check spanned agents/belmont/
+      # and scripts/generate-plugin.sh. --check alone cannot catch that class
+      # (it regenerates with the same code and diffs against itself), so the
+      # line-count assertion below is the real gate.
+      - name: Plugin tree is up to date
+        run: ./scripts/generate-plugin.sh --check
+
+      - name: Plugin agents are not truncated
+        run: |
+          # 'rc', not 'status' — the latter is read-only in zsh, so anyone
+          # running this block locally would hit an unrelated error.
+          rc=0
+          for src in agents/belmont/*.md; do
+            name=$(basename "$src")
+            out="plugin/agents/$name"
+            if [ ! -f "$out" ]; then
+              echo "MISSING: $out"; rc=1; continue
+            fi
+            s=$(wc -l < "$src"); o=$(wc -l < "$out")
+            # generate-plugin.sh injects a 3-line frontmatter block.
+            if [ "$o" -ne "$((s + 3))" ]; then
+              echo "TRUNCATED: $out has $o lines, expected $((s + 3)) (source $s + 3)"
+              rc=1
+            fi
+          done
+          exit $rc
+
+  cross-platform:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      # release.yml verifies host-only, and only on tag push — by which point
+      # the commit is already tagged. This runs the same five targets per PR.
+      #
+      # The embed axis is deliberately not in this matrix: plain `go build` is
+      # the !embed path and scripts/build.sh is the -tags embed path, so both
+      # are already covered — build.sh by release.yml, and the default by the
+      # `test` job above.
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build ./cmd/belmont
