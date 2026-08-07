@@ -14,10 +14,19 @@ inverted, and the safety net it relies on does not exist. It needs a **rev 6**.
 |---|---|
 | Rev 5 written and pushed | Done — `d1236f1` |
 | Adversarial pass, round 1 (6 lenses, 72 findings) | Complete — `tasks/w8jhj34c3.output` |
-| Round 1 refutation | Only **9 of 72** verified (I capped it — a mistake). 6 survived, 3 refuted |
-| Round 2 refutation of the remaining 63 | **Stopped at 29 of 63.** 22 survived, 7 refuted |
-| Still unjudged | **34 findings**, idx 29–62 in `rev5-findings-pending.json` |
-| Rev 6 | Not started |
+| Round 1 refutation | 9 of 72 verified. 6 survived, 3 refuted |
+| Round 2 refutation of the remaining 63 | **Complete — 63/63 judged.** 47 survived, 16 refuted |
+| **Total** | **53 confirmed defects** of 72 raised; **19 refuted** |
+| Rev 6 | Not started — blocked on one author decision (below) |
+
+**Confirmed list: [`rev5-CONFIRMED-DEFECTS.md`](rev5-CONFIRMED-DEFECTS.md)** — every entry survived an
+independent skeptic instructed to refute it, and carries a specific fix. That is the document rev 6 gets
+written against. Raw data in `rev5-findings-round1.json`, `rev5-findings-pending.json`,
+`rev5-verdicts-round2.json`.
+
+The 7 blocker entries are **4 distinct defects** — the durability-direction bug was found by three lenses
+independently and the inert smoke steps by two, and the dedup key (location + category) did not collapse
+them because each lens described the location differently. Treat B1/B3/B5 as one, and B4/B7 as one.
 
 Data preserved in-repo so it survives the session:
 
@@ -128,11 +137,9 @@ Full detail with per-finding fixes: `rev5-verdicts-round2-partial.json` (match `
 
 ## Next steps, in order
 
-1. **Finish the refutation.** 34 findings unjudged (idx 29–62). Re-run the workflow script at
-   `~/.claude/projects/.../workflows/scripts/rev5-refute-remaining-wf_0f427b5c-7d8.js`, editing the index
-   ranges down to 29–62. Resume-from-cache is same-session only, so this is a fresh run — roughly 15
-   minutes unattended. Do **not** skip this: round 1 refuted 1 in 3, and acting on unverified findings is
-   exactly how rev 4 acquired its defects.
+1. ~~Finish the refutation.~~ **Done 2026-08-07** — 63/63 judged, 47 survived, 16 refuted. Refutation
+   earned its keep: 19 of 72 findings (26%) did not survive, and acting on those would have produced
+   19 wrong edits.
 2. **Decide (a) or (b)** on the durability blocker. This is an author decision, not an implementer's: (b)
    turns a prose-only PR into one with a Go change and re-scopes it.
 3. **Write rev 6** once, against the confirmed set. Do not patch rev 5 incrementally — the durability
