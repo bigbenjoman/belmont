@@ -123,6 +123,26 @@ Placed in the new `skills/belmont/_src/references/design-authority-baseline.md`,
 
 **Use exact registered names.** `tech-plan.md:160` and `product-plan.md:165` currently name `vercel-react-best-practices` and `security`; neither resolves (`vercel:react-best-practices` is the real one; `security` is a slash command). `frontend-design` is likewise a plugin skill registered as `frontend-design:frontend-design`. Fix all three; do not copy that line's style.
 
+#### Obtaining the tier-1 skills
+
+The ladder says "if `ui-designer` is available" — a reader's next question is how to make it available. **`design-authority-baseline.md` must carry this table**, so the answer ships with the skill rather than living only in this proposal. None of these is bundled with Belmont; all are optional, and tier 2 is the tested path without them.
+
+| Skill | Source | Installs to |
+|---|---|---|
+| `ui-designer`, `ux-designer` | [Claude UX & UI Design Skills](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | `~/.claude/skills/{ui,ux}-designer/` |
+| `ux-copywriter` | [Claude UX Copywriter Skill](https://yummy-design.notion.site/Claude-UX-Copywriter-Skill-31962791470980989abdcd6312890920) | `~/.claude/skills/ux-copywriter/` |
+| `ux-motion` | [Claude UX Motion Skill](https://yummy-design.notion.site/Claude-UX-Motion-Skill-32662791470980618a4edec08b04b436) | `~/.claude/skills/ux-motion/` |
+| `interactive-prototype` | [Claude prototype skill](https://yummy-design.notion.site/Claude-prototype-skill-35f62791470980cc8fffe64e6a5e5894) | `~/.claude/skills/interactive-prototype/` |
+
+Link the **Notion pages**, not the download URLs behind them. The pages are vendor-maintained and carry the current install instructions; the storage links they point at are unauthenticated share URLs that change without notice. All four verified resolving 2026-08-07.
+
+**Two packaging notes**, both verified against the downloaded packages:
+
+- The designer pair ships as `.skill` bundles (themselves archives) inside one zip; the other two ship as plain directories. Either way the on-disk result is a directory per skill under `~/.claude/skills/`.
+- **`interactive-prototype` is mis-packaged upstream.** Its `SKILL.md` loads `references/<file>.md`, but the archive places those files flat in a directory named `Prototyping v5`. Installed as downloaded, every progressive-disclosure load silently misses — you get the body and none of the ~73KB behind it. It must be unpacked into `interactive-prototype/` with the reference files moved into `references/`. Say so in the baseline file; a user who follows the vendor's instructions literally gets a broken skill and no error.
+
+These are **user-scope Claude Code skills**. They do not exist on the other seven CLIs, and they are not installable into a project — which is precisely why tier 2 is normative and the contract schema may not vary by tier.
+
 ### 4.4 Contract format
 
 Written into `{base}/TECH_PLAN.md`. The feature template's `## Design Tokens (from Figma)` (`tech-plan-feature-format.md:44`) is **generalised**, not supplemented — it is Figma-scoped today, and its verification checklist hard-codes "Matches Figma design pixel-perfect".
@@ -378,6 +398,8 @@ Fail: a fresh contract → R4/R8 not implemented, and the approved design is sil
 - [ ] Tier 2 runs underneath tier 1; per-section enrichment; schema identical across tiers; no consumer branches on tier
 - [ ] `**Authorities**` names the skill per section, never omitted
 - [ ] All five Yummy Labs skills credited with links; **no file from `~/.claude/skills/` copied into the repo**
+- [ ] `design-authority-baseline.md` carries the **obtaining table** (§4.3) — Notion page link and `~/.claude/skills/<name>/` install path per skill, the `interactive-prototype` repackaging note, and a plain statement that none is bundled and tier 2 works without them
+- [ ] Every link in that table checked resolving at branch time — they are third-party URLs and this PR does not control them
 - [ ] WCAG conformance levels stated wherever criteria are cited (two are AAA)
 - [ ] `vercel:react-best-practices`, the bogus `security` entry, and `frontend-design:frontend-design` corrected in `tech-plan.md` and `product-plan.md`
 
