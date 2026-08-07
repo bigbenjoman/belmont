@@ -10037,64 +10037,28 @@ func copyBelmontStateToWorktree(root, wtPath, slug string) error {
 	markerPath := filepath.Join(dstBelmont, ".worktree")
 	os.WriteFile(markerPath, []byte(slug+"\n"), 0644)
 
-	// 5. Write git excludes — exclude all .belmont/ except this feature's state.
-	// This prevents the worktree from accidentally committing changes to (or
-	// deletions of) other features' state, read-only context files, etc.
-	writeWorktreeGitExcludes(wtPath)
-
-	// 6. Mark all .belmont/ files as assume-unchanged so git ignores them entirely.
-	// This prevents the worktree from committing .belmont/ changes (which would
-	// delete other features' state when merged back). The files remain on disk
-	// so the AI agent can read cross-feature state.
+	// 5. Mark TRACKED .belmont/ files as assume-unchanged. This prevents the
+	// worktree from committing edits to existing state (which would delete other
+	// features' state when merged back). The files remain on disk so the AI agent
+	// can read cross-feature state.
+	//
+	// NEW .belmont/ files are deliberately NOT excluded — they are staged by
+	// commitWorktreeChanges' `git add -A` and travel back through the merge. That
+	// is load-bearing: MILESTONE.md is created inside the worktree, and it is the
+	// only return path on the `belmont recover` route, which does not call
+	// syncFeatureStateAfterMerge. The add/add conflict handling in mergeWorktreeBranch
+	// exists precisely because these files reach git.
+	//
+	// A previous `writeWorktreeGitExcludes` tried to exclude them, but wrote to the
+	// per-worktree $GIT_DIR/info/exclude, which git never reads — it resolves
+	// info/exclude from $GIT_COMMON_DIR. It was a no-op for its entire life. Do not
+	// "fix" it by writing to the common dir: that file is shared with the main repo,
+	// where .belmont/ MUST stay tracked. A per-worktree exclude is possible via
+	// extensions.worktreeConfig + core.excludesFile, but turning it on would strand
+	// worktree state on the recover path. See TestWorktreeNewBelmontFilesAreCommittable.
 	untrackBelmontInWorktree(wtPath, slug)
 
 	return nil
-}
-
-// writeWorktreeGitExcludes adds .belmont/ to the worktree's .git/info/exclude.
-// This prevents new .belmont/ files from being tracked. Combined with
-// assume-unchanged on existing files, it fully isolates .belmont/ from git.
-func writeWorktreeGitExcludes(wtPath string) {
-	gitFile := filepath.Join(wtPath, ".git")
-	data, err := os.ReadFile(gitFile)
-	if err != nil {
-		return
-	}
-	line := strings.TrimSpace(string(data))
-	if !strings.HasPrefix(line, "gitdir: ") {
-		return
-	}
-	gitDir := strings.TrimPrefix(line, "gitdir: ")
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(wtPath, gitDir)
-	}
-
-	infoDir := filepath.Join(gitDir, "info")
-	os.MkdirAll(infoDir, 0755)
-	excludePath := filepath.Join(infoDir, "exclude")
-
-	// Exclude all .belmont/ from git in this worktree. Combined with
-	// assume-unchanged on already-tracked files, this ensures no .belmont/
-	// state leaks into commits or merges. State is synced by the orchestrator.
-	excludeContent := "# belmont worktree excludes — all .belmont/ state managed by orchestrator\n" +
-		".belmont/\n"
-
-	existing, _ := os.ReadFile(excludePath)
-	// If we've already written our excludes, skip
-	if strings.Contains(string(existing), "belmont worktree excludes") {
-		return
-	}
-
-	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-
-	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
-		f.WriteString("\n")
-	}
-	f.WriteString(excludeContent)
 }
 
 // untrackBelmontInWorktree marks all .belmont/ files as assume-unchanged in the
