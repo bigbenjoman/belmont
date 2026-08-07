@@ -1,0 +1,7 @@
+# Baseline calculator only. No milestone work has started.
+== file: calc.js
+function add(a, b) { return a + b }
+module.exports = { add }
+== file: package.json
+{ "name": "eval-fixture", "version": "1.0.0", "main": "calc.js" }
+== commit: initial

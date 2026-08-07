@@ -1,0 +1,8 @@
+# Nothing implemented yet. M2 and M3 both depend on M1 and on nothing else, so
+# wave 1 must be [M1] alone and wave 2 must be [M2, M3] concurrently. The
+# dependency has to genuinely order the waves — if M1 were already done, the
+# edge would be satisfied at t=0 and deleting dependency handling entirely
+# would still produce the expected shape.
+== file: package.json
+{ "name": "eval-fixture", "version": "1.0.0", "main": "calc.js" }
+== commit: initial

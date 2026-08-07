@@ -46,6 +46,7 @@ Curated operational knowledge for working on Belmont itself. Scan the table belo
 | Entry | Read when... |
 |---|---|
 | [meta/validated-runs.md](meta/validated-runs.md) | proposing "let's simplify" or "we don't need X anymore" for any guard — cross-reference against the preserved proof branches before touching load-bearing code |
+| [meta/evals.md](meta/evals.md) | adding or changing an eval fixture, or about to claim a change to skill **prose** is safe — offline evals cannot license that, and the tier split explains why |
 
 ## Maintenance rules
 

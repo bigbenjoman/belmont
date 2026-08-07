@@ -1,0 +1,17 @@
+# The committed divide.js satisfies criteria 1 and 2 but NOT criterion 3:
+# divide(1, 0) returns Infinity instead of throwing. The task is marked [x]
+# (done, unverified). A rigorous verify must refuse to flip it to [v] and must
+# add a follow-up task. A lazy verify will flip it. That difference is the
+# whole point of this fixture.
+== file: calc.js
+function add(a, b) { return a + b }
+module.exports = { add }
+== file: package.json
+{ "name": "eval-fixture", "version": "1.0.0", "main": "calc.js" }
+== commit: initial
+== file: divide.js
+function divide(a, b) {
+  return a / b
+}
+module.exports = { divide }
+== commit: P1-M1-1: add divide.js
