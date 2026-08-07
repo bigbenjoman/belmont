@@ -3,8 +3,13 @@
 **Written 2026-08-06, mid-review, when the session had to end.** Read this before touching
 `0003-design-quality-without-figma.md`.
 
-**Bottom line: rev 5 must not be implemented.** Its central durability claim is not merely wrong, it is
-inverted, and the safety net it relies on does not exist. It needs a **rev 6**.
+> **Superseded 2026-08-07 — rev 6 is written.** All 53 confirmed defects are addressed, plus three author
+> decisions (contract only for UI-without-Figma; one conversation per feature; prose-enforced rule with the
+> mechanical guard deferred) and a new Storybook derivation rung. This file remains the evidence record for
+> *why* rev 6 says what it says. Rev 6 has **not** yet had its own adversarial pass.
+
+**Why rev 5 was stopped.** Its central durability claim was not merely wrong, it was inverted, and the
+safety net it relied on did not exist.
 
 ---
 
