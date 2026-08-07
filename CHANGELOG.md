@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.10.15
+
+**Released:** 2026-08-07
+
+### Changes since v0.10.14
+
+- Fix plugin generator emitting empty agent files
+
+
+
 ## v0.10.14
 
 **Released:** 2026-06-09
