@@ -2,11 +2,11 @@
 
 **What this does.** Adds a GitHub Actions workflow that builds, tests and lints on every push and pull request. Deletes eight functions nothing calls. Splits `cmd/belmont/main.go` into fifteen files in the same package.
 
-**Why now.** Belmont has no automated checks of any kind. Two defects have shipped undetected as a result — the plugin distribution has been publishing empty agent files for two months, and a worktree function was a no-op for its entire life. Both were found by a person reading code for an unrelated reason. This PR installs the first mechanism that could have found either.
+**Why now.** Belmont has no automated checks of any kind. Two defects shipped undetected as a result — the plugin distribution published empty agent files for two months, and a worktree function was a no-op for its entire life. Both were found by a person reading code for an unrelated reason; both have since been fixed by hand. This PR installs the first mechanism that would have found either, and that would stop the next one recurring.
 
 **What it does not do.** No behaviour changes. No renames. No reformatting. No new dependencies. No new packages — the files move, the package does not.
 
-**Sequencing.** After 0006. That PR fixes the plugin generator and adds the assertion that detects the failure; this PR is what runs that assertion on every push. Neither is complete alone — see §1.1.
+**Sequencing.** Unblocked. 0006 merged as PR #21 on 2026-08-07 and shipped in v0.10.15, so `generate-plugin.sh --check` is now an honest CI gate. Branch from a `main` containing `ae26e29`.
 
 **If you only want part of this,** the CI and the split are independent and land in separate commits. §10 says how to take one without the other.
 
@@ -14,9 +14,9 @@
 
 ## 1. Why
 
-### 1.1 The plugin distribution has been broken for two months
+### 1.1 The plugin distribution was broken for two months
 
-On `main` today:
+As published on `main` from 2026-06-04 until PR #21 merged on 2026-08-07:
 
 | Published file | Lines | Source |
 |---|---|---|
@@ -27,13 +27,15 @@ On `main` today:
 | `plugin/agents/design-agent.md` | 118 | 276 |
 | `plugin/agents/implementation-agent.md` | 102 | 427 |
 
-Anyone installing Belmont through the marketplace gets no verification agent, no code-review agent, no codebase agent and no reconciliation agent.
+For sixty-four days, anyone installing Belmont through the marketplace got no verification agent, no code-review agent, no codebase agent and no reconciliation agent.
 
 It broke on 2026-06-04. `ad5f84c` removed frontmatter from the source agents — correctly, since agent frontmatter is not read at runtime — and that exposed a latent flaw in `scripts/generate-plugin.sh`. `f69e784` cut v0.10.12 the same day. Every release since has shipped it. Sixty-four days, no bug report, because the failure is silent: the orchestrator dispatches a sub-agent, tells it to read an empty file, and the sub-agent improvises. The output looks plausible and skips every actual verification phase.
 
-**0006 fixes this once. This PR is what makes the fix stick.**
+**0006 fixed this once. This PR is what makes the fix stick.**
 
-That distinction matters more than the bug. `generate-plugin.sh --check` cannot catch this class of failure by itself — it regenerates using the same code and diffs the result against the committed tree, so both sides are wrong in the same way. 0006 adds a real assertion: published line count must equal source plus three. Nothing runs that assertion on a schedule. Without CI, the next commit that shifts an agent file re-breaks the generator and nobody finds out for another two months.
+That distinction matters more than the bug, and it is the case for this PR in one paragraph. `generate-plugin.sh --check` cannot catch this class of failure by itself — it regenerates using the same code and diffs the result against the committed tree, so both sides are wrong in the same way. 0006 added a real assertion: published line count must equal source plus three. Verified on `main` at `ae26e29` — 271/366/218/131/279/430 against sources of 268/363/215/128/276/427.
+
+**Nothing runs that assertion.** It is a script somebody has to remember to invoke. The commit that broke the generator, `ad5f84c`, touched neither `generate-plugin.sh` nor `plugin/`, so there was no review-time signal; the damage appeared at the next release. The next commit of that shape re-breaks it, and nobody finds out for another two months.
 
 ### 1.2 The same shape, twice more
 
@@ -182,7 +184,7 @@ New `.github/workflows/ci.yml`, on push and pull request:
 - `GOOS=windows go vet ./...`
 - `staticcheck ./...`
 - `scripts/generate-skills.sh --check`
-- `scripts/generate-plugin.sh --check` *(requires 0006)*
+- `scripts/generate-plugin.sh --check`
 
 Plus a five-platform build matrix: darwin/amd64, darwin/arm64, linux/amd64, linux/arm64, windows/amd64.
 
@@ -353,6 +355,6 @@ This is a reasonable thing to want. §1.1–1.3 are about defects that have alre
 
 ## 11. Relationship to the other proposals
 
-- **0006** — hard dependency. The `generate-plugin.sh --check` CI gate is meaningless until the generator is fixed.
+- **0006** — **done.** Merged as PR #21 on 2026-08-07, shipped in v0.10.15. The `generate-plugin.sh --check` CI gate is now honest.
 - **0003** — overlaps. Both edit `_src/references/models-yaml-format.md` and both append to `model-tier-economics.md`'s `Revisions` footer. All the proposals also append to `KNOWLEDGE.md`'s cross-cutting table, so expect a trivial conflict — keep every row.
 - **0004** — no Go conflict. This PR's CI consumes 0004's eval entry point (`go test -tags eval ./cmd/belmont`); if 0004 hasn't landed, drop that one CI line.

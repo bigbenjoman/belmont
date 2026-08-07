@@ -20,13 +20,11 @@ Written at the end of a long planning session. Assumes you know nothing about it
 | `0006-plugin-generator-correctness.md` | shipped as PR #21 |
 | `redteam-round3.md` | the review that produced rev 4 |
 
-## Hard gate
+## Hard gate — CLEARED 2026-08-07
 
-**PR #21 must merge before any implementation.** It fixes `scripts/generate-plugin.sh`, which currently publishes four of six plugin agents as **0-byte files**. Branch off `main` before it merges and any regeneration drops those empties into your PR.
+PR #21 **merged** (`ae26e29`), shipped as v0.10.15 (`8aa84db`). Verified on `origin/main`: all six `plugin/agents/*.md` are now source + 3 lines — 271/366/218/131/279/430 — exactly the assertion 0006 specified. The "do not run `generate-plugin.sh`" rule is retired.
 
-```bash
-gh pr view 21 --repo blake-simpson/belmont --json state
-```
+Branch off a `main` that contains `ae26e29`.
 
 ## Build order
 

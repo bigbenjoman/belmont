@@ -16,15 +16,11 @@ Sequential, four digits, never reused. `0001` and `0002` are claimed by the desi
 | — | [0003 restructure brief](0003-DESIGN-RESTRUCTURE.md) | Background for rev 5. **Superseded in part** — see its header for the facts rev 5 corrected |
 | 0004 | [Context budget, with evidence](0004-context-budget-with-evidence.md) | Draft — revision 5 |
 | 0005 | [Split `main.go`, add CI](0005-maintainability.md) | Draft — rewritten for the reviewer. No revision history in the document; use `git log` for it |
-| 0006 | [Plugin generator correctness](0006-plugin-generator-correctness.md) | Standalone bug fix — unrelated to the series. Shipped as PR #21 |
+| 0006 | [Plugin generator correctness](0006-plugin-generator-correctness.md) | **Done** — PR #21 merged 2026-08-07, shipped in v0.10.15 |
 
-## Gate
+## Gate — cleared
 
-**PR #21 must merge before any implementation in this series.** It fixes `scripts/generate-plugin.sh`, which currently publishes four of six plugin agents as 0-byte files. Branch off `main` before it merges and any regeneration drops those empty files into an unrelated PR, where a 12k-line diff will hide them.
-
-```bash
-gh pr view 21 --repo blake-simpson/belmont --json state
-```
+PR #21 merged on 2026-08-07 (`ae26e29`, shipped as v0.10.15). It fixed `scripts/generate-plugin.sh`, which had been publishing four of six plugin agents as 0-byte files since 2026-06-04. Verified on `main`: all six are now source + 3 lines. Nothing in this series is blocked.
 
 ## Sequencing
 
