@@ -50,7 +50,9 @@ Follow `docs/proposals/0005-maintainability.md`. Two independent halves — read
 - Build `scripts/declsum/main.go` (**§2.1**) and **re-verify it against both controls** — a real extraction and a deliberately broken one — before the DoD depends on it. The tool does not exist in the repo; the 398-declaration control run quoted in the spec came from a scratch directory and has not been reproduced.
 - Decl-set diff empty at every extraction commit.
 
-**Fold in `fix/worktree-git-excludes`** (branch pushed to the fork, `db25423`, build/test/gofmt green). It is not a separate PR — it belongs in the lint commit. Deletes `writeWorktreeGitExcludes`, which wrote to a path git never reads; adds two tests and `knowledge/auto-mode/worktree-state-isolation.md`. See 0005 §4.1. It is **not** a pure deletion, so the declsum expectation at the lint commit changes — 0005's DoD already says so.
+**`fix/worktree-git-excludes` is now PR #22**, opened separately against `main` — not folded in. Branch from a `main` that contains it. If it has not landed, 0005 §4.1 says what changes about the declsum expectation.
+
+**staticcheck's nine findings are confirmed** (`staticcheck 2026.1 (v0.7.0)` against `main` at `5f1c2c2`) — the eight unused functions plus one dead assignment in `runReverifyCmd`. Line numbers and symbols are listed in 0005 §4.1. Install with `go install honnef.co/go/tools/cmd/staticcheck@latest`.
 
 If the split is deferred, the CI half still stands alone and the build order below is unaffected.
 
