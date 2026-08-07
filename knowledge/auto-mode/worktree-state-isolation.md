@@ -35,6 +35,31 @@ Test coverage in `cmd/belmont/worktree_state_test.go`:
 - **Make the exclusion effective per-worktree via `extensions.worktreeConfig` + a per-worktree `core.excludesFile`.** This does work — tested. Do not do it. Turning it on makes new `.belmont/` files uncommittable, which strands worktree state on the recover path. The no-op has been load-bearing.
 - **Assume `--assume-unchanged` covers new files.** It only applies to paths already in the index. This has been misread at least once in a proposal review.
 
+## Confirmed defect — the second merge in a wave clobbers the first's state
+
+`syncFeatureStateAfterMerge` runs after **every** merge and is destructive (`os.RemoveAll(dstFeature)` then `copyDir`). In a parallel wave that is a last-writer-wins race on the feature directory:
+
+1. M2 merges → master's feature dir is replaced with M2's worktree copy.
+2. M3 merges → master's feature dir is replaced with **M3's** copy, which still holds M2 as `[ ]` from fork time.
+
+The verified mark for M2 is silently lost. The code lands, the merge commit exists, the task reads unstarted.
+
+**Reproduced 2026-08-07**, three-milestone fixture (M1 `[v]`, M2 and M3 both `(depends: M1)`), `--max-parallel 2`:
+
+| | Pre-split binary (`origin/main`) | Post-split binary |
+|---|---|---|
+| `divide.js`, `modulo.js` on main | both present | both present |
+| Both branches merged | yes | yes |
+| `P1-M2-1` | **`[ ]`** | **`[ ]`** |
+| `P1-M3-1` | `[v]` | `[v]` |
+
+Identical on both, so this predates the `main.go` split. `runEvidenceCheck` does not catch it: it reverts `[v]` marks without commit evidence, not `[v]` marks that were overwritten back to `[ ]`.
+
+Note the interaction with the invariant above. Tracked `.belmont/` edits are held back by `--assume-unchanged` precisely so a worktree cannot commit sibling state — which means the filesystem copy is the *only* way a worktree's own state gets home, and that copy takes the whole directory. The isolation and the sync pull against each other; fixing one without the other reintroduces the bug the other prevents.
+
+Any fix has to make the sync per-milestone rather than per-feature-directory, or merge rather than replace. It shares a root cause with the `recoverMerge` gap below — both are `syncFeatureStateAfterMerge` being a whole-directory replace — and they should be designed together.
+
+
 ## Known open gap
 
 `recoverMerge` does not call `syncFeatureStateAfterMerge`. Worktree edits to **tracked** feature state are therefore lost on the recover path — they are held back by `--assume-unchanged`, and nothing copies them home afterwards. Only *new* files survive, via git.
@@ -54,3 +79,4 @@ So the fix needs a decision first, not a call: replace unconditionally, merge th
 
 - 2026-08-07 — initial. Records the asymmetric isolation (tracked held back, new files committable), the removal of `writeWorktreeGitExcludes`, the two rejected repairs, and the `recoverMerge` gap.
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
+- 2026-08-07 — recorded the parallel-wave state clobber, reproduced identically on pre- and post-split binaries; shares a root cause with the recoverMerge gap.
