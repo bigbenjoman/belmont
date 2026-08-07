@@ -53,7 +53,6 @@ The *curation* — which rules matter and how they compose into a checkable cont
 | [ux-designer](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | UX Strategy |
 | [ux-copywriter](https://drive.google.com/drive/folders/1lSwUatVOzOX5TGWgBDjKA820RiUsVLNr) | Microcopy Rules |
 | [ux-motion](https://drive.google.com/drive/folders/1gYrK4aT4A-LYr4GbM88-PaKu0wYyY4C6) | Motion Contract |
-| [interactive-prototype](https://drive.google.com/file/d/1KuHzSWqEoHvMCjRVGb7Y804I72R6JcfX/view) | State Inventory — gesture and transition states a static spec omits |
 
 **Do not vendor their files.** All five are distributed as downloads with **no LICENSE, no repository and no redistribution grant** — verified against the actual packages, not the website. Belmont states the same published standards in its own words and credits the source. If written permission is obtained (`yummylabs@yummydesign.xyz`), vendoring with attribution can replace the baseline in a follow-up.
 
@@ -109,7 +108,7 @@ Placed in the new `skills/belmont/_src/references/design-authority-baseline.md`,
 
 > Check by **name**, in your available skills. Do not probe the filesystem. Load **every** tier-1 skill present — they cover different contract sections and are not alternatives.
 >
-> - **Tier 1 — enrichment, per section.** `ui-designer` → Token Contract · `ux-designer` → UX Strategy · `ux-copywriter` → Microcopy Rules · `ux-motion` → Motion Contract · `interactive-prototype` → State Inventory. A section whose skill is absent falls back to the baseline **for that section alone**.
+> - **Tier 1 — enrichment, per section.** `ui-designer` → Token Contract · `ux-designer` → UX Strategy **and State Inventory** · `ux-copywriter` → Microcopy Rules · `ux-motion` → Motion Contract **and the transition half of State Inventory**. A section whose skill is absent falls back to the baseline **for that section alone**.
 > - **Tier 1b — conditional.** `frontend-design:frontend-design` for aesthetic direction. `dataviz` **only** if the feature renders charts. `vercel:shadcn` **only** if the project already depends on shadcn — evidence being `components.json` at repo root or a shadcn entry in the package manifest, not a guess.
 > - **Tier 2 — normative floor, all tools, always.** The baseline rules in this file. Tier 2 runs *underneath* tier 1, not instead of it: a tier-1 skill may add detail or argue a deviation and must record it, but may never lower the a11y floor.
 >
@@ -117,9 +116,9 @@ Placed in the new `skills/belmont/_src/references/design-authority-baseline.md`,
 >
 > Record on an `**Authorities**` line, naming the skill per section — e.g. `baseline; ui-designer (tokens); ux-copywriter (microcopy)`, or `baseline only (no design skills available in this session)`. Never omit it, mirroring `verification-agent.md:93`.
 
-**Why per-section.** The five skills are complementary. A single available/unavailable switch would give a user holding four of the five the baseline for all five sections, and would hide which sections were actually enriched.
+**Why per-section.** The four skills are complementary. A single available/unavailable switch would give a user holding three of the four the baseline for all four sections, and would hide which sections were actually enriched.
 
-**Portability — state it exactly.** **All five tier-1 skills are user-scope Claude Code skills** under `~/.claude/skills/`; none ships with Belmont and none is present for most users. What is absent elsewhere is the **content**, not the mechanism — opencode exposes a native `skill` tool, Gemini has `activate_skill`, and Codex/Cursor/Windsurf/Copilot/Pi auto-activate on `description:`. On the seven non-Claude CLIs every section runs tier 2, which is the shipped behaviour for essentially every user. Tier 2 is therefore the tested path, not the fallback.
+**Portability — state it exactly.** **All four tier-1 skills are user-scope Claude Code skills** under `~/.claude/skills/`; none ships with Belmont and none is present for most users. What is absent elsewhere is the **content**, not the mechanism — opencode exposes a native `skill` tool, Gemini has `activate_skill`, and Codex/Cursor/Windsurf/Copilot/Pi auto-activate on `description:`. On the seven non-Claude CLIs every section runs tier 2, which is the shipped behaviour for essentially every user. Tier 2 is therefore the tested path, not the fallback.
 
 **Use exact registered names.** `tech-plan.md:160` and `product-plan.md:165` currently name `vercel-react-best-practices` and `security`; neither resolves (`vercel:react-best-practices` is the real one; `security` is a slash command). `frontend-design` is likewise a plugin skill registered as `frontend-design:frontend-design`. Fix all three; do not copy that line's style.
 
@@ -132,7 +131,6 @@ The ladder says "if `ui-designer` is available" — a reader's next question is 
 | `ui-designer`, `ux-designer` | [Claude UX & UI Design Skills](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) (Notion) | `ux-ui designer skill Jul 26.zip` | `~/.claude/skills/{ui,ux}-designer/` |
 | `ux-copywriter` | [Drive folder](https://drive.google.com/drive/folders/1lSwUatVOzOX5TGWgBDjKA820RiUsVLNr) | `ux-copywriter.zip` | `~/.claude/skills/ux-copywriter/` |
 | `ux-motion` | [Drive folder](https://drive.google.com/drive/folders/1gYrK4aT4A-LYr4GbM88-PaKu0wYyY4C6) | `ux-motion.zip` | `~/.claude/skills/ux-motion/` |
-| `interactive-prototype` | [Drive file](https://drive.google.com/file/d/1KuHzSWqEoHvMCjRVGb7Y804I72R6JcfX/view) | `Prototyping v5.zip` | `~/.claude/skills/interactive-prototype/` |
 
 Vendor homepage, always valid: **<https://www.yummy-labs.com/>**.
 
@@ -145,7 +143,6 @@ Vendor homepage, always valid: **<https://www.yummy-labs.com/>**.
 **Two packaging notes**, both verified against the downloaded packages:
 
 - The designer pair ships as `.skill` bundles (themselves archives) inside one zip; the other two ship as plain directories. Either way the on-disk result is a directory per skill under `~/.claude/skills/`.
-- **`interactive-prototype` is mis-packaged upstream.** Its `SKILL.md` loads `references/<file>.md`, but the archive places those files flat in a directory named `Prototyping v5`. Installed as downloaded, every progressive-disclosure load silently misses — you get the body and none of the ~73KB behind it. It must be unpacked into `interactive-prototype/` with the reference files moved into `references/`. Say so in the baseline file; a user who follows the vendor's instructions literally gets a broken skill and no error.
 
 These are **user-scope Claude Code skills**. They do not exist on the other seven CLIs, and they are not installable into a project — which is precisely why tier 2 is normative and the contract schema may not vary by tier.
 
@@ -159,7 +156,7 @@ Written into `{base}/TECH_PLAN.md`. The feature template's `## Design Tokens (fr
 **Source**: [storybook | tailwind.config.ts | globals.css | components.json | master TECH_PLAN |
              sibling feature <slug> | none — established here]
 **Authorities**: baseline[; ui-designer (tokens); ux-designer (strategy); ux-copywriter (microcopy);
-             ux-motion (motion); interactive-prototype (states); frontend-design:frontend-design (aesthetic)]
+             ux-motion (motion); frontend-design:frontend-design (aesthetic)]
 **Approval**: [approved <ISO date> | unreviewed (headless replan <ISO date>)]
 
 ### Token Contract
@@ -286,7 +283,7 @@ To adopt the contract on an existing feature, re-run `/belmont:tech-plan --featu
 |---|---|
 | `skills/belmont/_src/tech-plan.md` | Phase 3.5; ALLOWED ACTIONS + preview; CRITICAL RULE 6; preserve rule at Phase 4; fix skill names `:160`; Phase 4.6 prose |
 | `skills/belmont/_src/references/tech-plan-feature-format.md` | Generalise `## Design Tokens (from Figma)` → `## Design Contract` incl. all six subsections; contract branch in the Figma-only verification checklist; carry R4's preserve rule |
-| `skills/belmont/_src/references/design-authority-baseline.md` | **New** — per-section ladder + baseline rules for all six contract sections, Belmont-original, crediting the five Yummy Labs skills by name and link |
+| `skills/belmont/_src/references/design-authority-baseline.md` | **New** — per-section ladder + baseline rules for all six contract sections, Belmont-original, crediting the four Yummy Labs skills by name and link |
 | `skills/belmont/_src/product-plan.md` | Fix the same wrong skill names at `:165` |
 | `skills/belmont/_src/implement.md` | Phase 2 purpose restated as contract consumption; Visual Validation generalised |
 | `skills/belmont/_src/verify.md` | Step 1b collects the contract; dispatch prompt carries it; focused-reverify exemption at `:50` |
@@ -403,8 +400,8 @@ Fail: a fresh contract → R4/R8 not implemented, and the approved design is sil
 - [ ] `references/design-authority-baseline.md` created, cited as a literal `references/…` path, and present in `skills/belmont/tech-plan/references/` after `./scripts/generate-skills.sh`
 - [ ] Tier 2 runs underneath tier 1; per-section enrichment; schema identical across tiers; no consumer branches on tier
 - [ ] `**Authorities**` names the skill per section, never omitted
-- [ ] All five Yummy Labs skills credited with links; **no file from `~/.claude/skills/` copied into the repo**
-- [ ] `design-authority-baseline.md` carries the **obtaining table** (§4.3) — Notion page link and `~/.claude/skills/<name>/` install path per skill, the `interactive-prototype` repackaging note, and a plain statement that none is bundled and tier 2 works without them
+- [ ] All four Yummy Labs skills credited with links; **no file from `~/.claude/skills/` copied into the repo**
+- [ ] `design-authority-baseline.md` carries the **obtaining table** (§4.3) — source link and `~/.claude/skills/<name>/` install path per skill, and a plain statement that none is bundled and tier 2 works without them
 - [ ] Every link in that table checked resolving at branch time — they are third-party URLs and this PR does not control them
 - [ ] WCAG conformance levels stated wherever criteria are cited (two are AAA)
 - [ ] `vercel:react-best-practices`, the bogus `security` entry, and `frontend-design:frontend-design` corrected in `tech-plan.md` and `product-plan.md`
@@ -467,6 +464,7 @@ Rev 5 was reviewed by six adversarial lenses producing 72 findings; each was the
 | Scope ambiguous between feature and milestone | **One conversation per feature**, covering all milestones |
 | Durability implied to be mechanical | **Prose-enforced and unguarded, stated as such.** Mechanical guard deferred to its own proposal |
 | — | **Storybook added as the first project-local derivation rung**, read statically — planning sessions may not run build commands |
+| Five tier-1 skills, `interactive-prototype` → State Inventory | **Dropped to four.** `interactive-prototype` is a *builder*: five of its eight steps produce React code with a named animation library, and its own description excludes static specs. Loading it inside `tech-plan` — a session forbidden from writing code — invites the behaviour that skill instructs. Its one relevant contribution (interactions implied but not drawn) overlaps `ux-designer` and `ux-motion`, which now own State Inventory between them. It belongs to implementation, not planning |
 
 **Blockers fixed**
 
@@ -481,4 +479,4 @@ Rev 5 was reviewed by six adversarial lenses producing 72 findings; each was the
 
 **Majors fixed** — `.belmont/` git-invisibility claim corrected and re-cited; State Inventory section added (four places referenced a section that did not exist); preview regeneration defined for headless replan; focus-visible mechanism corrected (`browser_snapshot` cannot see computed styles); reduced-motion mechanism corrected (needs `browser_run_code_unsafe`); elevation check row added; MCP tool names made install-independent rather than pinned to a plugin namespace; `implement.md`, `codex-plan-apply.md` and `post-verify-triage.md` added to scope; `verify.md` scoped to three edits including the dispatch prompt; `verification-agent.md`'s Figma-shaped output block added to scope; derivation ladder extended with master and sibling contracts; Step 9c moved to the interactive path; Step 6 replaced with an isolated R4 test; migration story added (§4.9); dual-invocation correction split per tool.
 
-**Minors fixed** — file count corrected to 11; `**Design contract**` phantom field removed in favour of `**Mode**`; `user-questions.md:4` → `:8`; `frontend-design` → `frontend-design:frontend-design`; WCAG levels stated; two broken §10 cross-references repaired; plugin enumerations completed; `--check` DoD items replaced with checks that can actually fail; two vacuous DoD items deleted; `models-yaml-format.md` second location cited; portability paragraphs updated from two skills to five; `docs/` list extended to five pages; gitignored-`.belmont/` configuration handled.
+**Minors fixed** — file count corrected to 13; `**Design contract**` phantom field removed in favour of `**Mode**`; `user-questions.md:4` → `:8`; `frontend-design` → `frontend-design:frontend-design`; WCAG levels stated; two broken §10 cross-references repaired; plugin enumerations completed; `--check` DoD items replaced with checks that can actually fail; two vacuous DoD items deleted; `models-yaml-format.md` second location cited; portability paragraphs updated to match the tier-1 roster; `docs/` list extended to five pages; gitignored-`.belmont/` configuration handled.
