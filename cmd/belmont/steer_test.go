@@ -144,8 +144,8 @@ func TestCopyBelmontStateToWorktreePreservesSteering(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A fake .git file so untrackBelmontInWorktree etc. don't blow up if they poke at it.
-	// copyBelmontStateToWorktree calls writeWorktreeGitExcludes which needs it; tolerate a no-op.
+	// A fake .git file so untrackBelmontInWorktree doesn't blow up if it pokes at it.
+	// (An earlier writeWorktreeGitExcludes read this path too; it has been removed.)
 	_ = os.WriteFile(filepath.Join(worktree, ".git"), []byte("gitdir: /nonexistent\n"), 0644)
 
 	if err := copyBelmontStateToWorktree(master, worktree, "demo"); err != nil {
