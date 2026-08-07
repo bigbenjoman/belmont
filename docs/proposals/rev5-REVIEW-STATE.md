@@ -28,12 +28,12 @@ The 7 blocker entries are **4 distinct defects** — the durability-direction bu
 independently and the inert smoke steps by two, and the dedup key (location + category) did not collapse
 them because each lens described the location differently. Treat B1/B3/B5 as one, and B4/B7 as one.
 
-Data preserved in-repo so it survives the session:
+Data preserved in-repo, all of it — nothing depends on a session or a scratch dir:
 
-- `rev5-findings-pending.json` — all 63 round-2 findings, each with a stable `idx`
-- `rev5-verdicts-round2-partial.json` — the 29 verdicts that completed
-- Round-1 full output: `/private/tmp/claude-501/.../tasks/w8jhj34c3.output` (**scratch — will be
-  cleared**; copy it into the repo if you want it)
+- `rev5-CONFIRMED-DEFECTS.md` — the 53 confirmed defects with fixes. **Start here.**
+- `rev5-findings-round1.json` — round 1 in full: 72 findings, verdicts, per-lens coverage notes
+- `rev5-findings-pending.json` — the 63 round-2 findings, stable `idx`
+- `rev5-verdicts-round2.json` — all 63 verdicts
 
 ---
 
@@ -112,10 +112,10 @@ Also unhandled: `recoverMerge` (`main.go:11156-11196`) never calls `syncFeatureS
 
 ---
 
-## Round 2, partial — 22 more confirmed
+## Round 2 — 47 more confirmed
 
-Full detail with per-finding fixes: `rev5-verdicts-round2-partial.json` (match `idx` against
-`rev5-findings-pending.json`). One further **blocker**, 10 majors, 11 minors. Recurring themes:
+Full detail with per-finding fixes in `rev5-CONFIRMED-DEFECTS.md`. One further **blocker**, 16 majors,
+30 minors. Recurring themes:
 
 - **Citations go stale by construction.** 0005 lands first and splits `main.go` from 12,613 lines; every
   one of rev 5's ~18 `main.go:NNNN` citations will point somewhere else. Rev 6 should cite **function
