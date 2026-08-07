@@ -45,15 +45,15 @@ The second root cause is **placement**: v1–v4 derived design per-milestone, in
 
 **Design content source and attribution.** The rules in `references/design-authority-baseline.md` are Belmont-original prose stating published standards: WCAG 2.1 **SC 1.4.3** (contrast 4.5:1 body / 3:1 large, **Level AA**), **SC 2.4.7** (focus visible, **AA**), **SC 2.5.5** (44×44 targets, **Level AAA**), **SC 2.3.3** (animation from interactions, **Level AAA**), the 8pt spacing grid, ratio-derived type scales, and the 60-30-10 colour convention. **State the conformance level wherever these are cited** — two of the four are AAA, and presenting AAA criteria as a mandatory floor without saying so misrepresents the standard. The baseline adopts them as *Belmont's* floor, which is a project choice, not a WCAG requirement.
 
-The *curation* — which rules matter and how they compose into a checkable contract — is drawn from the **[Yummy Labs](https://www.yummy-labs.com/) Claude design skills**. Credit them by name and link in the reference file header, in `design-authority.md`, and in the PR description:
+The *curation* — which rules matter and how they compose into a checkable contract — is drawn from the **[Yummy Labs](https://www.yummy-labs.com/) Claude design skills**. Credit them by name and link in the reference file header (see §4.3 for which URLs are confirmed), in `design-authority.md`, and in the PR description:
 
 | Skill | Contract section it feeds |
 |---|---|
 | [ui-designer](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | Token Contract; the "existing design system is LAW" rule; the banned-defaults list |
 | [ux-designer](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | UX Strategy |
-| [ux-copywriter](https://yummy-design.notion.site/Claude-UX-Copywriter-Skill-31962791470980989abdcd6312890920) | Microcopy Rules |
-| [ux-motion](https://yummy-design.notion.site/Claude-UX-Motion-Skill-32662791470980618a4edec08b04b436) | Motion Contract |
-| [interactive-prototype](https://yummy-design.notion.site/Claude-prototype-skill-35f62791470980cc8fffe64e6a5e5894) | State Inventory — gesture and transition states a static spec omits |
+| `ux-copywriter` | Microcopy Rules |
+| `ux-motion` | Motion Contract |
+| `interactive-prototype` | State Inventory — gesture and transition states a static spec omits |
 
 **Do not vendor their files.** All five are distributed as downloads with **no LICENSE, no repository and no redistribution grant** — verified against the actual packages, not the website. Belmont states the same published standards in its own words and credits the source. If written permission is obtained (`yummylabs@yummydesign.xyz`), vendoring with attribution can replace the baseline in a follow-up.
 
@@ -127,14 +127,18 @@ Placed in the new `skills/belmont/_src/references/design-authority-baseline.md`,
 
 The ladder says "if `ui-designer` is available" — a reader's next question is how to make it available. **`design-authority-baseline.md` must carry this table**, so the answer ships with the skill rather than living only in this proposal. None of these is bundled with Belmont; all are optional, and tier 2 is the tested path without them.
 
-| Skill | Source | Installs to |
+| Skill | Notion page | Installs to |
 |---|---|---|
-| `ui-designer`, `ux-designer` | [Claude UX & UI Design Skills](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | `~/.claude/skills/{ui,ux}-designer/` |
-| `ux-copywriter` | [Claude UX Copywriter Skill](https://yummy-design.notion.site/Claude-UX-Copywriter-Skill-31962791470980989abdcd6312890920) | `~/.claude/skills/ux-copywriter/` |
-| `ux-motion` | [Claude UX Motion Skill](https://yummy-design.notion.site/Claude-UX-Motion-Skill-32662791470980618a4edec08b04b436) | `~/.claude/skills/ux-motion/` |
-| `interactive-prototype` | [Claude prototype skill](https://yummy-design.notion.site/Claude-prototype-skill-35f62791470980cc8fffe64e6a5e5894) | `~/.claude/skills/interactive-prototype/` |
+| `ui-designer`, `ux-designer` | [Claude UX & UI Design Skills](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) — confirmed | `~/.claude/skills/{ui,ux}-designer/` |
+| `ux-copywriter` | **TODO — get the published URL from the author** | `~/.claude/skills/ux-copywriter/` |
+| `ux-motion` | **TODO — get the published URL from the author** | `~/.claude/skills/ux-motion/` |
+| `interactive-prototype` | **TODO — get the published URL from the author** | `~/.claude/skills/interactive-prototype/` |
 
-Link the **Notion pages**, not the download URLs behind them. The pages are vendor-maintained and carry the current install instructions; the storage links they point at are unauthenticated share URLs that change without notice. All four verified resolving 2026-08-07.
+Vendor homepage, always valid: **<https://www.yummy-labs.com/>**.
+
+> **Do not construct these URLs.** Three were previously written into this document by deriving a slug from the page title and were **wrong**. The page IDs are real (obtained from Notion's API, and all four report `publicAccessRole: reader`), but each page carries a distinct `site_id`, so they are published as separate Notion Sites and do not share one predictable domain. An HTTP 200 is **not** evidence a Notion URL is correct — Notion is client-rendered and returns 200 with an empty shell for any path under a workspace subdomain. Paste the URLs from a browser; do not derive them, and do not "verify" them with `curl`.
+
+Link the **Notion pages**, not the storage URLs behind them. The pages are vendor-maintained and carry current install instructions; the download links they point at are unauthenticated share URLs that change without notice.
 
 **Two packaging notes**, both verified against the downloaded packages:
 
