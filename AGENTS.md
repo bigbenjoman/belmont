@@ -54,6 +54,8 @@ The canonical anti-pattern these invariants protect against is the "polish miles
 
 ## Verify
 - After every change, build (`go build ./cmd/belmont`) and run unit tests (`go test ./cmd/belmont`). These cover regressions in isolation, but they don't prove the change works end-to-end on a real install.
+- **Eval harness.** `go test -tags eval ./cmd/belmont` runs Tier 1 — offline, deterministic, free, and in CI. It is behind a build tag, so plain `go test` does **not** compile it; run it after touching state parsing, the decision engine, wave computation, or the guards.
+  - Changing skill **prose** (`skills/belmont/_src/*`) needs Tier 2, which drives a real tool: `BELMONT_EVAL_LIVE=1 go test -tags eval -timeout 0 -run TestEvalLive ./cmd/belmont`. `-timeout 0` is required or the live tool child is orphaned on Go's 10-minute default. Tier 1 **cannot** license a prose change — nothing in it reads a `SKILL.md`. See [`knowledge/meta/evals.md`](knowledge/meta/evals.md).
 - **Author smoke test before release** (non-negotiable for any non-trivial change — new tools, skills, CLI behaviour, install paths, auto-loop logic): the plan MUST end with a copy-paste-ready "Author smoke test" section for Blake to run locally before tagging a release. The section must:
   1. Exercise **both invocation paths** for each affected tool (auto mode + interactive mode — see "Both invocation paths or it's not done").
   2. **Sanity-check the unchanged tools** — at minimum Claude Code, the daily driver — in both modes, to prove the change didn't regress the main workflow.

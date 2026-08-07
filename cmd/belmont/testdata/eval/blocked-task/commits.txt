@@ -1,0 +1,11 @@
+# One task done, one blocked on an external dependency.
+== file: calc.js
+function add(a, b) { return a + b }
+module.exports = { add }
+== file: package.json
+{ "name": "eval-fixture", "version": "1.0.0", "main": "calc.js" }
+== commit: initial
+== file: divide.js
+function divide(a, b) { return a / b }
+module.exports = { divide }
+== commit: P1-M1-1: add divide.js
