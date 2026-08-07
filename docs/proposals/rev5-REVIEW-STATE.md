@@ -3,7 +3,7 @@
 **Written 2026-08-06, mid-review, when the session had to end.** Read this before touching
 `0003-design-quality-without-figma.md`.
 
-> **Superseded 2026-08-07 — rev 6 is written.** All 53 confirmed defects are addressed, plus three author
+> **Superseded — rev 6 shipped, then rev 7 after its own adversarial pass.** All 53 confirmed defects are addressed, plus three author
 > decisions (contract only for UI-without-Figma; one conversation per feature; prose-enforced rule with the
 > mechanical guard deferred) and a new Storybook derivation rung. This file remains the evidence record for
 > *why* rev 6 says what it says. Rev 6 has **not** yet had its own adversarial pass.

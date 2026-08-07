@@ -13,7 +13,7 @@ Written at the end of a long planning session. Assumes you know nothing about it
 
 | File | State |
 |---|---|
-| `0003-design-quality-without-figma.md` | **rev 6 — written 2026-08-07** against 53 confirmed defects. Needs its own adversarial pass before implementing. Evidence: [`rev5-CONFIRMED-DEFECTS.md`](rev5-CONFIRMED-DEFECTS.md) |
+| `0003-design-quality-without-figma.md` | **rev 7 — written 2026-08-07.** Two full adversarial passes done (rev 5: 53 fixed; rev 6: 53 fixed, 1 blocker). Evidence: [`rev6-CONFIRMED-DEFECTS.md`](rev6-CONFIRMED-DEFECTS.md), [`rev5-CONFIRMED-DEFECTS.md`](rev5-CONFIRMED-DEFECTS.md) |
 | `0003-DESIGN-RESTRUCTURE.md` | background brief; four of its facts were refuted — see its header |
 | `0004-context-budget-with-evidence.md` | rev 5 — GO (v5 = ordering amendment, see "Resolved decision" below) |
 | `0005-maintainability.md` | rev 4 — GO |

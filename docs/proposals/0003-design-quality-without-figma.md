@@ -1,9 +1,9 @@
 # PR 1 — Design quality for UI features without Figma
 
-**Revision 6.** Rev 5 moved design into `/belmont:tech-plan` — the right place — but stated its central durability claim backwards, and an adversarial review confirmed **53 defects** in it (72 raised, 19 refuted). v6 fixes those, and narrows scope on three author decisions taken 2026-08-07. Changes in §12. Evidence: [`rev5-CONFIRMED-DEFECTS.md`](rev5-CONFIRMED-DEFECTS.md).
+**Revision 7.** Rev 6 was reviewed by six adversarial lenses: 69 findings raised, all 69 individually refuted, **53 confirmed and 16 refuted**. v7 fixes the 53. Its one blocker was a re-run of the failure rev 6 believed it had fixed — see §12. Evidence: [`rev6-CONFIRMED-DEFECTS.md`](rev6-CONFIRMED-DEFECTS.md), with rev 5's record in [`rev5-CONFIRMED-DEFECTS.md`](rev5-CONFIRMED-DEFECTS.md).
 
-**Type:** prose only — 3 agents, 6 skill sources, 2 existing skill references, 1 new skill reference, 1 Go-embedded prompt = **13 tracked source files**. **No Go changes.**
-**Size:** ~560 lines net across those 13 (§5) + regenerated `plugin/` + 5 docs pages + 1 new knowledge entry + 1 `KNOWLEDGE.md` routing row + 3 corrected statements in `AGENTS.md`/knowledge. *(Counted from the §5 table, not asserted — rev 5 claimed 9 against a table of 10, and this figure was itself wrong at 11 on first draft.)*
+**Type:** prose only — 3 agents, 7 skill sources, 2 existing skill references, 1 new skill reference, 1 Go-embedded prompt = **14 tracked source files**. **No Go changes.**
+**Size:** ~600 lines net across those 14 (§5) + regenerated `plugin/` + 5 docs pages + 1 new knowledge entry + 1 `KNOWLEDGE.md` routing row + 3 corrected statements in `AGENTS.md`/knowledge. *(Counted from the §5 table, not asserted — rev 5 claimed 9 against a table of 10, and this figure was itself wrong at 11 on first draft.)*
 **Sequencing:** depends on **0006** (PR #21, open). Lands **after 0005 and 0004**. This PR owes 0004's post-contract re-baseline (§11).
 
 > **All `main.go:NNNN` citations in this document are pre-0005.** They were resolved against `d1236f1`, where `main.go` is 12,613 lines. 0005 lands first and splits that file, so **every line number here will be wrong by the time this is implemented**. Function names are the durable identifier and are given first throughout; treat line numbers as a hint for locating them pre-split. Re-resolve at branch time with `grep -n 'func <name>'`.
@@ -50,9 +50,9 @@ The *curation* — which rules matter and how they compose into a checkable cont
 | Skill | Contract section it feeds |
 |---|---|
 | [ui-designer](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | Token Contract; the "existing design system is LAW" rule; the banned-defaults list |
-| [ux-designer](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | UX Strategy |
+| [ux-designer](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | UX Strategy; the component-state half of State Inventory |
 | [ux-copywriter](https://drive.google.com/drive/folders/1lSwUatVOzOX5TGWgBDjKA820RiUsVLNr) | Microcopy Rules |
-| [ux-motion](https://drive.google.com/drive/folders/1gYrK4aT4A-LYr4GbM88-PaKu0wYyY4C6) | Motion Contract |
+| [ux-motion](https://drive.google.com/drive/folders/1gYrK4aT4A-LYr4GbM88-PaKu0wYyY4C6) | Motion Contract; the transition half of State Inventory |
 
 **Do not vendor their files.** All four are distributed as downloads with **no LICENSE, no repository and no redistribution grant** — verified against the actual packages, not the website. Belmont states the same published standards in its own words and credits the source. If written permission is obtained (`yummylabs@yummydesign.xyz`), vendoring with attribution can replace the baseline in a follow-up.
 
@@ -79,7 +79,12 @@ Measured, not argued — replaying the call sequence over a real worktree produc
 
 **Therefore, the rule of this PR — and what enforces it:**
 
-> **Only the `tech-plan` skill may write `{base}/TECH_PLAN.md`. `implement`, `verify`, `next` and `debug` read it and never write it.** When `tech-plan` itself runs headlessly as `actionReplan`, R4 constrains what it may change.
+> **Only the `tech-plan` skill may write the `## Design Contract` section of `{base}/TECH_PLAN.md`. `implement`, `verify`, `next` and `debug-auto` read it and never write it.** When `tech-plan` itself runs headlessly as `actionReplan`, R4 constrains what it may change.
+
+The rule is scoped to the **section**, not the file, because two existing skills legitimately write elsewhere in `TECH_PLAN.md` and this PR must not silently forbid them:
+
+- **`/belmont:debug-manual`** is documented as the one skill permitted to edit spec prose in place, under per-edit user approval (`knowledge/cross-cutting/debug-spec-reconciliation.md`, and the callout in `AGENTS.md`). It runs interactively in the master tree. It may continue to edit TECH_PLAN prose; it may **not** edit `## Design Contract`, because that section carries an approval stamp its per-edit flow does not renew.
+- **`/belmont:review-plans`** loads every feature `TECH_PLAN.md` and offers rewrite options for drift and conflicts. It must treat `## Design Contract` as **read-only** and emit a finding rather than a rewrite. In scope (§5).
 
 **This is prose-enforced and unguarded, and the PR says so plainly.** Nothing mechanical prevents a worktree phase from writing that path: `runScopeGuard` parses `PROGRESS.md` only and returns early for `actionReplan` (`main.go:12065-12068`), and the merge copy is a filesystem operation. The detection is smoke Step 3's content hash (§8), not git.
 
@@ -91,12 +96,13 @@ Measured, not argued — replaying the call sequence over a real worktree produc
 
 Insert **`### Phase 3.5 — Design Contract`** into `skills/belmont/_src/tech-plan.md` between `:217` and `:219` — after Phase 3's interview (it consumes the `:197` answers) and before Phase 4 writes the plan.
 
-- **R1 — Gate: UI **and** no Figma.** Run only when the feature has a user interface **and** no active task carries a Figma URL. Record the outcome in the contract's `**Mode**` field, which is the single machine-read signal (§4.4) — there is no separate `**Design contract**` field. Backend features record `N/A — no UI`; Figma features record `N/A — Figma present`. **Silence is not allowed**, so downstream agents can distinguish "not applicable" from "not done".
+- **R1 — Gate: UI **and** no Figma.** Run only when the feature has a user interface **and** no task in `{base}/PRD.md` carries a Figma URL — *every* task, regardless of `[ ]`/`[x]`/`[v]` state. Do **not** say "active task": `### Active Task IDs` is defined in `implement-milestone-template.md:26` as the incomplete tasks of one milestone, and keying the feature-level gate on a per-milestone subset would flip the gate as work progresses. Record the outcome in the contract's `**Mode**` field, which is the single machine-read signal (§4.4) — there is no separate `**Design contract**` field. Backend features record `N/A — no UI`; Figma features record `N/A — Figma present`. **Silence is not allowed**, so downstream agents can distinguish "not applicable" from "not done".
   *Author decision, 2026-08-07: the contract exists only for UI-without-Figma.* Figma features keep today's behaviour untouched.
   **Scope is the whole feature, one conversation** (author decision): the contract covers every milestone, including ones that turn out to be backend-only. Milestone-level scoping was rejected — planning does not reliably know which milestones are UI-bearing before the work is broken down.
+  **Mixed Figma coverage.** A feature counts as a Figma feature if **any** task carries a Figma URL, even where other UI tasks carry none. Those uncovered tasks keep today's per-task no-Figma behaviour: a partially-covered feature has no single design authority to reconcile against, and inventing one would contradict the Figma tokens already extracted for its covered tasks. The replacement for `## Handling No Design` (§4.7) **must therefore keep a no-contract arm** — it cannot assume a contract exists whenever Figma is absent from a task.
 - **R2 — Figma detection only, no loading.** The step needs to know *whether* Figma URLs exist, not what is in them. Do not load Figma here. (If Figma is loaded elsewhere in tech-plan it must stay **in-session** — `tech-plan.md:158`: "sub-agents cannot get MCP tool permissions approved.")
 - **R3 — Structured questions or stop.** The approval step inherits `user-questions.md:8` ("NEVER ask questions as plain inline text when a structured question tool exists") and the strict Codex fallback at `:11`. A Markdown pick-list is not an approval gate.
-- **R4 — Headless behaviour is defined, not implied.** Under `belmont auto`, `actionReplan` invokes `/belmont:tech-plan` (`buildLoopPrompt`, `main.go:7188-7189`) with no user and no `AskUserQuestion`. The step must: **preserve an existing `## Design Contract` verbatim**, deriving only sections that are absent; mark it `**Approval**: unreviewed (headless replan <ISO date>)`; regenerate `design-preview.html` in the same step if and only if a section changed, stamping it `<!-- unreviewed: headless replan <ISO date> -->`; and never silently regenerate an approved contract. Nothing mechanical catches a violation — see §4.1.
+- **R4 — Headless behaviour is defined, not implied.** Under `belmont auto`, `actionReplan` invokes `/belmont:tech-plan` (`buildLoopPrompt`, `main.go:7188-7189`) with no user and no `AskUserQuestion`. The step must: **preserve an existing `## Design Contract` verbatim**, deriving only sections that are absent; mark it `**Approval**: unreviewed (headless replan <ISO date>)`; regenerate `design-preview.html` in the same step if and only if a section changed, stamping it `<!-- unreviewed: headless replan <ISO date> -->`; and never silently regenerate an approved contract. **And never *create* one:** if `{base}/TECH_PLAN.md` carries no `## Design Contract` at all, the headless step derives nothing and leaves the design surface untouched. "Deriving only sections that are absent" means subsections of a contract that already exists, never the contract itself — otherwise a headless replan would silently adopt a pre-contract feature into a gate its author never approved, contradicting §4.9. Contract authoring is interactive only. Nothing mechanical catches a violation — see §4.1.
 - **R5 — Codex packet.** The contract and preview must be enumerable as `BELMONT_PLAN_PACKET` operations (`tech-plan.md:37-45`). `codex-plan-apply` applies **two** gates: a path constraint (satisfied — both are under `.belmont/`) and a **source-code content prohibition** which a self-contained `.html` would trip. `_src/codex-plan-apply.md` is therefore in scope (§5) to carve out planning artifacts explicitly.
 - **R6 — Update CRITICAL RULE 6.** `tech-plan.md:19` names Phase 4.5 as the last mandatory phase and is *already* stale with respect to Phase 4.6. Adding Phase 3.5 without fixing it leaves three contradictory statements of when the skill terminates.
 - **R7 — Extend ALLOWED ACTIONS.** `tech-plan.md:96-105` enumerates the write surface exhaustively; add `{base}/design-preview.html`. **Do not touch the shared `forbidden-actions.md` partial** — other skills include it. The preview is a planning artifact under `.belmont/`, never project source; CRITICAL RULE 2 stands unchanged for `.tsx/.ts/.css`.
@@ -140,7 +146,7 @@ Vendor homepage, always valid: **<https://www.yummy-labs.com/>**.
 
 **These are unauthenticated share links and the vendor controls them.** They can be revoked, re-pointed at a new version, or renamed without notice, and the Drive links are more fragile than a Notion page for exactly that reason. Re-check every row at branch time and prefer a Notion page wherever one becomes available.
 
-**Two packaging notes**, both verified against the downloaded packages:
+**One packaging note**, verified against the downloaded packages:
 
 - The designer pair ships as `.skill` bundles (themselves archives) inside one zip; the other two ship as plain directories. Either way the on-disk result is a directory per skill under `~/.claude/skills/`.
 
@@ -155,7 +161,7 @@ Written into `{base}/TECH_PLAN.md`. The feature template's `## Design Tokens (fr
 **Mode**: [derived — UI, no Figma | N/A — no UI | N/A — Figma present]
 **Source**: [storybook | tailwind.config.ts | globals.css | components.json | master TECH_PLAN |
              sibling feature <slug> | none — established here]
-**Authorities**: baseline[; ui-designer (tokens); ux-designer (strategy); ux-copywriter (microcopy);
+**Authorities**: baseline[; ui-designer (tokens); ux-designer (strategy, states); ux-copywriter (microcopy);
              ux-motion (motion); frontend-design:frontend-design (aesthetic)]
 **Approval**: [approved <ISO date> | unreviewed (headless replan <ISO date>)]
 
@@ -200,6 +206,8 @@ Reduced motion — `prefers-reduced-motion: reduce` removes movement, never func
 
 Two consequences downstream. Verification skips the three motion rows when `**Applies**` is `N/A` and records them as such rather than `UNVERIFIABLE` — a skipped check and an unmeasurable one are different findings and must not be conflated. And `prefers-reduced-motion` stays in the Accessibility Floor regardless: it is a WCAG requirement about honouring a user preference, and a feature with no motion satisfies it trivially rather than being exempt from it.
 
+**What the `N/A` modes contain.** `N/A — no UI`: the `**Mode**` line only, no subsections. `N/A — Figma present`: the `**Mode**` line plus the Figma-derived tokens tech-plan already extracts in-session — the section is the destination for those, which is why the template generalises rather than being conditional. Neither carries the baseline subsections, and neither is "a contract" for §4.6.
+
 **Derivation order — reuse before invention.** Walk in order; stop at the first rung that supplies a token family, and name it in `**Source**`. Never invent a competing scale where one exists.
 
 0. A `## Design Contract` in the **master** `.belmont/TECH_PLAN.md`.
@@ -220,7 +228,11 @@ It is **not** written during an auto wave — and that is a **prose rule, not a 
 
 ### 4.6 Verification
 
-**`agents/belmont/verification-agent.md` Phase 2 becomes three-way.** Because a contract now exists only when there are no Figma URLs (R1), the branches are near-disjoint — but *not* fully, since `Step 2.0` counts linked screenshots and mockups as design references. A feature can therefore have a contract *and* a reference. The branches must handle that rather than assume it away:
+**`agents/belmont/verification-agent.md` Phase 2 becomes three-way.** Because a contract now exists only when there are no Figma URLs (R1), the branches are near-disjoint — but *not* fully, since `Step 2.0` counts linked screenshots and mockups as design references. A feature can therefore have a contract *and* a reference. The branches must handle that rather than assume it away.
+
+> **"A contract is present" means one thing only:** `{base}/TECH_PLAN.md` contains `## Design Contract` whose `**Mode**` is `derived — UI, no Figma`. Both `N/A` modes, and an absent section, are **"no contract"** for all three branches and for the fourth enforcement rule.
+>
+> **Never key on the presence of the `## Design Contract` heading.** The feature template carries that heading unconditionally once §4.4 generalises it (`tech-plan-feature-format.md:44`), so a Figma feature's plan has the heading too — holding the Figma-extracted tokens tech-plan already loads in-session. Discriminating on section presence would demand contract checks on every Figma feature, find none, and fire the fourth rule: **the exact unconditional-failure blocker rev 6 believed it had fixed.**
 
 1. **Design references exist** → existing comparison flow, unchanged — **plus contract checks if a contract is present.** A contract is orthogonal to a reference and its a11y floor still applies.
 2. **No references, contract present** → contract checks only.
@@ -230,7 +242,7 @@ Rev 5's fourth enforcement rule combined with an unconditional branch 1 would ha
 
 verification-agent **already reads** TECH_PLAN (`:20`, `:60`), but only as a place to *search for* references. Making it the *check target* is new behaviour this PR specifies.
 
-**Close the escape clause.** Narrow `:131` to "no design references **and no design contract**", and add a fourth enforcement rule: *a contract exists but contract checks were not performed ⇒ MUST be FAIL/INCOMPLETE*.
+**Close the escape clause.** Narrow `:131` to "no design references **and** no `derived` design contract", and add a fourth enforcement rule: *`**Mode**` is `derived — UI, no Figma`, contract checks were **required**, and they were not performed ⇒ MUST be FAIL/INCOMPLETE*. Checks are not required in exactly one case — the focused re-verification exemption defined below. Stating the requirement clause is what keeps the rule satisfiable; rev 6 omitted it and the rule fired on every legitimate focused re-verify.
 
 **Named tooling per check.** A check whose mechanism is unavailable is recorded **`UNVERIFIABLE`**, never `PASS`. `Actual` values must come from the running UI — sourcing them from `tailwind.config` or `globals.css` is forbidden, since that is what the contract was derived from and the check would be circular.
 
@@ -246,6 +258,7 @@ verification-agent **already reads** TECH_PLAN (`:20`, `:60`), but only as a pla
 | Elevation levels as declared; interactive rise one level on hover | `browser_hover` + `browser_evaluate` → `getComputedStyle` `box-shadow` |
 | State Inventory entries present | `browser_click` / `browser_hover` / `browser_press_key` to enter each state + `browser_take_screenshot` |
 | Transition durations within declared bands | `browser_evaluate` → `transitionDuration` / `animationDuration` |
+| Easing matches the declared curve for its class | `browser_evaluate` → `transitionTimingFunction` / `animationTimingFunction` |
 | Only `transform`/`opacity` animated | `browser_evaluate` → `transitionProperty` / keyframe inspection |
 | Reduced motion removes movement, not function | `browser_run_code_unsafe` → `page.emulateMedia({ reducedMotion: 'reduce' })`, then re-run the state pass and assert the element still reaches its end state. **This is the only row needing a write-capable tool**; if it is unavailable, record `UNVERIFIABLE` |
 
@@ -253,18 +266,18 @@ verification-agent **already reads** TECH_PLAN (`:20`, `:60`), but only as a pla
 
 **Make MCP tool references install-independent.** `verification-agent.md:93-94` and `implementation-agent.md:192-193` hardcode `mcp__playwright__browser_*`; the same files hardcode `mcp__plugin_figma_figma__*` elsewhere. Neither prefix is canonical — Claude Code synthesises `mcp__plugin_<plugin>_<server>__` for plugin-registered servers and `mcp__<server>__` for directly-registered ones, and Belmont's own README recommends the direct install. **Instruct agents to resolve the browser tools by matching `*browser_navigate` / `*browser_evaluate` in their available tools rather than pinning a prefix**, and record `UNVERIFIABLE` when none matches.
 
-**Focused re-verification.** After a fix-all round the default verify scope is *focused*, and both `verify.md:50` and the injected prompt (`main.go:7184`) instruct the agent to skip visual/design comparison. Contract checks are **exempt from that skip when the milestone's follow-ups touched UI**; otherwise the attestation records `Contract checks performed: NO — focused re-verification, no UI follow-ups`.
+**Focused re-verification.** After a fix-all round the default verify scope is *focused*, and both `verify.md:50` and the injected prompt (`main.go:7184`) instruct the agent to skip visual/design comparison. Contract checks are **required when the milestone's follow-ups touched UI** and **not required otherwise**; in the not-required case the attestation records `Contract checks performed: NO — focused re-verification, no UI follow-ups`. This is the single exemption the fourth enforcement rule's "were required" clause refers to; there are no others.
 
 **Attestation gains a field:** `Contract checks performed: [YES against <path> | NO — <reason> | N/A]`.
 
-**Severity** uses the existing Critical / Warning / Polish ladder: contrast failure, missing focus indicator, missing label → Critical; missing state, off-scale spacing, out-of-band duration → Warning; radius, elevation or easing inconsistency → Polish. Off-scale spacing stays Warning so pre-existing drift cannot block a milestone.
+**Severity** uses the existing Critical / Warning / Polish ladder (`verification-agent.md:295-326`). **Warning blocks the milestone and generates follow-up tasks; only Polish does not.** Grade accordingly: contrast failure, missing focus indicator, missing label → **Critical**. Missing state, out-of-band duration → **Warning**. Off-scale spacing, radius, elevation and easing inconsistency → **Polish**, so pre-existing drift cannot block a milestone. Rev 6 put off-scale spacing at Warning while claiming that kept it non-blocking — it does not, and on any project with existing drift that would have blocked the first milestone the gate ever ran on.
 
 ### 4.7 Downstream consumers
 
 - **`agents/belmont/design-agent.md`** — mode keyed on Figma-URL presence in the PRD, never on load outcome. With Figma: unchanged. Without: derive per-task component specs *against the approved contract*. Reads `{base}/TECH_PLAN.md` (already at `:30`) **and the master `.belmont/TECH_PLAN.md`**, which it does not read today even though cross-cutting styling decisions are routed there. Writes nothing but MILESTONE.
 - **`skills/belmont/_src/implement.md`** — the orchestrator for the phase this PR redefines. `:96` states Phase 2's purpose in Figma-only terms ("Analyze Figma designs (if provided)"), which on a no-Figma feature reads as a phase with nothing to do — and would skip the dispatch §7 forbids skipping. Restate as contract consumption; generalise the Visual Validation guidance beyond Figma.
 - **`agents/belmont/implementation-agent.md`** — add a contract branch to the Visual Validation self-check. Correct the rev-4 justification: `:190-197` is *not* a no-op without Figma (`:196` handles other reference images, `:197` mandates a "No design reference available" note), and `:272` is mode-agnostic and needs no change.
-- **`skills/belmont/_src/verify.md`** — three narrow edits, not one: Step 1b's collect list (`:62-72`) is Figma/image/URL-only; the **sub-agent dispatch prompt** (`:109`, `:146`) steers the agent away from the new behaviour by enumerating only Figma/screenshot references and injecting "No design references found"; and the focused-reverify clause at `:50` needs the contract exemption. *This file has Steps, not Phases — `verification-agent.md` has Phases. Never conflate them.*
+- **`skills/belmont/_src/verify.md`** — three narrow edits, not one: Step 1b's collect list (`:62-72`) is Figma/image/URL-only; **Agent 1's dispatch prompt** (`:114-121`) steers the agent away from the new behaviour by enumerating only Figma/screenshot references and injecting "No design references found". `:109` and `:146` are the *same* line in two different agent blocks and are not the defect; and the focused-reverify clause at `:50` needs the contract exemption. *This file has Steps, not Phases — `verification-agent.md` has Phases. Never conflate them.*
 - **`skills/belmont/_src/next.md`** — **stays in scope.** The feature contract is safe in TECH_PLAN, but *per-task* specs remain in MILESTONE, and `:162` overwrites the archive while `:117-118` stamps `[Not populated — lightweight mode skips the design agent]` over `## Design Specifications`. Carry forward populated `## Design Specifications` and `## Codebase Analysis` rather than clobbering. Coordinate with 0004, which edits this file and lands first.
 - **`prompts/belmont/post-verify-triage.md`** — the Go-embedded prompt deciding whether verify findings block the loop (`executeTriageAction`, `main.go:7005`; parsed at `:6478-6488` with `defer_and_proceed` as the parse-failure default). Its blocking list is Figma-scoped, so contract failures could be silently deferred. Add a non-deferrable contract list. **Ships only via `scripts/build.sh` — embedded, never installed into a project.**
 
@@ -295,13 +308,14 @@ To adopt the contract on an existing feature, re-run `/belmont:tech-plan --featu
 | `skills/belmont/_src/implement.md` | Phase 2 purpose restated as contract consumption; Visual Validation generalised |
 | `skills/belmont/_src/verify.md` | Step 1b collects the contract; dispatch prompt carries it; focused-reverify exemption at `:50` |
 | `skills/belmont/_src/next.md` | Archive merges rather than clobbers `## Design Specifications` / `## Codebase Analysis` |
+| `skills/belmont/_src/review-plans.md` | Treat `## Design Contract` as read-only — exclude it from drift/conflict rewrite options and emit a finding instead |
 | `skills/belmont/_src/codex-plan-apply.md` | Carve planning artifacts out of the source-code prohibition so `design-preview.html` can be applied |
 | `skills/belmont/_src/references/models-yaml-format.md` | Rewrite the `design` tier description (`:30`) and the profile heuristics (`:62-63`) |
 | `agents/belmont/design-agent.md` | Consume the contract; replace `## Handling No Design`; read master TECH_PLAN. `FORBIDDEN ACTIONS` untouched |
 | `agents/belmont/verification-agent.md` | Three-way Phase 2; narrow `:131`; fourth enforcement rule; attestation field; focused-reverify exemption; install-independent MCP names; **rework the `## Output Format` Visual Verification block (`:210-221`)** — Figma-shaped today, needs a contract branch and a Mechanism column |
 | `agents/belmont/implementation-agent.md` | Contract branch in Visual Validation; install-independent MCP names |
 | `prompts/belmont/post-verify-triage.md` | Non-deferrable contract list; de-Figma the blocking bullet |
-| `plugin/` | Regenerate — `plugin/skills/{tech-plan,product-plan,verify,next,implement}/**` and `plugin/agents/*`. **Requires 0006** |
+| `plugin/` | Regenerate — `plugin/skills/{tech-plan,product-plan,implement,verify,next,review-plans,codex-plan-apply}/**` and `plugin/agents/*`. **Requires 0006** |
 | `AGENTS.md` | Correct `:26`; add a design-authority line to the invariants |
 | `knowledge/cross-cutting/dual-invocation-paths.md` | Correct `:9` |
 | `knowledge/cross-cutting/codex-plan-handoff.md` | `Revisions` line — the packet gains its first non-Markdown payload |
@@ -317,9 +331,11 @@ Figma extraction behaviour · the NO FALLBACK rule · any Go change · a mechani
 |---|---|
 | **Auto** | `belmont auto` → `actionReplan` may invoke `/belmont:tech-plan` headlessly (R4) → implement dispatches design-agent → verify dispatches verification-agent |
 | **Interactive** | `/belmont:tech-plan` with structured approval → `/belmont:implement` → `/belmont:verify` in a live REPL |
-| **Plugin** | `plugin/agents/*` and `plugin/skills/{tech-plan,product-plan,verify,next,implement}/**` are a third tracked surface; `release.sh:41` regenerates and `:96` stages it |
+| **Plugin** | `plugin/agents/*` and `plugin/skills/{tech-plan,product-plan,implement,verify,next,review-plans,codex-plan-apply}/**` are a third tracked surface; `release.sh:41` regenerates and `:96` stages it |
 
-**Correct the record on auto mode, per tool.** `AGENTS.md:26` and `dual-invocation-paths.md:9` say auto mode bypasses the tool's skill discovery and that Belmont injects the skill body, agent files and project state. For **six of eight CLIs** that is false: `buildLoopPrompt` emits a bare slash reference (`main.go:7168`, `:7189`) and Belmont injects **only** steering text (`:6887`) and milestone-scope prose; the agent reads everything else from disk. For **Pi and opencode**, `adaptPromptForTool` (`main.go:7143-7157`) deliberately rewrites the reference into a read-the-file instruction — so for those two, discovery *is* bypassed, on purpose. Correct both statements with that split, not with a blanket claim. This matters here: it is why the tier-1 ladder works under `claude -p`, which runs inside Claude Code's full skill runtime with `Skill` allowlisted (`main.go:7927`).
+**Correct the record on auto mode, per tool.** `AGENTS.md:26` and `dual-invocation-paths.md:9` say auto mode bypasses the tool's skill discovery and that Belmont injects the skill body, agent files and project state. For **five of the seven CLIs `belmont auto` can shell out to** that is false: `buildLoopPrompt` emits a bare slash reference (`main.go:7168`, `:7189`) and Belmont injects **only** steering text (`:6887`) and milestone-scope prose; the agent reads everything else from disk. For **Pi and opencode**, `adaptPromptForTool` (`main.go:7143-7157`) deliberately rewrites the reference into a read-the-file instruction — so for those two, discovery *is* bypassed, on purpose. Correct both statements with that split, not with a blanket claim.
+
+**Do not conflate the two CLI counts.** The **install** surface is eight (`AGENTS.md:197`); the **auto** surface is seven. `belmont auto --tool windsurf` is rejected outright (`runAutoCmd`'s tool switch) and `toolHeadlessArgs` has no windsurf case — Windsurf is install-only. `docs/supported-tools.md`'s headless table already lists exactly seven rows and is the correct reference. This matters here: it is why the tier-1 ladder works under `claude -p`, which runs inside Claude Code's full skill runtime with `Skill` allowlisted (`main.go:7927`).
 
 **No open-PR conflict.** PRs #10 and #11 were closed 2026-08-06. The only open PR is #21 (plugin generator), which is disjoint. Re-measure with `gh pr list --state open` at branch time.
 
@@ -357,17 +373,26 @@ Fail: no approval prompt → R3 not wired. Missing `**Authorities**` → ladder 
 
 **Step 1b — interactive implement + verify.** From a clean tree: `/belmont:implement --feature <slug>` then `/belmont:verify --feature <slug>`. Expect per-task `### Design:` sections referencing the contract, and a verify report with contract checks. *This is the only step exercising `verify.md`'s and `implement.md`'s interactive path.*
 
+**Step 1c — a pre-contract feature adopts the contract (§4.9).** A second UI-bearing, no-Figma feature whose `TECH_PLAN.md` predates this branch and has no `## Design Contract`. Record `PRE=$(git rev-parse HEAD)`, then `/belmont:tech-plan --feature <slug3>` and approve.
+Expect the contract added and `git diff $PRE..HEAD` confined to that feature's `TECH_PLAN.md` and `design-preview.html`. Then confirm the **non**-adoption path: on a third such feature, run `belmont auto` without re-planning and expect verify to reach branch 3 with no contract created — R4 must not adopt it headlessly.
+
 **Step 2 — the contract survives `[r]`-resume.**
-*Precondition:* the worktree path engages only when a milestone **in range** carries `(depends: …)`; otherwise `hasExplicitDeps` is false (`main.go:5441-5453`) and `runAuto` routes to `runLoop` — master tree, no worktree, no `[r]` prompt. Confirm `{base}/PROGRESS.md` has `### M2: … (depends: M1)` first.
+*Precondition:* the worktree path engages only when a milestone **in range** carries `(depends: …)`; otherwise `hasExplicitDeps` is false (`main.go:5441-5453`) and `runAutoCmd` routes to `runLoop` — master tree, no worktree, no `[r]` prompt. Confirm `{base}/PROGRESS.md` has `### M2: … (depends: M1)` first.
 `belmont auto --feature <slug> --from M1 --to M2`; Ctrl-C during wave 1; re-run the identical command and answer `r` at the `Branch … exists from a previous run` prompt (`handleStaleWorktree`, `main.go:6100`).
-Expect the banner `Belmont Auto (parallel)` — a serial fallback means the precondition was not met — and the worktree's `TECH_PLAN.md` to hash-match master's after resume.
+Expect the banner `Belmont Auto (parallel)` — a serial fallback means the precondition was not met.
+Then compare the worktree's `TECH_PLAN.md` against master's **in a second shell while wave 1 is still running**. The window is narrow and must be named: the worktree exists only between `Resuming with existing worktree at …` and the wave-1 merge, which runs `syncFeatureStateAfterMerge` and then removes the worktree. Check after the run and there is nothing left to inspect.
 The interrupted run may leave `.belmont/auto.json` untracked, which `requireCleanWorkingTree` rejects on the re-run; delete it or pass `--allow-dirty`.
 
-**Step 3 — design-agent consumes, never writes.** After the wave **merges**:
-`git diff $PLAN..HEAD -- .belmont/features/<slug>/TECH_PLAN.md` — expect **empty**.
+**Step 3 — design-agent consumes, never writes.** Run from the **master repo root, after `belmont auto` exits**, not after an individual wave merges — a run that aborts mid-wave leaves the check valid-looking and vacuous.
+```bash
+# positive control — fails loudly if the contract is untracked or .belmont/ is gitignored,
+# in which case the diff below would pass for the wrong reason
+git ls-files --error-unmatch .belmont/features/<slug>/TECH_PLAN.md
+git diff $PLAN..HEAD -- .belmont/features/<slug>/TECH_PLAN.md   # expect empty
+```
 Do **not** use a bare `git diff`: `.belmont/` is `--assume-unchanged` in a worktree, so `git diff`, `git diff -- .belmont/` and `git status --porcelain` all report nothing even after the file has been completely rewritten (measured). The real loss point is `syncFeatureStateAfterMerge`, which lands the worktree's copy on master — which is why this compares committed revisions.
 
-**Step 4 — the gate fires.** Verify report `## Visual Verification` shows per-row pass/fail/UNVERIFIABLE with a Mechanism column, and the attestation reads `Contract checks performed: YES against {base}/TECH_PLAN.md`.
+**Step 4 — the gate fires.** *Observe this in the Step 1b interactive run.* The per-row table and the attestation exist only in the verification sub-agent's returned report (`verification-agent.md` `## Output Format`); `verify.md` collects it into context and never writes it to disk, and the orchestrator's combined summary collapses it to a single `Visual Verification: [PASS/FAIL/N/A]` line. Expect per-row pass/fail/UNVERIFIABLE with a Mechanism column, and `Contract checks performed: YES against {base}/TECH_PLAN.md`. Do not go looking for a file.
 
 **Step 5 — per-task specs survive a fix round.** Force one FWLUP round so `/belmont:next` runs and re-archives MILESTONE. Expect the re-archived `MILESTONE-M1.done.md` to still carry populated per-task design sections.
 The second verify is *focused* by default and legitimately reports `Contract checks performed: NO — focused re-verification, no UI follow-ups` unless the follow-ups touched UI.
@@ -378,6 +403,10 @@ Fail: a fresh contract → R4/R8 not implemented, and the approved design is sil
 
 **Step 7 — Figma regression.** A feature **with** Figma URLs. Expect `**Mode**: N/A — Figma present`, **no** Token Contract, per-task Figma sections and the Figma Sources table exactly as today, and a verify verdict of PASS (not FAIL) — this asserts the fourth enforcement rule does not fire without a contract.
 
+**Step 7b — backend regression (the other exclusion).** A feature with **no user interface** — API, pipeline, infra. `claude` → `/belmont:tech-plan --feature <backend-slug>`.
+Expect the interview to ask **no design questions**, and `## Design Contract` to carry `**Mode**: N/A — no UI` with no Token Contract, UX Strategy, State Inventory, Microcopy or Motion subsections, and no `design-preview.html`. Verify must reach branch 3 and the fourth rule must not fire.
+Without this, only one of R1's two exclusions is ever tested.
+
 **Step 8 — failed-load regression (must not break).** Deliberately invalid node id. Expect task BLOCKED, status FAILED, nothing invented, and **no fallback to a contract**.
 
 **Step 9 — other tools.**
@@ -385,7 +414,13 @@ Fail: a fresh contract → R4/R8 not implemented, and the approved design is sil
 9b: interactive `codex` → `/plan $belmont:tech-plan` → confirm the structured interview runs and a `BELMONT_PLAN_PACKET` is emitted carrying **both** `TECH_PLAN.md` and `design-preview.html`; apply with `$belmont:codex-plan-apply` and confirm the `.html` is not rejected as source code.
 9c: interactive `opencode` on a **second** UI-bearing no-Figma feature → `/belmont/tech-plan --feature <slug2>`. Expect a contract schema-identical to Step 1's with `**Authorities**: baseline only`. *`belmont auto` cannot author a contract — the only auto path to tech-plan is `actionReplan` — so this must be the interactive path.*
 
-**Step 10 — plugin surface.** `./scripts/generate-plugin.sh <ver>`; confirm `plugin/skills/tech-plan/references/design-authority-baseline.md` exists and is non-empty, and that `plugin/agents/*.md` are all non-zero (0006's fix).
+**Step 10 — plugin surface.** Run in the **Belmont source repo**, not the smoke project, and use `--check` — passing a version argument rewrites `plugin/.claude-plugin/plugin.json` and dirties a tracked file:
+```bash
+cd ~/belmont
+./scripts/generate-plugin.sh --check && echo "plugin/ up to date"
+test -s plugin/skills/tech-plan/references/design-authority-baseline.md
+! find plugin/agents -name '*.md' -size 0 | grep -q .    # 0006's fix
+```
 
 **Diagnostics.** Steps 1–6 need no Figma access. If 7 or 8 fail, test the Figma MCP directly before blaming this PR.
 
@@ -410,7 +445,7 @@ Fail: a fresh contract → R4/R8 not implemented, and the approved design is sil
 - [ ] `### Motion Contract` carries an `**Applies**` field; an unanimated feature records `N/A — no motion in this feature` rather than an empty section, and verification records those three rows `N/A`, never `UNVERIFIABLE`
 - [ ] All four Yummy Labs skills credited with links; **no file from `~/.claude/skills/` copied into the repo**
 - [ ] `design-authority-baseline.md` carries the **obtaining table** (§4.3) — source link and `~/.claude/skills/<name>/` install path per skill, and a plain statement that none is bundled and tier 2 works without them
-- [ ] Every link in that table checked resolving at branch time — they are third-party URLs and this PR does not control them
+- [ ] Every link in that table checked by **opening it in a browser** at branch time — they are third-party URLs this PR does not control, and a status code proves nothing on a client-rendered host (§4.3)
 - [ ] WCAG conformance levels stated wherever criteria are cited (two are AAA)
 - [ ] `vercel:react-best-practices`, the bogus `security` entry, and `frontend-design:frontend-design` corrected in `tech-plan.md` and `product-plan.md`
 
@@ -427,7 +462,7 @@ Fail: a fresh contract → R4/R8 not implemented, and the approved design is sil
 - [ ] Failed load still BLOCKS and does not fall back to a contract (Step 8)
 
 **Corrections carried by this PR**
-- [ ] `AGENTS.md:26` and `dual-invocation-paths.md:9` corrected **per tool** — bare slash reference for six CLIs, deliberate rewrite for Pi and opencode
+- [ ] `AGENTS.md:26` and `dual-invocation-paths.md:9` corrected **per tool** — bare slash reference for five of the seven auto-capable CLIs, deliberate rewrite for Pi and opencode, and Windsurf named as install-only with no auto path at all
 
 **Mechanics**
 - [ ] `./scripts/generate-skills.sh && test -f skills/belmont/tech-plan/references/design-authority-baseline.md` — `--check` compares SKILL.md only and cannot see references
@@ -460,7 +495,36 @@ The restructure plausibly *reduces* the fan-out cost 0004 defers: derivation mov
 
 **Shared files.** Both edit `_src/next.md` and `_src/references/models-yaml-format.md` — real overlaps; 0003 rebases onto 0004. The `_src/verify.md` "guaranteed conflict" predicted by earlier revisions **does not occur**: tested at git 2.50.1, a three-line insertion three lines from 0004's edit rebases cleanly and stays clean when widened. Default diff context governs `git am`/`git apply`, not the three-way merge rebase uses. Resolve `plugin/` conflicts by regeneration, never by hand.
 
-## 12. Changes from v5
+## 12. Changes from v6
+
+Rev 6 was attacked by six lenses: 69 findings, **all 69** individually refuted (no cap, unlike the rev 5 round). **53 confirmed, 16 refuted (23%).** Full record: [`rev6-CONFIRMED-DEFECTS.md`](rev6-CONFIRMED-DEFECTS.md).
+
+**The blocker — the same failure, one layer down**
+
+| v6 | v7 |
+|---|---|
+| §4.6 branches on "a contract is present" and never defines it | **Defined:** `**Mode**` is `derived — UI, no Figma`. Both `N/A` modes and an absent section are "no contract" |
+| — | **Never key on the `## Design Contract` heading.** §4.4 generalises the feature template's section, so a *Figma* feature's plan carries the heading too. Discriminating on presence would demand contract checks on every Figma feature, find none, and fire the fourth rule — reinstating the unconditional-failure blocker v6's own §12 claimed to have fixed |
+
+The regression traces to v6's own minor fix: moving the mode value *inside* the heading voided the premise an earlier refutation had relied on. A fix that reintroduced the bug it fixed — the pattern this series keeps producing, and the reason each revision is re-attacked rather than trusted.
+
+**Majors fixed**
+
+| v6 | v7 |
+|---|---|
+| "six of eight CLIs" | **Five of seven.** `belmont auto --tool windsurf` is rejected outright — Windsurf is install-only. Install surface 8, auto surface 7; never conflate them |
+| Fourth rule fires whenever a contract exists | Adds the **"checks were required"** clause, with focused re-verification named as the single exemption. Without it the rule fired on every legitimate focused re-verify |
+| Write rule covers the whole file, forbidding `debug` | Scoped to the **`## Design Contract` section**, with `debug-manual`'s documented prose-editing permission preserved and `review-plans` added to scope as read-only |
+| R4 may "derive sections that are absent" | **Never creates a contract.** Otherwise a headless replan silently adopts a pre-contract feature into a gate its author never approved, contradicting §4.9 |
+| Mixed Figma coverage undefined | **Any** task with a Figma URL makes it a Figma feature; uncovered tasks keep today's behaviour, so `## Handling No Design` keeps a no-contract arm |
+| Off-scale spacing at Warning "so drift cannot block" | Warning **does** block and generates follow-ups. Moved to Polish, with the ladder's real semantics stated |
+| `verify.md` dispatch prompt cited at `:109`/`:146` | Those are the same line in two different agent blocks. The defect is Agent 1's prompt at `:114-121` |
+| State Inventory unassigned after `interactive-prototype` was dropped | Split explicitly: `ux-designer` owns component states, `ux-motion` owns transitions — in the §3 table and the `Authorities` schema, not just the ladder |
+| Smoke Steps 2, 3, 4, 10 | Step 2 gains the resume window (the worktree is gone after the merge); Step 3 runs after `auto` exits and gains a positive control; Step 4 says the report lives in the sub-agent's return, not on disk; Step 10 runs in the source repo with `--check`, since a version argument dirties `plugin.json` |
+| Only one of R1's two exclusions tested | **Step 7b** added for the no-UI exclusion; **Step 1c** for §4.9 adoption and non-adoption |
+| — | Easing check row added; `N/A` mode contents specified; `runAutoCmd` corrected; plugin enumerations completed; link-checking DoD requires opening a browser, since a status code proves nothing on a client-rendered host |
+
+## 12b. Changes from v5
 
 Rev 5 was reviewed by six adversarial lenses producing 72 findings; each was then attacked by an independent skeptic. **19 were refuted and are not acted on**; 53 survived. Full record: [`rev5-CONFIRMED-DEFECTS.md`](rev5-CONFIRMED-DEFECTS.md).
 
@@ -472,7 +536,7 @@ Rev 5 was reviewed by six adversarial lenses producing 72 findings; each was the
 | Scope ambiguous between feature and milestone | **One conversation per feature**, covering all milestones |
 | Durability implied to be mechanical | **Prose-enforced and unguarded, stated as such.** Mechanical guard deferred to its own proposal |
 | — | **Storybook added as the first project-local derivation rung**, read statically — planning sessions may not run build commands |
-| Five tier-1 skills, `interactive-prototype` → State Inventory | **Dropped to four.** `interactive-prototype` is a *builder*: five of its eight steps produce React code with a named animation library, and its own description excludes static specs. Loading it inside `tech-plan` — a session forbidden from writing code — invites the behaviour that skill instructs. Its one relevant contribution (interactions implied but not drawn) overlaps `ux-designer` and `ux-motion`, which now own State Inventory between them. It belongs to implementation, not planning |
+| Five tier-1 skills, `interactive-prototype` → State Inventory | **Dropped to four.** `interactive-prototype` is a *builder*: its later steps produce React code against a named animation library, and its own description excludes static specs. Loading it inside `tech-plan` — a session forbidden from writing code — invites the behaviour that skill instructs. Its one relevant contribution (interactions implied but not drawn) overlaps `ux-designer` and `ux-motion`, which now own State Inventory between them. It belongs to implementation, not planning |
 | Motion Contract unconditional | **Conditional on an `**Applies**` field.** A feature that animates nothing records `N/A — no motion in this feature` rather than carrying an empty section, and verification records its three rows `N/A` rather than `UNVERIFIABLE` — a check that does not apply and a mechanism that was unavailable are different findings. `prefers-reduced-motion` stays in the Accessibility Floor either way, since it is about honouring a user preference |
 
 **Blockers fixed**
