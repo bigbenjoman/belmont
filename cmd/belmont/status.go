@@ -1,0 +1,486 @@
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+func runStatus(args []string) error {
+	fsFlags := flag.NewFlagSet("status", flag.ContinueOnError)
+	fsFlags.SetOutput(io.Discard)
+	var root string
+	var format string
+	var maxName int
+	var feature string
+	var colorMode string
+	var showArchived bool
+	fsFlags.StringVar(&root, "root", ".", "project root")
+	fsFlags.StringVar(&format, "format", "text", "text or json")
+	fsFlags.IntVar(&maxName, "max-task-name", 55, "max task name length")
+	fsFlags.StringVar(&feature, "feature", "", "feature slug")
+	fsFlags.StringVar(&colorMode, "color", "auto", "auto, always, or never")
+	fsFlags.BoolVar(&showArchived, "show-archived", false, "include archived features in the listing (text mode)")
+	if err := fsFlags.Parse(args); err != nil {
+		return fmt.Errorf("status: %w", err)
+	}
+
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+
+	report, err := buildStatus(absRoot, maxName, feature)
+	if err != nil {
+		return err
+	}
+
+	switch strings.ToLower(format) {
+	case "json":
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(report)
+	case "text":
+		useColor, err := shouldColor(colorMode, os.Stdout)
+		if err != nil {
+			return fmt.Errorf("status: %w", err)
+		}
+		fmt.Print(renderStatus(report, useColor, showArchived))
+		return nil
+	default:
+		return fmt.Errorf("status: unknown format %q", format)
+	}
+}
+
+func buildStatus(root string, maxName int, feature string) (statusReport, error) {
+	var report statusReport
+	report.TaskCounts = map[string]int{
+		"todo":        0,
+		"in_progress": 0,
+		"done":        0,
+		"verified":    0,
+		"blocked":     0,
+		"total":       0,
+	}
+
+	// Detect monorepo workspaces. Honor explicit overrides in worktree.json
+	// over auto-detection. Returns nil for single-package projects.
+	if ws, primary, mType := resolveWorkspaces(root, loadWorktreeHooks(root)); mType != monorepoNone && len(ws) > 0 {
+		entries := make([]monorepoWorkspace, 0, len(ws))
+		for _, w := range ws {
+			entries = append(entries, monorepoWorkspace{ID: w.ID, Path: w.Path})
+		}
+		report.Monorepo = &monorepoReport{
+			Type:       string(mType),
+			Primary:    primary,
+			Workspaces: entries,
+		}
+	}
+
+	// Check for PR_FAQ
+	prfaqPath := filepath.Join(root, ".belmont", "PR_FAQ.md")
+	report.PRFAQReady = fileHasRealContent(prfaqPath)
+
+	// Determine base path based on feature mode
+	featuresDir := filepath.Join(root, ".belmont", "features")
+
+	// Load worktree overrides so we can read live state from active worktrees
+	worktreeOverrides := loadAutoWorktrees(root)
+
+	if feature != "" {
+		// Specific feature requested
+		featurePath := filepath.Join(featuresDir, feature)
+		// If there's an active worktree for this feature (serial mode or
+		// multi-feature mode), read state from there instead of the master
+		// copy. In single-feature parallel mode we fall through to the
+		// per-milestone merge below — master is still the baseline and we
+		// overlay each milestone's live state from its own worktree.
+		liveFeature, perMilestoneLive := loadAutoWorktreeStateByMilestone(root)
+		if perMilestoneLive == nil {
+			if override, ok := worktreeOverrides[feature]; ok {
+				featurePath = override
+			}
+		}
+		if !dirExists(featurePath) {
+			return report, fmt.Errorf("status: feature %q not found in %s", feature, featuresDir)
+		}
+
+		prdPath := filepath.Join(featurePath, "PRD.md")
+		progressPath := filepath.Join(featurePath, "PROGRESS.md")
+		techPlanPath := filepath.Join(featurePath, "TECH_PLAN.md")
+
+		prdContent, err := os.ReadFile(prdPath)
+		if err != nil {
+			return report, fmt.Errorf("status: missing %s", prdPath)
+		}
+
+		progressContent, err := os.ReadFile(progressPath)
+		if err != nil {
+			return report, fmt.Errorf("status: missing %s", progressPath)
+		}
+
+		report.Feature = extractFeatureName(string(prdContent))
+		report.Milestones = parseMilestones(string(progressContent))
+
+		// Single-feature parallel mode: overlay each active worktree's view
+		// of its own milestone on top of master's baseline. Only the
+		// worktree's owning milestone is overlaid; other milestones stay at
+		// master's (possibly stale) state. Each overlaid milestone carries a
+		// LiveFrom pointer so renderers can annotate it.
+		if perMilestoneLive != nil && liveFeature == feature {
+			report.Milestones = overlayLiveMilestones(report.Milestones, perMilestoneLive)
+		}
+
+		report.Tasks = flattenTasks(report.Milestones, maxName)
+
+		report.TaskCounts["total"] = len(report.Tasks)
+		for _, t := range report.Tasks {
+			switch t.Status {
+			case taskDone:
+				report.TaskCounts["done"]++
+			case taskVerified:
+				report.TaskCounts["verified"]++
+			case taskBlocked:
+				report.TaskCounts["blocked"]++
+			case taskInProgress:
+				report.TaskCounts["in_progress"]++
+			case taskTodo:
+				report.TaskCounts["todo"]++
+			}
+		}
+
+		report.LastCompleted = lastCompletedTask(report.Tasks)
+		report.RecentDecisions = parseDecisions(string(progressContent), 3)
+		report.NextMilestone = nextMilestone(report.Milestones)
+		report.NextTask = nextTask(report.Tasks)
+		report.TechPlanReady = techPlanReady(techPlanPath)
+		report.OverallStatus = computeOverallStatus(report.Tasks)
+
+		return report, nil
+	}
+
+	// Feature listing mode (default)
+	features := listFeaturesWithOverrides(featuresDir, maxName, worktreeOverrides)
+	if features == nil {
+		features = []featureSummary{}
+	}
+	populateFeatureDeps(features, root)
+
+	// Split archived features into their own slice so consumers (JSON + text
+	// renderer) can treat them separately without re-filtering. Overall status
+	// is still computed across the full set — archiving a finished feature
+	// shouldn't regress the project status.
+	active := make([]featureSummary, 0, len(features))
+	var archived []featureSummary
+	for _, f := range features {
+		if f.Status == "Archived" {
+			archived = append(archived, f)
+		} else {
+			active = append(active, f)
+		}
+	}
+	report.Features = active
+	report.ArchivedFeatures = archived
+	report.Feature = extractProductName(filepath.Join(root, ".belmont", "PRD.md"))
+	report.TechPlanReady = techPlanReady(filepath.Join(root, ".belmont", "TECH_PLAN.md"))
+
+	if len(features) > 0 {
+		report.OverallStatus = computeFeatureListStatus(features)
+	} else {
+		report.OverallStatus = "Not Started"
+	}
+
+	return report, nil
+}
+
+// readActiveAutoJSONOrNil is a shared helper for the readers above.
+func readActiveAutoJSONOrNil(root string) *autoJSON {
+	autoPath := filepath.Join(root, ".belmont", "auto.json")
+	data, err := os.ReadFile(autoPath)
+	if err != nil {
+		return nil
+	}
+	var aj autoJSON
+	if err := json.Unmarshal(data, &aj); err != nil || !aj.Active {
+		return nil
+	}
+	return &aj
+}
+
+func renderStatus(report statusReport, color bool, showArchived bool) string {
+	// Feature listing mode (default when no --feature specified)
+	if report.Features != nil {
+		return renderFeatureListing(report, color, showArchived)
+	}
+
+	techPlan := "Not written (run /belmont:tech-plan to create)"
+	if report.TechPlanReady {
+		techPlan = "Ready"
+	}
+
+	taskLine := fmt.Sprintf("Tasks: %d verified, %d done, %d in progress, %d blocked, %d todo (of %d total)",
+		report.TaskCounts["verified"],
+		report.TaskCounts["done"],
+		report.TaskCounts["in_progress"],
+		report.TaskCounts["blocked"],
+		report.TaskCounts["todo"],
+		report.TaskCounts["total"],
+	)
+
+	bold := func(s string) string {
+		if color {
+			return ansiBold + s + ansiReset
+		}
+		return s
+	}
+
+	var sb strings.Builder
+	sb.WriteString(bold("Belmont Status") + "\n")
+	sb.WriteString("==============\n\n")
+	if report.Monorepo != nil {
+		primaryLabel := ""
+		if report.Monorepo.Primary != "" {
+			primaryLabel = fmt.Sprintf(", primary=%s", report.Monorepo.Primary)
+		}
+		sb.WriteString(fmt.Sprintf("Monorepo: %s (%d workspaces%s)\n\n", report.Monorepo.Type, len(report.Monorepo.Workspaces), primaryLabel))
+	}
+	sb.WriteString(fmt.Sprintf("Feature: %s\n\n", report.Feature))
+	sb.WriteString(fmt.Sprintf("Tech Plan: %s\n\n", techPlan))
+	sb.WriteString(fmt.Sprintf("Status: %s\n\n", colorStatus(report.OverallStatus, color)))
+	sb.WriteString(taskLine)
+	sb.WriteString("\n\n")
+
+	if len(report.Tasks) > 0 {
+		for _, t := range report.Tasks {
+			sb.WriteString(fmt.Sprintf("  %s %s: %s\n", taskStatusIcon(t.Status, color), t.ID, t.Name))
+		}
+	}
+	sb.WriteString("\n")
+
+	sb.WriteString("Milestones:\n")
+	if len(report.Milestones) == 0 {
+		sb.WriteString("  (none)\n")
+	} else {
+		anyLive := false
+		for _, m := range report.Milestones {
+			icon := milestoneStatusIcon(m, color)
+			line := fmt.Sprintf("  %s %s: %s", icon, m.ID, m.Name)
+			if m.LiveFrom != "" {
+				anyLive = true
+				if color {
+					line += " \033[2m(live from worktree)\033[0m"
+				} else {
+					line += " (live from worktree)"
+				}
+			}
+			sb.WriteString(line + "\n")
+		}
+		if anyLive {
+			if color {
+				sb.WriteString("  \033[2m⟳ live-tagged milestones reflect the worktree's in-flight state (not yet merged to master)\033[0m\n")
+			} else {
+				sb.WriteString("  live-tagged milestones reflect the worktree's in-flight state (not yet merged to master)\n")
+			}
+		}
+	}
+	sb.WriteString("\n")
+
+	blocked := blockedTaskNames(report.Milestones)
+	if len(blocked) > 0 {
+		sb.WriteString("Blocked Tasks:\n")
+		for _, b := range blocked {
+			sb.WriteString(fmt.Sprintf("  - %s\n", b))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("Next Milestone:\n")
+	if report.NextMilestone == nil {
+		sb.WriteString("  - None\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("  - %s - %s\n", report.NextMilestone.ID, report.NextMilestone.Name))
+	}
+	sb.WriteString("Next Individual Task:\n")
+	if report.NextTask == nil {
+		sb.WriteString("  - None\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("  - %s - %s\n", report.NextTask.ID, report.NextTask.Name))
+	}
+	sb.WriteString("\n")
+
+	sb.WriteString("Recent Activity:\n")
+	sb.WriteString("---\n")
+	if report.LastCompleted == nil {
+		sb.WriteString("Last completed: None\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("Last completed: %s - %s\n", report.LastCompleted.ID, report.LastCompleted.Name))
+	}
+	sb.WriteString("Recent decisions:\n")
+	if len(report.RecentDecisions) == 0 {
+		sb.WriteString("  - None\n")
+	} else {
+		for _, d := range report.RecentDecisions {
+			sb.WriteString(fmt.Sprintf("  - %s\n", d))
+		}
+	}
+	sb.WriteString(statusLegend(color))
+	return sb.String()
+}
+
+func renderFeatureListing(report statusReport, color bool, showArchived bool) string {
+	prfaq := "Not written (run /belmont:working-backwards)"
+	if report.PRFAQReady {
+		prfaq = "Written"
+	}
+	techPlan := "Not written"
+	if report.TechPlanReady {
+		techPlan = "Ready"
+	}
+
+	bold := func(s string) string {
+		if color {
+			return ansiBold + s + ansiReset
+		}
+		return s
+	}
+
+	var sb strings.Builder
+	sb.WriteString(bold("Belmont Status") + "\n")
+	sb.WriteString("==============\n\n")
+	if report.Monorepo != nil {
+		primaryLabel := ""
+		if report.Monorepo.Primary != "" {
+			primaryLabel = fmt.Sprintf(", primary=%s", report.Monorepo.Primary)
+		}
+		sb.WriteString(fmt.Sprintf("Monorepo: %s (%d workspaces%s)\n\n", report.Monorepo.Type, len(report.Monorepo.Workspaces), primaryLabel))
+	}
+	sb.WriteString(fmt.Sprintf("Product: %s\n\n", report.Feature))
+	sb.WriteString(fmt.Sprintf("PR/FAQ: %s\n", prfaq))
+	sb.WriteString(fmt.Sprintf("Master Tech Plan: %s\n\n", techPlan))
+	sb.WriteString(fmt.Sprintf("Status: %s\n\n", colorStatus(report.OverallStatus, color)))
+
+	// report.Features is already archived-free (split in buildStatus).
+	// Archived features are rendered separately as a compact block below the
+	// active listing so their "0/0" noise doesn't clutter active work.
+	listing := report.Features
+
+	if len(listing) == 0 && len(report.ArchivedFeatures) == 0 {
+		sb.WriteString("Features:\n")
+		sb.WriteString("  (none — run /belmont:product-plan to create your first feature)\n")
+	} else if len(listing) == 0 {
+		sb.WriteString("Features:\n")
+		sb.WriteString("  (no active features — all archived)\n\n")
+	} else {
+		for _, f := range listing {
+			icon := featureStatusIcon(f.Status, color)
+			sb.WriteString(fmt.Sprintf("%s %s (%s)\n", icon, f.Name, f.Slug))
+			sb.WriteString(fmt.Sprintf("  Tasks: %d/%d done", f.TasksDone, f.TasksTotal))
+			if f.TasksVerified > 0 {
+				sb.WriteString(fmt.Sprintf(" (%d verified)", f.TasksVerified))
+			}
+			if f.MilestonesTotal > 0 {
+				sb.WriteString(fmt.Sprintf("  |  Milestones: %d/%d done", f.MilestonesDone, f.MilestonesTotal))
+			}
+			sb.WriteString("\n")
+
+			// Show milestone listing
+			if len(f.Milestones) > 0 {
+				for _, m := range f.Milestones {
+					isNext := f.NextMilestone != nil && m.ID == f.NextMilestone.ID
+					mIcon := milestoneStatusIcon(m, color)
+					if milestoneNotStarted(m) && isNext {
+						if color {
+							mIcon = ansiYellow + "[>]" + ansiReset
+						} else {
+							mIcon = "[>]"
+						}
+					}
+					sb.WriteString(fmt.Sprintf("    %s %s: %s\n", mIcon, m.ID, m.Name))
+				}
+			}
+
+			// Show next task if feature is in progress
+			if f.NextTask != nil && f.Status == "In Progress" {
+				sb.WriteString(fmt.Sprintf("  Next: %s — %s\n", f.NextTask.ID, f.NextTask.Name))
+			}
+
+			// Show blocked tasks if any
+			if f.TasksBlocked > 0 {
+				blockedNames := blockedTaskNames(f.Milestones)
+				sb.WriteString("  Blocked:\n")
+				for _, b := range blockedNames {
+					sb.WriteString(fmt.Sprintf("    - %s\n", b))
+				}
+			}
+
+			sb.WriteString("\n")
+		}
+	}
+
+	if showArchived && len(report.ArchivedFeatures) > 0 {
+		var block strings.Builder
+		block.WriteString(fmt.Sprintf("Archived (%d):\n", len(report.ArchivedFeatures)))
+		for _, f := range report.ArchivedFeatures {
+			if f.Name != "" && f.Name != f.Slug {
+				block.WriteString(fmt.Sprintf("  - %s — %s\n", f.Slug, f.Name))
+			} else {
+				block.WriteString(fmt.Sprintf("  - %s\n", f.Slug))
+			}
+		}
+		out := block.String()
+		if color {
+			out = ansiDim + out + ansiReset
+		}
+		sb.WriteString(out)
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("Use --feature <slug> for detailed task-level status.\n")
+	sb.WriteString(statusLegend(color))
+	return sb.String()
+}
+
+func printLoopState(report statusReport, hasFwlup bool) {
+	done := report.TaskCounts["done"] + report.TaskCounts["verified"]
+	total := report.TaskCounts["total"]
+	msDone := countDoneMilestones(report.Milestones)
+	msTotal := len(report.Milestones)
+
+	// Progress bar
+	barWidth := 20
+	filled := 0
+	if total > 0 {
+		filled = (done * barWidth) / total
+	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+	fmt.Fprintf(os.Stderr, "  [%s] %d/%d tasks, %d/%d milestones", bar, done, total, msDone, msTotal)
+
+	if hasFwlup {
+		fmt.Fprintf(os.Stderr, " \033[33m(FWLUP)\033[0m")
+	}
+	blockedCount := blockedTaskCount(report.Milestones)
+	if blockedCount > 0 {
+		fmt.Fprintf(os.Stderr, " \033[31m(%d blocked)\033[0m", blockedCount)
+	}
+	fmt.Fprintln(os.Stderr)
+}
+
+func describeMilestone(action *loopAction, report statusReport) string {
+	if action.MilestoneID != "" {
+		for _, m := range report.Milestones {
+			if m.ID == action.MilestoneID {
+				return m.ID + ": " + m.Name
+			}
+		}
+	}
+	if action.Type == actionVerify || action.Type == actionImplementNext {
+		if report.NextMilestone != nil {
+			return report.NextMilestone.ID + ": " + report.NextMilestone.Name
+		}
+	}
+	return ""
+}
