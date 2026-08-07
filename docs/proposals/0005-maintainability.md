@@ -1,32 +1,45 @@
 # 0005 — Split `main.go`, add CI
 
-**What this does.** Splits `cmd/belmont/main.go` into fifteen files in the same package, deletes eight functions nothing calls, and adds a GitHub Actions workflow that builds, tests and lints on every push and pull request.
+**What this does.** Adds a GitHub Actions workflow that builds, tests and lints on every push and pull request. Deletes eight functions nothing calls. Splits `cmd/belmont/main.go` into fifteen files in the same package.
+
+**Why now.** Belmont has no automated checks of any kind. Two defects have shipped undetected as a result — the plugin distribution has been publishing empty agent files for two months, and a worktree function was a no-op for its entire life. Both were found by a person reading code for an unrelated reason. This PR installs the first mechanism that could have found either.
 
 **What it does not do.** No behaviour changes. No renames. No reformatting. No new dependencies. No new packages — the files move, the package does not.
 
-**Sequencing.** Depends on 0006. The CI job list includes `generate-plugin.sh --check`, and that gate is meaningless until the generator is fixed.
+**Sequencing.** After 0006. That PR fixes the plugin generator and adds the assertion that detects the failure; this PR is what runs that assertion on every push. Neither is complete alone — see §1.1.
+
+**If you only want part of this,** the CI and the split are independent and land in separate commits. §10 says how to take one without the other.
 
 ---
 
 ## 1. Why
 
-Three problems, in order of what they cost.
+### 1.1 The plugin distribution has been broken for two months
 
-### 1.1 Nothing runs the tests
+On `main` today:
 
-Belmont has 2,989 lines of tests across eight files. Nothing runs them automatically. Ever.
+| Published file | Lines | Source |
+|---|---|---|
+| `plugin/agents/code-review-agent.md` | **0** | 268 |
+| `plugin/agents/codebase-agent.md` | **0** | 215 |
+| `plugin/agents/reconciliation-agent.md` | **0** | 128 |
+| `plugin/agents/verification-agent.md` | **0** | 363 |
+| `plugin/agents/design-agent.md` | 118 | 276 |
+| `plugin/agents/implementation-agent.md` | 102 | 427 |
 
-- `.github/workflows/release.yml` is the only workflow. It triggers on tag push, and it only builds — no `go test` anywhere in it.
-- `scripts/release.sh` and `scripts/build.sh` don't run tests either.
-- There are no git hooks.
+Anyone installing Belmont through the marketplace gets no verification agent, no code-review agent, no codebase agent and no reconciliation agent.
 
-So the suite runs when a person remembers to type `go test`. A pull request can be merged with a broken suite. A release can ship with one. Neither would be noticed.
+It broke on 2026-06-04. `ad5f84c` removed frontmatter from the source agents — correctly, since agent frontmatter is not read at runtime — and that exposed a latent flaw in `scripts/generate-plugin.sh`. `f69e784` cut v0.10.12 the same day. Every release since has shipped it. Sixty-four days, no bug report, because the failure is silent: the orchestrator dispatches a sub-agent, tells it to read an empty file, and the sub-agent improvises. The output looks plausible and skips every actual verification phase.
 
-This is the part of the PR that matters most, and it is also the smallest part of the diff.
+**0006 fixes this once. This PR is what makes the fix stick.**
 
-### 1.2 Nothing catches dead code
+That distinction matters more than the bug. `generate-plugin.sh --check` cannot catch this class of failure by itself — it regenerates using the same code and diffs the result against the committed tree, so both sides are wrong in the same way. 0006 adds a real assertion: published line count must equal source plus three. Nothing runs that assertion on a schedule. Without CI, the next commit that shifts an agent file re-breaks the generator and nobody finds out for another two months.
 
-Eight functions in `main.go` are defined and never called:
+### 1.2 The same shape, twice more
+
+**A worktree function never worked.** `writeWorktreeGitExcludes` wrote `.belmont/` into a linked worktree's own `$GIT_DIR/info/exclude`. Git resolves that path from `$GIT_COMMON_DIR`, so it never read the file. It was a no-op from the day it was written. Found by inspection; fixed in a separate PR.
+
+**Eight functions are dead.** `cleanupAll` lost both call sites in `b85f448` when they moved to `gracefulShutdown`; `excludeBelmontInWorktree` lost both in `cd0b82f`. Both commits are from 26 March — over four months dead. `staticcheck` names all eight in under a second, and has never been run.
 
 | Function | Line |
 |---|---|
@@ -39,15 +52,47 @@ Eight functions in `main.go` are defined and never called:
 | `prepareWorktreesGitignore` | 9914 |
 | `excludeBelmontInWorktree` | 9940 |
 
-Two have provenance worth noting. `cleanupAll` lost both its call sites in b85f448 when they moved to `gracefulShutdown`. `excludeBelmontInWorktree` lost both in cd0b82f. Both commits are from 26 March. The code has been dead for over four months and nothing surfaced it.
+Each of these three is the same shape: a change in one place quietly broke or orphaned something in another, and nothing spanned the gap. That is precisely what a linter and a test run catch.
 
-`go vet ./...` is already clean, so that half of the lint work is CI wiring only. `staticcheck ./...` returns exactly nine findings — the eight above plus one `SA4006` at `:10839`.
+### 1.3 Belmont has tests. Nothing runs them.
 
-### 1.3 `main.go` is 96% of the Go
+2,989 lines across eight files, and no automation touches them:
 
-12,613 of Belmont's 13,102 lines of non-test Go sit in one file.
+- `.github/workflows/release.yml` is the only workflow. It triggers on tag push and only builds. There is no `go test` in it.
+- `scripts/release.sh` and `scripts/build.sh` don't run tests either.
+- There are no git hooks.
 
-An agent asked to change CLI behaviour either loads the whole file or greps into it without surrounding context. A reviewer scrolls it. For work *on* Belmont — which is most of what happens in this repo — the unit of context is a 12.6k-line file, and that is the constraint on everything else.
+The suite runs when someone remembers to type the command. A pull request can merge with a broken suite; a release can ship with one.
+
+`go vet ./...` is already clean, so half the lint work is wiring only. `staticcheck ./...` returns exactly nine findings — the eight dead functions plus one `SA4006` at `:10839`.
+
+### 1.4 You cannot see a subsystem
+
+This is a different kind of argument from the three above. No defect has shipped because of it. It is about what the code costs to change safely.
+
+`main.go` being 12,613 lines is not itself the problem. Go's unit of encapsulation is the package, not the file, and the compiler does not care. The problem is that **the file is not laid out by subsystem** — each one is scattered through it:
+
+| Subsystem | First function | Last function | Span |
+|---|---|---|---|
+| Worktree | `buildWorktreeEnv` :572 | `copyBelmontStateToWorktree` :9980 | **9,408 lines** |
+| Tool execution | `resolveModelFlags` :119 | `buildToolCommand` :7984 | **7,865 lines** |
+| State parsing | `milestoneAllDone` :299 | `parseMilestones` :2523 | **2,224 lines** |
+| Monorepo | `seedWorkspaceEnv` :681 | `resolveWorkspaces` :1509 | **828 lines** |
+
+`executeLoopAction` (:6862) calls `snapshotProgress` (:11988) — caller and callee 5,126 lines apart.
+
+So to change worktree behaviour safely, you have to already know the code sits in two clumps 9,400 lines apart: `buildWorktreeEnv` near the top, `rebaseWorktreeOnMain` and `copyBelmontStateToWorktree` near the bottom. **That knowledge is in your head. It is not in the repository, and nothing keeps it true.** Anyone else — a new contributor, or an agent working from grep — finds one clump, changes it, and never learns the second exists.
+
+**After the split, `worktree.go` is the worktree subsystem.** Opening the file is how you find out what is in it. The layout stops being oral history and becomes something the file listing states and a reviewer can check.
+
+Two smaller consequences, worth noting but not worth arguing over:
+
+- All forty of the last forty commits on `main` touch `cmd/belmont/main.go`. So `git log cmd/belmont/main.go` is just `git log`, and any two branches in flight conflict by construction. Both unmerged branches on this fork touch it.
+- The file is 419,726 bytes — very roughly 105,000 tokens. Only people developing Belmont ever pay that; people using it never load the file. Treat it as a contributor cost, not a user-facing one.
+
+`CONTRIBUTING.md:81` describes the file as "All CLI logic (single file, no external deps)". The no-external-deps half is the valuable half, and this PR leaves it untouched — the files move, the package does not, and nothing new is imported. The single-file half buys nothing in Go that a single package does not already buy.
+
+If you disagree with this section, §10 is written so you can take §1.1–1.3 and refuse it.
 
 ---
 
@@ -272,7 +317,21 @@ Step 2 omits `--tool`, so `detectTool()` picks claude — Steps 2 and 4 are the 
 
 ---
 
-## 10. Relationship to the other proposals
+## 10. If you only want part of this
+
+The CI and the split are independent. They land in separate commits and neither needs the other.
+
+**To take the CI and refuse the split.** The lint-and-CI work is the final commit. It adds `.github/workflows/ci.yml`, deletes the eight dead functions and corrects the docs — roughly 100 lines of YAML against 200 deleted lines of Go, and nothing in it depends on the file layout. Say so on the PR and I will re-cut it as a standalone branch rather than making you cherry-pick.
+
+This is a reasonable thing to want. §1.1–1.3 are about defects that have already shipped; §1.4 is a judgement call about how the code is laid out. They are not the same kind of claim and you should not have to accept the second to get the first.
+
+**To take the split and refuse the CI.** Possible, but there is no reason to — the split is the part that most needs a safety net underneath it.
+
+**To re-cut the boundaries.** §3's table is a proposal, not a decision. Say which rows you would change *before* commit 1. Re-cutting mid-split means re-running the purity check on every commit already made.
+
+---
+
+## 11. Relationship to the other proposals
 
 - **0006** — hard dependency. The `generate-plugin.sh --check` CI gate is meaningless until the generator is fixed.
 - **0003** — overlaps. Both edit `_src/references/models-yaml-format.md` and both append to `model-tier-economics.md`'s `Revisions` footer. All the proposals also append to `KNOWLEDGE.md`'s cross-cutting table, so expect a trivial conflict — keep every row.
