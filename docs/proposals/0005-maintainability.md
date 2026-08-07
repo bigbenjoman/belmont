@@ -192,6 +192,20 @@ The embed axis is already covered — plain `go build` is `!embed`, `build.sh` i
 
 `staticcheck` is a CI-time tool. It does not affect the stdlib-only rule, which governs what the binary imports.
 
+### 4.1 One extra deletion rides with the lint commit
+
+Branch `fix/worktree-git-excludes` is folded in rather than opened as its own PR, because it is the same job: delete code that does nothing, with a justification.
+
+`writeWorktreeGitExcludes` wrote `.belmont/` into a linked worktree's own `$GIT_DIR/info/exclude`. Git resolves `info/exclude` from `$GIT_COMMON_DIR`, so it never read the file — a no-op from the day it was written, verified at git 2.50.1. `staticcheck` does not flag it, because it *was* called; the call site was the only thing keeping it alive.
+
+Both obvious repairs are wrong. Writing to the common dir works but that file is shared with the main repo, where `.belmont/` must stay tracked. Making the exclusion effective per-worktree (`extensions.worktreeConfig` plus `core.excludesFile`) also works, and would strand state — new `.belmont/` files are staged by `commitWorktreeChanges`' `git add -A` and travel home through the merge, which on the `belmont recover` route is the *only* way they return, since `recoverMerge` never calls `syncFeatureStateAfterMerge`. So the no-op has been load-bearing. Deletion plus documentation is the honest fix.
+
+It brings **two tests** — `TestWorktreeTrackedBelmontEditsAreNotCommittable` and `TestWorktreeNewBelmontFilesAreCommittable` — and a knowledge entry, `auto-mode/worktree-state-isolation.md`. Both tests were checked against controls: they pass on the real code, and reintroducing an effective per-worktree exclude makes the second fail with a message naming the recover path.
+
+Two consequences for this PR. It is not a pure deletion — `copyBelmontStateToWorktree` loses the call and gains a comment — so the declsum expectation at the lint commit changes; see §8. And the tests are the point, not a bonus: a PR arguing that Belmont has no automated checks should arrive with some.
+
+**`recoverMerge`'s missing `syncFeatureStateAfterMerge` call is a real defect and is out of scope here.** Worktree edits to *tracked* feature state are lost on that path. It pulls in the opposite direction to this deletion, and bundling them would obscure both. It is recorded as an open gap in the knowledge entry.
+
 ---
 
 ## 5. What this touches outside Go
@@ -280,7 +294,7 @@ Step 2 omits `--tool`, so `detectTool()` picks claude — Steps 2 and 4 are the 
 **Lint**
 - [ ] All nine staticcheck findings resolved, each deletion carrying a one-line `git log -S` justification
 - [ ] Suppression count stated in the PR description — no silent scope truncation
-- [ ] At the lint commit the declsum diff shows exactly the eight deletions plus the SA4006 line, and nothing else
+- [ ] At the lint commit the declsum diff shows exactly the eight deletions, the SA4006 line, the `writeWorktreeGitExcludes` removal and the edited `copyBelmontStateToWorktree` — and nothing else
 
 **CI**
 - [ ] `.github/workflows/ci.yml` added with the §4 job list
