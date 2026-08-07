@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -379,4 +381,320 @@ func revertEvidenceMissing(post, pre *progressSnapshot, missing []evidenceMissin
 		}
 	}
 	return out.String()
+}
+
+// validationViolation is one finding from `belmont validate`.
+type validationViolation struct {
+	Feature       string `json:"feature"`
+	Milestone     string `json:"milestone"`
+	MilestoneName string `json:"milestone_name"`
+	TaskID        string `json:"task_id,omitempty"`
+	Rule          string `json:"rule"`
+	Message       string `json:"message"`
+}
+
+// Matches milestone names that look like polish / follow-up catch-alls.
+// Conservative — only fires on unambiguously bad patterns so legitimate
+// cross-cutting milestones ("Accessibility audit across routes") aren't
+// flagged. Case-insensitive via (?i).
+var polishMilestoneNameRe = regexp.MustCompile(`(?i)(\bpolish\b|\bfollow[- ]?ups?\b|\bcleanup\b|\bverification fixes?\b|\bdesign fidelity fixes?\b|\bdeviations from\s+m\d+|from\s+m\d+\s+implementation\b|\bfwlup[s]?\b)`)
+
+// Matches task IDs that embed a milestone number, e.g. P3-FWLUP-M2-1 or
+// P1-M4-FIX-2. Capture group 1 is the milestone number referenced by the ID.
+var taskIDMilestoneRefRe = regexp.MustCompile(`^P\d+-(?:FWLUP-)?M(\d+)(?:-|$)`)
+
+// milestoneNumber extracts the integer from a milestone ID like "M5".
+func milestoneNumber(id string) int {
+	trimmed := strings.TrimPrefix(id, "M")
+	if n, err := strconv.Atoi(trimmed); err == nil {
+		return n
+	}
+	return -1
+}
+
+// renderValidationReport writes a human-readable summary to w.
+func renderValidationReport(w io.Writer, violations []validationViolation) {
+	if len(violations) == 0 {
+		fmt.Fprintln(w, "\033[32m✓ No milestone-structure violations found.\033[0m")
+		return
+	}
+	fmt.Fprintf(w, "\033[31m✗ %d violation(s) found:\033[0m\n\n", len(violations))
+	// Group by feature → milestone for readability.
+	byFeat := map[string][]validationViolation{}
+	var featOrder []string
+	for _, v := range violations {
+		if _, seen := byFeat[v.Feature]; !seen {
+			featOrder = append(featOrder, v.Feature)
+		}
+		byFeat[v.Feature] = append(byFeat[v.Feature], v)
+	}
+	for _, feat := range featOrder {
+		fmt.Fprintf(w, "  \033[1m%s\033[0m\n", feat)
+		for _, v := range byFeat[feat] {
+			if v.TaskID != "" {
+				fmt.Fprintf(w, "    • [%s/%s] %s — %s\n", v.Milestone, v.TaskID, v.Rule, v.Message)
+			} else {
+				fmt.Fprintf(w, "    • [%s] %s — %s\n", v.Milestone, v.Rule, v.Message)
+			}
+		}
+		fmt.Fprintln(w)
+	}
+	fmt.Fprintln(w, "\033[2mRerun after fixing with `belmont validate`. See skills/belmont/_partials/milestone-immutability.md for the canonical rule.\033[0m")
+}
+
+// milestoneBlockText captures a single milestone block's exact bytes along
+// with its task state map, so we can both diff state and rewrite verbatim.
+type milestoneBlockText struct {
+	ID         string
+	Name       string
+	RawLines   []string          // the header line plus every line up to (exclusive) the next block boundary
+	TaskStates map[string]string // taskID -> marker rune as string ([ ], [x], [v], [>], [!])
+}
+
+// progressSnapshot preserves enough of PROGRESS.md to rebuild it after
+// reverting out-of-scope edits. Non-milestone lines (preamble, activity log,
+// decisions section) are stored too so they can be preserved verbatim.
+type progressSnapshot struct {
+	Path   string
+	Raw    string
+	Blocks []milestoneBlockText
+	ByID   map[string]int // milestone ID -> index in Blocks
+}
+
+// scopeViolation is one finding from the post-phase guard.
+type scopeViolation struct {
+	Kind          string // "new_milestone" | "out_of_scope_flip"
+	Milestone     string // milestone ID involved
+	MilestoneName string
+	TaskID        string // for out_of_scope_flip
+	FromState     string // for out_of_scope_flip
+	ToState       string // for out_of_scope_flip
+}
+
+// logScopeGuardRevert prints a one-line summary of each violation to stderr.
+func logScopeGuardRevert(feature, milestoneID string, violations []scopeViolation) {
+	prefix := ""
+	if feature != "" {
+		if milestoneID != "" {
+			prefix = fmt.Sprintf("\033[36m[%s][%s]\033[0m: ", feature, milestoneID)
+		} else {
+			prefix = fmt.Sprintf("\033[36m[%s]\033[0m: ", feature)
+		}
+	}
+	summary := summarizeScopeViolations(violations)
+	fmt.Fprintf(os.Stderr, "%s\033[33m[SCOPE-GUARD]\033[0m reverted %d violation(s) — %s\n", prefix, len(violations), summary)
+}
+
+// summarizeScopeViolations produces a terse one-line summary suitable for
+// the stream (matches steering's preview style).
+func summarizeScopeViolations(violations []scopeViolation) string {
+	counts := map[string]int{}
+	var sample string
+	for _, v := range violations {
+		counts[v.Kind]++
+		if sample == "" {
+			switch v.Kind {
+			case "new_milestone":
+				sample = fmt.Sprintf("new milestone %s %q", v.Milestone, v.MilestoneName)
+			case "out_of_scope_flip":
+				sample = fmt.Sprintf("%s in %s (%s→%s)", v.TaskID, v.Milestone, v.FromState, v.ToState)
+			}
+		}
+	}
+	var parts []string
+	if n := counts["new_milestone"]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d new milestone", n))
+	}
+	if n := counts["out_of_scope_flip"]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d out-of-scope flip", n))
+	}
+	return fmt.Sprintf("%s — first: %s", strings.Join(parts, ", "), sample)
+}
+
+// evidenceMissing records one [v] flip that lacks a commit referencing the task.
+type evidenceMissing struct {
+	Milestone string
+	TaskID    string
+	FromState string // prior state (pre)
+}
+
+// findEvidenceMissingFlips walks post, identifies tasks that flipped TO "v"
+// this phase (vs pre), and returns any without a matching git commit. When
+// targetMS is non-empty only tasks under that milestone are evaluated.
+func findEvidenceMissingFlips(root string, pre, post *progressSnapshot, targetMS string) []evidenceMissing {
+	mergeBase := findMergeBaseRef(root)
+	var missing []evidenceMissing
+	for _, pb := range post.Blocks {
+		if targetMS != "" && pb.ID != targetMS {
+			continue
+		}
+		preIdx, existedPre := pre.ByID[pb.ID]
+		for taskID, postState := range pb.TaskStates {
+			if postState != "v" {
+				continue
+			}
+			var preState string
+			if existedPre {
+				preState = pre.Blocks[preIdx].TaskStates[taskID]
+			}
+			if preState == "v" {
+				continue // already verified, not a fresh flip this phase
+			}
+			if taskHasCommit(root, taskID, mergeBase) {
+				continue
+			}
+			missing = append(missing, evidenceMissing{
+				Milestone: pb.ID,
+				TaskID:    taskID,
+				FromState: preState,
+			})
+		}
+	}
+	return missing
+}
+
+// findMergeBaseRef returns the best-guess fork point of the current branch.
+// Empty string means "no scoping" — fall back to the full log.
+func findMergeBaseRef(root string) string {
+	for _, candidate := range []string{"main", "master", "origin/main", "origin/master"} {
+		cmd := exec.Command("git", "merge-base", "HEAD", candidate)
+		cmd.Dir = root
+		if out, err := cmd.Output(); err == nil {
+			trimmed := strings.TrimSpace(string(out))
+			if trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+	return ""
+}
+
+// taskHasCommit reports whether any commit reachable from HEAD names the
+// given task ID. When sinceRef is non-empty the search is limited to
+// sinceRef..HEAD so older features' commits don't produce false positives.
+func taskHasCommit(root, taskID, sinceRef string) bool {
+	if taskID == "" {
+		return true // nothing to check
+	}
+	pattern := regexp.MustCompile(`(^|[^A-Za-z0-9-])` + regexp.QuoteMeta(taskID) + `([^A-Za-z0-9-]|$)`)
+	args := []string{"log", "--format=%B%x1e"}
+	if sinceRef != "" {
+		args = append(args, sinceRef+"..HEAD")
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		// If the git query fails (e.g., shallow clone, bad ref), treat as
+		// "evidence present" to avoid false negatives blocking real work.
+		return true
+	}
+	for _, msg := range strings.Split(string(out), "\x1e") {
+		if pattern.MatchString(msg) {
+			return true
+		}
+	}
+	return false
+}
+
+// logEvidenceRevert prints a one-line summary per verify-guard revert batch.
+func logEvidenceRevert(feature, milestoneID string, missing []evidenceMissing) {
+	prefix := ""
+	if feature != "" {
+		if milestoneID != "" {
+			prefix = fmt.Sprintf("\033[36m[%s][%s]\033[0m: ", feature, milestoneID)
+		} else {
+			prefix = fmt.Sprintf("\033[36m[%s]\033[0m: ", feature)
+		}
+	}
+	var ids []string
+	for _, m := range missing {
+		ids = append(ids, m.TaskID)
+	}
+	sort.Strings(ids)
+	preview := strings.Join(ids, ", ")
+	if len(preview) > 100 {
+		preview = preview[:99] + "…"
+	}
+	fmt.Fprintf(os.Stderr, "%s\033[33m[VERIFY-GUARD]\033[0m reverted %d [v] flip(s) lacking commit evidence — %s\n", prefix, len(missing), preview)
+}
+
+// nonEmpty returns fallback when s is empty.
+func nonEmpty(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
+}
+
+// branchTouchedFiles returns the list of files whose content differs on
+// `branch` compared to the merge base with HEAD. Empty slice on error.
+func branchTouchedFiles(root, branch string) []string {
+	base := "HEAD"
+	if mb := findMergeBaseOfBranch(root, branch); mb != "" {
+		base = mb
+	}
+	cmd := exec.Command("git", "diff", "--name-only", base+".."+branch)
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	var files []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		files = append(files, line)
+	}
+	return files
+}
+
+// findMergeBaseOfBranch returns the merge-base between HEAD and branch.
+// Empty string if git fails or no common ancestor.
+func findMergeBaseOfBranch(root, branch string) string {
+	cmd := exec.Command("git", "merge-base", "HEAD", branch)
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// reportMergeOverlap prints a one-block warning listing files that this
+// branch touches and that were also touched by siblings merged earlier.
+// mergedFiles is the cumulative map from prior iterations.
+func reportMergeOverlap(root, branch, msID string, mergedFiles map[string][]string) {
+	if len(mergedFiles) == 0 {
+		return
+	}
+	touched := branchTouchedFiles(root, branch)
+	if len(touched) == 0 {
+		return
+	}
+	type entry struct {
+		File    string
+		Sources []string
+	}
+	var overlaps []entry
+	for _, f := range touched {
+		if sources, ok := mergedFiles[f]; ok {
+			overlaps = append(overlaps, entry{File: f, Sources: sources})
+		}
+	}
+	if len(overlaps) == 0 {
+		return
+	}
+	sort.Slice(overlaps, func(i, j int) bool { return overlaps[i].File < overlaps[j].File })
+	fmt.Fprintf(os.Stderr, "\n  \033[33m⚠ Merge overlap for %s:\033[0m %d file(s) also modified by earlier sibling(s)\n", msID, len(overlaps))
+	maxShow := 8
+	for i, o := range overlaps {
+		if i == maxShow {
+			fmt.Fprintf(os.Stderr, "      \033[2m… and %d more\033[0m\n", len(overlaps)-maxShow)
+			break
+		}
+		fmt.Fprintf(os.Stderr, "      %s \033[2m(also in: %s)\033[0m\n", o.File, strings.Join(o.Sources, ", "))
+	}
+	fmt.Fprintf(os.Stderr, "  \033[2m  Proceeding with default merge strategy — review the resulting commit before pushing.\033[0m\n\n")
 }
