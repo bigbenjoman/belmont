@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.10.16
+
+**Released:** 2026-08-07
+
+### Changes since v0.10.15
+
+- Repoint knowledge and skill sources after the split
+- split: extract state.go tail and render.go — main.go reaches 1,522 lines
+- split: extract types.go — shared type and constant declarations
+- split: move the guard and worktree tails into their domain files
+- split: extract autocmd.go and fsutil.go
+- split: relocate stragglers into their real homes
+- split: extract merge_conflict.go and feature.go
+- split: extract install_sync.go — install-time sync and tool detection helpers
+- split: extract validate.go — sync and validate commands
+- split: extract status.go — status rendering
+- split: extract multifeature.go — multi-feature scheduling
+- split: extract auto_loop.go — the auto loop and phase execution
+- split: extract auto_parallel.go — wave orchestration and merge sequencing
+- split: extract auto_decide.go — loop action decisions
+- split: extract install.go — installer and updater
+- split: extract reverify.go — the reverify command
+- split: extract reconcile.go — merge reconciliation and belmont recover
+- split: extract toolexec.go — AI CLI dispatch and model tiers
+- split: extract worktree.go — worktree lifecycle
+- split: extract monorepo.go — workspace detection and env seeding
+- split: extract steer.go — belmont steer and the STEERING.md lifecycle
+- split: extract guards.go — runtime scope and evidence guards
+- split: extract state.go — PROGRESS.md parsing and computed milestone state
+- Add scripts/declsum — purity proof for the main.go split
+- Correct docs that the previous commits falsified
+- Add CI — the first automated checks this repo has had
+- Delete the nine staticcheck findings
+- docs(knowledge): add worktree-state-isolation entry
+- fix(worktree): remove writeWorktreeGitExcludes, which never worked
+
+
+
 ## v0.10.15
 
 **Released:** 2026-08-07
