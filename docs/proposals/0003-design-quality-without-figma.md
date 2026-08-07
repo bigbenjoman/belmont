@@ -45,15 +45,15 @@ The second root cause is **placement**: v1–v4 derived design per-milestone, in
 
 **Design content source and attribution.** The rules in `references/design-authority-baseline.md` are Belmont-original prose stating published standards: WCAG 2.1 **SC 1.4.3** (contrast 4.5:1 body / 3:1 large, **Level AA**), **SC 2.4.7** (focus visible, **AA**), **SC 2.5.5** (44×44 targets, **Level AAA**), **SC 2.3.3** (animation from interactions, **Level AAA**), the 8pt spacing grid, ratio-derived type scales, and the 60-30-10 colour convention. **State the conformance level wherever these are cited** — two of the four are AAA, and presenting AAA criteria as a mandatory floor without saying so misrepresents the standard. The baseline adopts them as *Belmont's* floor, which is a project choice, not a WCAG requirement.
 
-The *curation* — which rules matter and how they compose into a checkable contract — is drawn from the **[Yummy Labs](https://www.yummy-labs.com/) Claude design skills**. Credit them by name and link in the reference file header (see §4.3 for which URLs are confirmed), in `design-authority.md`, and in the PR description:
+The *curation* — which rules matter and how they compose into a checkable contract — is drawn from the **[Yummy Labs](https://www.yummy-labs.com/) Claude design skills**. Credit them by name and link in the reference file header, in `design-authority.md`, and in the PR description. §4.3 carries the same links with install paths:
 
 | Skill | Contract section it feeds |
 |---|---|
 | [ui-designer](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | Token Contract; the "existing design system is LAW" rule; the banned-defaults list |
 | [ux-designer](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) | UX Strategy |
-| `ux-copywriter` | Microcopy Rules |
-| `ux-motion` | Motion Contract |
-| `interactive-prototype` | State Inventory — gesture and transition states a static spec omits |
+| [ux-copywriter](https://drive.google.com/drive/folders/1lSwUatVOzOX5TGWgBDjKA820RiUsVLNr) | Microcopy Rules |
+| [ux-motion](https://drive.google.com/drive/folders/1gYrK4aT4A-LYr4GbM88-PaKu0wYyY4C6) | Motion Contract |
+| [interactive-prototype](https://drive.google.com/file/d/1KuHzSWqEoHvMCjRVGb7Y804I72R6JcfX/view) | State Inventory — gesture and transition states a static spec omits |
 
 **Do not vendor their files.** All five are distributed as downloads with **no LICENSE, no repository and no redistribution grant** — verified against the actual packages, not the website. Belmont states the same published standards in its own words and credits the source. If written permission is obtained (`yummylabs@yummydesign.xyz`), vendoring with attribution can replace the baseline in a follow-up.
 
@@ -127,18 +127,20 @@ Placed in the new `skills/belmont/_src/references/design-authority-baseline.md`,
 
 The ladder says "if `ui-designer` is available" — a reader's next question is how to make it available. **`design-authority-baseline.md` must carry this table**, so the answer ships with the skill rather than living only in this proposal. None of these is bundled with Belmont; all are optional, and tier 2 is the tested path without them.
 
-| Skill | Notion page | Installs to |
-|---|---|---|
-| `ui-designer`, `ux-designer` | [Claude UX & UI Design Skills](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) — confirmed | `~/.claude/skills/{ui,ux}-designer/` |
-| `ux-copywriter` | **TODO — get the published URL from the author** | `~/.claude/skills/ux-copywriter/` |
-| `ux-motion` | **TODO — get the published URL from the author** | `~/.claude/skills/ux-motion/` |
-| `interactive-prototype` | **TODO — get the published URL from the author** | `~/.claude/skills/interactive-prototype/` |
+| Skill | Source | Archive | Installs to |
+|---|---|---|---|
+| `ui-designer`, `ux-designer` | [Claude UX & UI Design Skills](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) (Notion) | `ux-ui designer skill Jul 26.zip` | `~/.claude/skills/{ui,ux}-designer/` |
+| `ux-copywriter` | [Drive folder](https://drive.google.com/drive/folders/1lSwUatVOzOX5TGWgBDjKA820RiUsVLNr) | `ux-copywriter.zip` | `~/.claude/skills/ux-copywriter/` |
+| `ux-motion` | [Drive folder](https://drive.google.com/drive/folders/1gYrK4aT4A-LYr4GbM88-PaKu0wYyY4C6) | `ux-motion.zip` | `~/.claude/skills/ux-motion/` |
+| `interactive-prototype` | [Drive file](https://drive.google.com/file/d/1KuHzSWqEoHvMCjRVGb7Y804I72R6JcfX/view) | `Prototyping v5.zip` | `~/.claude/skills/interactive-prototype/` |
 
 Vendor homepage, always valid: **<https://www.yummy-labs.com/>**.
 
-> **Do not construct these URLs.** Three were previously written into this document by deriving a slug from the page title and were **wrong**. The page IDs are real (obtained from Notion's API, and all four report `publicAccessRole: reader`), but each page carries a distinct `site_id`, so they are published as separate Notion Sites and do not share one predictable domain. An HTTP 200 is **not** evidence a Notion URL is correct — Notion is client-rendered and returns 200 with an empty shell for any path under a workspace subdomain. Paste the URLs from a browser; do not derive them, and do not "verify" them with `curl`.
+**Why the sources differ.** The designer pair has a confirmed Notion page. The other three are linked to their Google Drive locations because their Notion URLs could not be established: each page carries a distinct `site_id`, so they are published as separate Notion Sites with no shared, derivable domain. Every Drive link above was verified by **downloading the archive and inspecting its contents**, which is the only check that means anything here — see the warning below.
 
-Link the **Notion pages**, not the storage URLs behind them. The pages are vendor-maintained and carry current install instructions; the download links they point at are unauthenticated share URLs that change without notice.
+> **Never verify a link with an HTTP status code.** An earlier revision of this document carried three Notion URLs constructed by deriving a slug from each page title, "verified" with `curl` status checks that returned 200 for all of them. Notion — and Google Drive — are client-rendered and return 200 with an empty shell for almost any path, so the check cannot distinguish a real page from a fabricated one. Three of the three were wrong. A link is verified when its content has been fetched and identified, not when it responds.
+
+**These are unauthenticated share links and the vendor controls them.** They can be revoked, re-pointed at a new version, or renamed without notice, and the Drive links are more fragile than a Notion page for exactly that reason. Re-check every row at branch time and prefer a Notion page wherever one becomes available.
 
 **Two packaging notes**, both verified against the downloaded packages:
 
