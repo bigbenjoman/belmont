@@ -393,3 +393,45 @@ func extractDecisionJSON(output, tool string) (string, error) {
 
 	return "", fmt.Errorf("no decision JSON found in output: %s", truncateTail(text, 200))
 }
+
+// Model tier registry: maps (tool, tier) to the CLI --model identifier.
+// Tiers (low/medium/high) are stable across releases; model IDs get bumped
+// here as tools ship new versions. This is the single source of truth —
+// skill bodies reference the same mapping via _partials/tier-registry.md.
+var modelTiers = map[string]map[string]string{
+	"claude": {
+		"low":    "haiku",
+		"medium": "sonnet",
+		"high":   "opus",
+	},
+	"codex": {
+		"low":    "gpt-5.4-mini",
+		"medium": "gpt-5.4",
+		"high":   "gpt-5.5",
+	},
+	"gemini": {
+		"low":    "gemini-2.5-flash-lite",
+		"medium": "gemini-2.5-flash",
+		"high":   "gemini-2.5-pro",
+	},
+	"cursor": {
+		"low":    "sonnet-4",
+		"medium": "sonnet-4-thinking",
+		"high":   "gpt-5",
+	},
+	"copilot": {
+		"low":    "haiku-4.5",
+		"medium": "claude-sonnet-4.5",
+		"high":   "gpt-5.4",
+	},
+	// opencode model IDs are `provider/model` pairs. The defaults below assume
+	// the Anthropic provider (opencode's most common frontier setup); users on
+	// another provider (opencode zen, OpenAI, local models, …) override per
+	// tier via `opencode.tiers.<tier>.model` in local-llms.json or
+	// BELMONT_OPENCODE_MODEL_<TIER> env vars — see resolveOpencodeModelFlags.
+	"opencode": {
+		"low":    "anthropic/claude-haiku-4-5",
+		"medium": "anthropic/claude-sonnet-4-6",
+		"high":   "anthropic/claude-opus-4-8",
+	},
+}

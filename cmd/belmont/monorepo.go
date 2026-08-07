@@ -659,3 +659,96 @@ func monorepoEnvVars(workspaces []workspaceInfo, primary string, mType monorepoT
 	}
 	return out
 }
+
+// walkForManifests scans subdirectories of root/base looking for the named
+// manifest file. depth=-1 means recurse without bound; depth=1 means only
+// immediate children. node_modules and .git directories are skipped.
+func walkForManifests(root, base, manifestName string, depth int) []string {
+	startDir := filepath.Join(root, base)
+	st, err := os.Stat(startDir)
+	if err != nil || !st.IsDir() {
+		return nil
+	}
+	var out []string
+	var walk func(rel string, remaining int)
+	walk = func(rel string, remaining int) {
+		entries, err := os.ReadDir(filepath.Join(root, rel))
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if name == "node_modules" || name == ".git" || strings.HasPrefix(name, ".") {
+				continue
+			}
+			child := filepath.Join(rel, name)
+			if fileExists(filepath.Join(root, child, manifestName)) {
+				out = append(out, child)
+				continue
+			}
+			if remaining == 0 {
+				continue
+			}
+			next := remaining
+			if remaining > 0 {
+				next = remaining - 1
+			}
+			walk(child, next)
+		}
+	}
+	walk(base, depth)
+	return out
+}
+
+// jsManifestSignals reads a package.json and returns env-consumption signals
+// plus whether the manifest has a `dev` script (used for primary-workspace
+// selection).
+func jsManifestSignals(path string) (envSignals, bool) {
+	var sig envSignals
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return sig, false
+	}
+	var pkg struct {
+		Scripts          map[string]string `json:"scripts"`
+		Dependencies     map[string]string `json:"dependencies"`
+		DevDependencies  map[string]string `json:"devDependencies"`
+		PeerDependencies map[string]string `json:"peerDependencies"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return sig, false
+	}
+	hasDev := false
+	for k := range pkg.Scripts {
+		if k == "dev" {
+			hasDev = true
+		}
+		if k == "postinstall" || strings.HasPrefix(k, "postinstall:") {
+			sig.Postinstall = true
+		}
+	}
+	merged := map[string]struct{}{}
+	for k := range pkg.Dependencies {
+		merged[k] = struct{}{}
+	}
+	for k := range pkg.DevDependencies {
+		merged[k] = struct{}{}
+	}
+	for k := range pkg.PeerDependencies {
+		merged[k] = struct{}{}
+	}
+	for _, prismaDep := range []string{"prisma", "@prisma/client"} {
+		if _, ok := merged[prismaDep]; ok {
+			sig.PrismaDep = true
+		}
+	}
+	for _, dotenvDep := range []string{"dotenv", "dotenv-cli", "drizzle-kit", "tsx", "vite-node"} {
+		if _, ok := merged[dotenvDep]; ok {
+			sig.DotenvDep = true
+		}
+	}
+	return sig, hasDev
+}
