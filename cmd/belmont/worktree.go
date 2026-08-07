@@ -1,13 +1,17 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // buildWorktreeEnv creates an environment slice with worktree-specific variables.
@@ -363,4 +367,385 @@ func commitWorktreeChanges(wtPath, label string) error {
 
 	fmt.Fprintf(os.Stderr, "  \033[2m(committed uncommitted changes for %s)\033[0m\n", label)
 	return nil
+}
+
+// worktreeHooks defines lifecycle hooks for worktree isolation.
+//
+// PrimaryWorkspace and Workspaces are optional monorepo overrides. When
+// Workspaces is non-empty it replaces auto-detection; when PrimaryWorkspace
+// is empty the first workspace with a `dev` script (or first detected) wins.
+// All four new fields are optional — existing single-package worktree.json
+// files parse and behave identically.
+type worktreeHooks struct {
+	Setup            []string                     `json:"setup"`
+	Teardown         []string                     `json:"teardown"`
+	Env              map[string]string            `json:"env"`
+	PrimaryWorkspace string                       `json:"primary_workspace,omitempty"`
+	Workspaces       map[string]workspaceOverride `json:"workspaces,omitempty"`
+}
+
+// workspaceOverride is a user-supplied workspace declaration in worktree.json.
+// Path is relative to the project root. EnvFiles lists additional env file
+// paths (also relative to project root) to seed into the workspace dir on
+// top of the root .env propagation.
+type workspaceOverride struct {
+	Path     string   `json:"path"`
+	EnvFiles []string `json:"env_files,omitempty"`
+}
+
+// loadWorktreeHooks reads .belmont/worktree.json from the project root.
+// Returns nil if the file does not exist.
+func loadWorktreeHooks(root string) *worktreeHooks {
+	data, err := os.ReadFile(filepath.Join(root, ".belmont", "worktree.json"))
+	if err != nil {
+		return nil
+	}
+	var hooks worktreeHooks
+	if err := json.Unmarshal(data, &hooks); err != nil {
+		fmt.Fprintf(os.Stderr, "\033[33m⚠ Failed to parse .belmont/worktree.json: %s\033[0m\n", err)
+		return nil
+	}
+	return &hooks
+}
+
+// worktreeBasePath returns the directory for worktrees, stored in the user's home directory.
+// This avoids nesting worktrees inside the project where tools like Turbopack detect
+// multiple lockfiles and infer the wrong workspace root.
+// For /home/user/code/myapp -> ~/.belmont/worktrees/myapp/
+func worktreeBasePath(root string) string {
+	absRoot, _ := filepath.Abs(root)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback: use a sibling directory if home is unavailable
+		parent := filepath.Dir(absRoot)
+		name := filepath.Base(absRoot)
+		return filepath.Join(parent, ".belmont-worktrees", name)
+	}
+	name := filepath.Base(absRoot)
+	return filepath.Join(home, ".belmont", "worktrees", name)
+}
+
+// allocatePort asks the OS for a free TCP port by binding to :0.
+func allocatePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port, nil
+}
+
+// detectAutoInstallCommands checks the project root for known lock files and
+// returns the appropriate dependency install command(s). Returns nil if no
+// recognized lock file is found. First match wins.
+func detectAutoInstallCommands(root string) []string {
+	type entry struct {
+		File     string
+		Commands []string
+	}
+	lockfiles := []entry{
+		{"pnpm-lock.yaml", []string{"pnpm install --prefer-offline"}},
+		{"bun.lockb", []string{"bun install"}},
+		{"bun.lock", []string{"bun install"}},
+		{"yarn.lock", []string{"yarn install --prefer-offline"}},
+		{"package-lock.json", []string{"npm install --prefer-offline"}},
+		{"Gemfile.lock", []string{"bundle install"}},
+		{"requirements.txt", []string{"pip install -r requirements.txt"}},
+		{"Cargo.lock", []string{"cargo build"}},
+	}
+	for _, lf := range lockfiles {
+		if _, err := os.Stat(filepath.Join(root, lf.File)); err == nil {
+			return lf.Commands
+		}
+	}
+	return nil
+}
+
+// warnIfNotGitignored prints a one-line warning if the seeded path is not
+// matched by the worktree's .gitignore rules. Best-effort; failures are
+// silent (the warning is a friendly diagnostic, not a blocker).
+func warnIfNotGitignored(wtPath, relPath string) {
+	cmd := exec.Command("git", "check-ignore", "-q", relPath)
+	cmd.Dir = wtPath
+	if err := cmd.Run(); err != nil {
+		// Exit code 1 == not ignored. Other errors (no git, no .gitignore) are
+		// treated the same way for the purpose of warning.
+		fmt.Fprintf(os.Stderr, "  \033[33m⚠ Seeded %s but it is not gitignored — make sure your .gitignore covers nested .env files.\033[0m\n", relPath)
+	}
+}
+
+// loadAutoWorktreeStateByMilestone returns the active feature slug and a map
+// of milestone ID → worktree feature directory for single-feature parallel
+// runs. Returns ("", nil) in serial or multi-feature modes (neither has
+// per-milestone worktrees). Only entries whose worktree directory still
+// exists on disk are included.
+func loadAutoWorktreeStateByMilestone(root string) (string, map[string]string) {
+	aj := readActiveAutoJSONOrNil(root)
+	if aj == nil {
+		return "", nil
+	}
+	if aj.Mode != "single-feature-parallel" || aj.Feature == "" {
+		return "", nil
+	}
+	perMS := map[string]string{}
+	for msID, entry := range aj.Worktrees {
+		wtFeaturePath := filepath.Join(entry.Path, ".belmont", "features", aj.Feature)
+		if dirExists(wtFeaturePath) {
+			perMS[msID] = wtFeaturePath
+		}
+	}
+	if len(perMS) == 0 {
+		return "", nil
+	}
+	return aj.Feature, perMS
+}
+
+// wave represents a group of milestones that can execute in parallel.
+type wave struct {
+	Index      int
+	Milestones []milestone
+}
+
+// worktreeEntry stores both the path and branch name for a worktree.
+type worktreeEntry struct {
+	Path   string
+	Branch string
+	Port   int
+	Pgid   int // process group ID for cleanup
+}
+
+// worktreeTracker keeps track of active worktrees for cleanup on interrupt.
+type worktreeTracker struct {
+	mu      sync.Mutex
+	root    string                   // project root for persisting auto.json
+	feature string                   // feature slug for single-feature parallel mode (empty in multi-feature mode)
+	mode    string                   // "single-feature-parallel" | "multi-feature" (used by live-status readers)
+	entries map[string]worktreeEntry // ID -> worktree entry (milestone IDs in single-feature, feature slugs in multi-feature)
+	hooks   *worktreeHooks           // shared hooks config (nil if no worktree.json)
+}
+
+// autoJSON is the on-disk format for .belmont/auto.json, enabling belmont status
+// to discover active worktrees and read live feature state from them.
+type autoJSON struct {
+	Active    bool                     `json:"active"`
+	Started   string                   `json:"started"`
+	Mode      string                   `json:"mode,omitempty"`    // "single-feature" or "parallel" or "multi-feature"
+	Feature   string                   `json:"feature,omitempty"` // active feature slug (single-feature mode)
+	From      string                   `json:"from,omitempty"`    // milestone range start
+	To        string                   `json:"to,omitempty"`      // milestone range end
+	Worktrees map[string]autoJSONEntry `json:"worktrees"`
+}
+
+type autoJSONEntry struct {
+	Path   string `json:"path"`
+	Branch string `json:"branch"`
+}
+
+func (wt *worktreeTracker) add(id, path, branch string) {
+	wt.mu.Lock()
+	defer wt.mu.Unlock()
+	wt.entries[id] = worktreeEntry{Path: path, Branch: branch}
+	wt.persistAutoJSON()
+}
+
+func (wt *worktreeTracker) setPort(id string, port int) {
+	wt.mu.Lock()
+	defer wt.mu.Unlock()
+	if entry, ok := wt.entries[id]; ok {
+		entry.Port = port
+		wt.entries[id] = entry
+	}
+}
+
+func (wt *worktreeTracker) setPgid(id string, pgid int) {
+	wt.mu.Lock()
+	defer wt.mu.Unlock()
+	if entry, ok := wt.entries[id]; ok {
+		entry.Pgid = pgid
+		wt.entries[id] = entry
+	}
+}
+
+func (wt *worktreeTracker) remove(id string) {
+	wt.mu.Lock()
+	defer wt.mu.Unlock()
+	delete(wt.entries, id)
+	wt.persistAutoJSON()
+}
+
+// persistAutoJSON writes .belmont/auto.json so belmont status can discover active worktrees.
+// Must be called with wt.mu held.
+func (wt *worktreeTracker) persistAutoJSON() {
+	if wt.root == "" {
+		return
+	}
+	aj := autoJSON{
+		Active:    len(wt.entries) > 0,
+		Started:   time.Now().UTC().Format(time.RFC3339),
+		Mode:      wt.mode,
+		Feature:   wt.feature,
+		Worktrees: make(map[string]autoJSONEntry),
+	}
+	for id, entry := range wt.entries {
+		aj.Worktrees[id] = autoJSONEntry{Path: entry.Path, Branch: entry.Branch}
+	}
+	data, err := json.MarshalIndent(aj, "", "  ")
+	if err != nil {
+		return
+	}
+	autoPath := filepath.Join(wt.root, ".belmont", "auto.json")
+	os.WriteFile(autoPath, data, 0644) // best-effort
+}
+
+// writeLoopAutoJSON writes a minimal auto.json for single-feature runLoop mode,
+// enabling belmont status to show what's being worked on.
+func writeLoopAutoJSON(autoPath string, cfg loopConfig) {
+	aj := autoJSON{
+		Active:    true,
+		Started:   time.Now().UTC().Format(time.RFC3339),
+		Mode:      "single-feature",
+		Feature:   cfg.Feature,
+		From:      cfg.From,
+		To:        cfg.To,
+		Worktrees: make(map[string]autoJSONEntry),
+	}
+	data, err := json.MarshalIndent(aj, "", "  ")
+	if err != nil {
+		return
+	}
+	os.WriteFile(autoPath, data, 0644) // best-effort
+}
+
+// removeAutoJSON deletes .belmont/auto.json when auto is done.
+func (wt *worktreeTracker) removeAutoJSON() {
+	if wt.root == "" {
+		return
+	}
+	os.Remove(filepath.Join(wt.root, ".belmont", "auto.json"))
+}
+
+// teardownEntry runs teardown hooks for a worktree entry (if configured).
+func (wt *worktreeTracker) teardownEntry(id string) {
+	wt.mu.Lock()
+	entry, ok := wt.entries[id]
+	hooks := wt.hooks
+	wt.mu.Unlock()
+	if !ok {
+		return
+	}
+	if entry.Pgid != 0 {
+		signalProcessGroup(entry.Pgid)
+	}
+	if hooks != nil && len(hooks.Teardown) > 0 {
+		// Teardown runs without monorepo env vars; teardown commands are
+		// typically simple (kill servers, remove volumes) and don't need
+		// workspace context. Passing nil keeps the call site lean.
+		_ = runWorktreeHookCommands(hooks.Teardown, entry.Path, entry.Port, hooks.Env, nil, "", monorepoNone)
+	}
+}
+
+// gracefulShutdown stops processes and releases resources but preserves worktrees
+// and branches so the user can resume on next run.
+func (wt *worktreeTracker) gracefulShutdown(root string) {
+	wt.mu.Lock()
+	defer wt.mu.Unlock()
+	for id, entry := range wt.entries {
+		// Kill process group if running
+		if entry.Pgid != 0 {
+			signalProcessGroup(entry.Pgid)
+		}
+		// Run teardown hooks (release ports, stop dev servers)
+		if wt.hooks != nil && len(wt.hooks.Teardown) > 0 {
+			_ = runWorktreeHookCommands(wt.hooks.Teardown, entry.Path, entry.Port, wt.hooks.Env, nil, "", monorepoNone)
+		}
+		// Preserve worktree and branch for resume
+		recoverSlug := filepath.Base(entry.Path)
+		fmt.Fprintf(os.Stderr, "  Worktree preserved for %s at %s\n", id, entry.Path)
+		fmt.Fprintf(os.Stderr, "    Resume with: belmont auto (will prompt to resume)\n")
+		fmt.Fprintf(os.Stderr, "    Or clean up: belmont recover --clean %s\n", recoverSlug)
+	}
+	wt.entries = make(map[string]worktreeEntry)
+}
+
+// listPreservedWorktrees finds worktrees that still exist.
+// Checks both the new sibling location and the legacy .belmont/worktrees/ path.
+func listPreservedWorktrees(root string) []worktreeEntry {
+	var result []worktreeEntry
+	// New location: sibling directory
+	result = append(result, scanWorktreeDir(worktreeBasePath(root))...)
+	// Legacy location: inside project
+	legacyDir := filepath.Join(root, ".belmont", "worktrees")
+	result = append(result, scanWorktreeDir(legacyDir)...)
+	return result
+}
+
+// scanWorktreeDir scans a directory for preserved git worktrees.
+func scanWorktreeDir(wtDir string) []worktreeEntry {
+	entries, err := os.ReadDir(wtDir)
+	if err != nil {
+		return nil
+	}
+
+	var result []worktreeEntry
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		wtPath := filepath.Join(wtDir, e.Name())
+		// Check if it's actually a git worktree by looking for .git file
+		gitFile := filepath.Join(wtPath, ".git")
+		if _, err := os.Stat(gitFile); err != nil {
+			continue
+		}
+		// Detect the actual branch from the worktree's HEAD
+		branch := detectWorktreeBranch(wtPath)
+		if branch == "" {
+			branch = "belmont/auto/" + e.Name() // fallback
+		}
+		result = append(result, worktreeEntry{Path: wtPath, Branch: branch})
+	}
+	return result
+}
+
+// detectWorktreeBranch reads the actual branch name from a git worktree.
+func detectWorktreeBranch(wtPath string) string {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = wtPath
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch == "" || branch == "HEAD" {
+		return ""
+	}
+	return branch
+}
+
+func findWorktree(worktrees []worktreeEntry, slug string) *worktreeEntry {
+	for _, wt := range worktrees {
+		if filepath.Base(wt.Path) == slug {
+			return &wt
+		}
+	}
+	return nil
+}
+
+// readActiveAutoJSON returns auto.json if there's an active run; errors
+// otherwise with a helpful message.
+func readActiveAutoJSON(root string) (autoJSON, error) {
+	autoPath := filepath.Join(root, ".belmont", "auto.json")
+	data, err := os.ReadFile(autoPath)
+	if err != nil {
+		return autoJSON{}, fmt.Errorf("steer: no active auto run (missing %s). steering only applies to in-flight auto mode — start one with `belmont auto`, or steer a manual CLI session by typing directly into it", autoPath)
+	}
+	var aj autoJSON
+	if err := json.Unmarshal(data, &aj); err != nil {
+		return autoJSON{}, fmt.Errorf("steer: parse auto.json: %w", err)
+	}
+	if !aj.Active {
+		return autoJSON{}, fmt.Errorf("steer: auto.json exists but no active run — nothing to steer")
+	}
+	return aj, nil
 }
