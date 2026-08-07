@@ -8,6 +8,7 @@
 - Each worktree has isolated `.belmont/` state (a copy, not a symlink). The agent commits state changes to `belmont/auto/<feature>/<milestone>` as part of its work.
 - Worktree-local files that master never holds (`STEERING.md`, and potentially others added later) are preserved across the resume-time wipe-and-recopy.
 - Merges happen in milestone-ID order, sequentially, with pre-merge overlap reporting.
+- **Each merge's state sync is scoped to its own milestone.** Because the merges are sequential into one main repo, a whole-directory sync is last-writer-wins and loses the earlier siblings' task marks. `mergeWorktreeBranch` passes its `milestoneID` to `syncFeatureStateAfterMerge`, which then splices only that milestone's `PROGRESS.md` block. See [worktree-state-isolation.md](worktree-state-isolation.md) and issue #24.
 - **`MaxParallel <= 1` interleaves merges with execution.** When the user passes `--max-parallel=1`, both `runWaveParallel` (single-feature) and `runAutoMultiFeature` (multi-feature) take a serial branch: run unit N → merge unit N → run unit N+1. The merge happens inline before the next worktree is created so subsequent units fork from the post-merge tip. Stale-worktree resolution and rebase-on-resume are deferred to just-in-time in this branch. With `MaxParallel > 1` the parallel-then-post-wave-merge sequence above remains the only path. This is **not** the previously rejected master-tree shortcut — every unit still runs in its own worktree, only the merge timing changes.
 - Live state is observable from outside the run via `belmont status --feature <slug>`, which per-milestone overlays each worktree's view of its own milestone on top of master's baseline.
 
@@ -25,6 +26,7 @@ In `cmd/belmont/auto_parallel.go`:
   - Sort successes by `parseMilestoneNum`.
   - Before each merge, `reportMergeOverlap(cfg.Root, branch, msID, mergedFiles)` prints a visibility warning listing files the branch touches that earlier-merged siblings also touched. **Does not block** — scope guards + verify evidence + milestone-immutability should catch the cases where overlap implies scope leak; this is diagnostic so a human can still review before pushing.
   - Record this branch's touched files in `mergedFiles` for the next iteration's overlap check.
+  - `mergeWorktreeBranch` → `syncFeatureStateAfterMerge(root, wtPath, feature, milestoneID)`. The non-empty milestone ID selects the scoped mode; `mergeFeatureBranch` (multi-feature, whole-feature worktree) passes `""` for the wholesale replace.
 - Live status in `buildStatus`: when `loadAutoWorktreeStateByMilestone` returns a non-empty map, `overlayLiveMilestones` replaces each active milestone's tasks with the worktree's current view. Each overlaid milestone carries a `LiveFrom` pointer so the renderer tags it `(live from worktree)`.
 - `auto.json` schema carries `mode` (`"single-feature-parallel"` or `"multi-feature"`) and `feature` slug so readers can tell per-milestone-worktree runs from feature-per-worktree runs.
 
@@ -63,3 +65,4 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestOverlayLiveMilestones_
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
 - 2026-05-12 — added `MaxParallel <= 1` inline-merge semantic (every unit still goes through a worktree; only the merge interleaves). Paired with `resume-rebase.md`. See [`auto-mode/multi-feature-scheduling.md`](multi-feature-scheduling.md) for the multi-feature-mode equivalent.
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
+- 2026-08-07 — issue #24: recorded that each wave merge's state sync is milestone-scoped. The whole-directory sync it replaces was last-writer-wins across siblings and silently reverted their verified marks.

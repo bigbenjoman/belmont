@@ -132,7 +132,10 @@ func mergeFeatureBranch(cfg loopConfig, slug, branch, wtPath string, tracker *wo
 	// Copy the feature's updated state from the worktree back to the main repo.
 	// .belmont/ was excluded from the merge (assume-unchanged), so we sync it
 	// separately. This preserves other features' state on the main branch.
-	syncFeatureStateAfterMerge(cfg.Root, wtPath, slug)
+	//
+	// Whole-feature mode (empty milestone ID): this worktree covered every
+	// milestone, so its copy is the complete truth for the feature.
+	syncFeatureStateAfterMerge(cfg.Root, wtPath, slug, "")
 
 	// Clean up reconciliation report if it exists
 	os.Remove(filepath.Join(cfg.Root, ".belmont", "reconciliation-report.json"))
@@ -561,8 +564,11 @@ func mergeWorktreeBranch(cfg loopConfig, milestoneID, branch, wtPath string, tra
 		return err
 	}
 
-	// Copy the feature's updated state from the worktree back to the main repo
-	syncFeatureStateAfterMerge(cfg.Root, wtPath, cfg.Feature)
+	// Copy the feature's updated state from the worktree back to the main repo.
+	// Milestone-scoped: siblings in this wave merge into the same main repo one
+	// after another, so only this milestone's block of PROGRESS.md may be taken
+	// from the worktree. See syncFeatureStateAfterMerge and issue #24.
+	syncFeatureStateAfterMerge(cfg.Root, wtPath, cfg.Feature, milestoneID)
 
 	// Clean up reconciliation report if it exists
 	os.Remove(filepath.Join(cfg.Root, ".belmont", "reconciliation-report.json"))

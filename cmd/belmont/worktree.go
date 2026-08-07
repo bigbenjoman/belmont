@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -320,7 +321,17 @@ func untrackBelmontInWorktree(wtPath, slug string) {
 // syncFeatureStateAfterMerge copies the feature's .belmont/ state from a worktree
 // back to the main repo after a successful merge. Since .belmont/ is excluded from
 // git tracking in worktrees (assume-unchanged), state must be synced separately.
-func syncFeatureStateAfterMerge(mainRoot, wtPath, slug string) {
+//
+// milestoneID selects the sync mode:
+//
+//   - Empty — whole-feature merge. The worktree covered the entire feature, so its
+//     copy is the complete truth and replaces the main repo's wholesale.
+//   - Non-empty — one milestone of a parallel wave. Siblings merge one after another
+//     into the same main repo, so a wholesale replace is last-writer-wins: the last
+//     milestone's fork-time view of PROGRESS.md overwrites every mark its siblings
+//     earned. In this mode nothing is deleted, and PROGRESS.md is spliced rather
+//     than replaced — see resolveMilestoneProgress. Issue #24.
+func syncFeatureStateAfterMerge(mainRoot, wtPath, slug, milestoneID string) {
 	srcFeature := filepath.Join(wtPath, ".belmont", "features", slug)
 	dstFeature := filepath.Join(mainRoot, ".belmont", "features", slug)
 
@@ -328,11 +339,117 @@ func syncFeatureStateAfterMerge(mainRoot, wtPath, slug string) {
 		return
 	}
 
-	// Replace the main repo's feature state with the worktree's version
-	os.RemoveAll(dstFeature)
+	if milestoneID == "" {
+		// Replace the main repo's feature state with the worktree's version
+		os.RemoveAll(dstFeature)
+		if err := copyDir(srcFeature, dstFeature); err != nil {
+			fmt.Fprintf(os.Stderr, "  \033[33m⚠ Failed to sync feature state for %s: %s\033[0m\n", slug, err)
+		}
+		return
+	}
+
+	// Milestone-scoped sync. Read the main repo's PROGRESS.md *before* the copy —
+	// it holds the accumulated marks of every sibling merged so far in this wave.
+	dstProgress := filepath.Join(dstFeature, "PROGRESS.md")
+	masterProgress, haveMaster := readFileString(dstProgress)
+	srcProgress, haveSrc := readFileString(filepath.Join(srcFeature, "PROGRESS.md"))
+
+	// No RemoveAll: the main repo may hold files written by siblings that already
+	// merged, and copyDir overlays rather than mirrors.
 	if err := copyDir(srcFeature, dstFeature); err != nil {
 		fmt.Fprintf(os.Stderr, "  \033[33m⚠ Failed to sync feature state for %s: %s\033[0m\n", slug, err)
 	}
+
+	if !haveMaster || !haveSrc {
+		return // nothing to splice; whatever copyDir produced stands
+	}
+	merged := resolveMilestoneProgress(masterProgress, srcProgress, milestoneID)
+	if merged == srcProgress {
+		return // copyDir already wrote exactly this
+	}
+	if err := os.WriteFile(dstProgress, []byte(merged), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "  \033[33m⚠ Failed to merge %s state into PROGRESS.md for %s: %s\033[0m\n", milestoneID, slug, err)
+	}
+}
+
+// resolveMilestoneProgress returns the PROGRESS.md content the main repo should
+// hold after milestoneID's worktree merges.
+//
+// masterRaw is authoritative for everything except milestoneID's block: it carries
+// the marks of siblings that merged earlier in the wave, which the worktree's copy
+// has never seen (it forked before they existed). The worktree is authoritative for
+// the body of its own block — the marks it earned, plus any follow-up tasks its
+// verify phase added and any it removed during triage.
+//
+// The block *header* stays master's. Milestone names and `(depends: …)`
+// annotations are structural and immutable outside /belmont:tech-plan
+// (knowledge/cross-cutting/milestone-immutability.md), so a worktree that edited
+// its own header should not smuggle that through the merge.
+//
+// Block boundaries match parseProgressSnapshot, and the splice is line-exact, so
+// every byte outside milestoneID's block survives verbatim.
+func resolveMilestoneProgress(masterRaw, worktreeRaw, milestoneID string) string {
+	if strings.TrimSpace(masterRaw) == "" {
+		return worktreeRaw
+	}
+
+	masterLines := strings.Split(masterRaw, "\n")
+	ms, me, ok := milestoneBlockRange(masterLines, milestoneID)
+	if !ok {
+		// The main repo has no block for this milestone, so there is nothing of
+		// its own to preserve. Fall back to the worktree's file.
+		return worktreeRaw
+	}
+
+	wtLines := strings.Split(worktreeRaw, "\n")
+	wStart, wEnd, ok := milestoneBlockRange(wtLines, milestoneID)
+	if !ok {
+		// The worktree lost its own milestone. Never let that erase the accumulated
+		// state of the siblings that merged before it.
+		return masterRaw
+	}
+
+	out := make([]string, 0, len(masterLines)-(me-ms)+(wEnd-wStart))
+	out = append(out, masterLines[:ms]...)
+	out = append(out, masterLines[ms])           // master's header line
+	out = append(out, wtLines[wStart+1:wEnd]...) // worktree's body
+	out = append(out, masterLines[me:]...)
+	return strings.Join(out, "\n")
+}
+
+// milestoneBlockRange locates the [start, end) line range of milestoneID's block.
+// Boundaries match parseProgressSnapshot: a block runs from its `### M<n>:` header
+// to the next milestone header, the next level-2 heading, or EOF.
+func milestoneBlockRange(lines []string, milestoneID string) (int, int, bool) {
+	hdr := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
+	for i, line := range lines {
+		m := hdr.FindStringSubmatch(line)
+		if len(m) < 2 || "M"+m[1] != milestoneID {
+			continue
+		}
+		j := i + 1
+		for j < len(lines) {
+			if hdr.MatchString(lines[j]) {
+				break
+			}
+			trim := strings.TrimSpace(lines[j])
+			if strings.HasPrefix(trim, "## ") && !strings.HasPrefix(trim, "### ") {
+				break
+			}
+			j++
+		}
+		return i, j, true
+	}
+	return 0, 0, false
+}
+
+// readFileString reads a file, reporting whether it existed and was readable.
+func readFileString(path string) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
 }
 
 // commitWorktreeChanges commits all uncommitted changes in a worktree before merge.

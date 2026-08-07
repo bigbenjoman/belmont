@@ -17,15 +17,21 @@ Each parallel worktree gets:
 
 ## State Isolation
 
-Each worktree receives a **copy** (not symlink) of its feature's `.belmont/features/<slug>/` directory. The AI agent commits state changes as part of the feature branch, and state merges naturally when the feature branch is merged back.
+Each worktree receives a **copy** (not symlink) of its feature's `.belmont/features/<slug>/` directory.
 
 This approach ensures:
 - **No cross-feature interference** — one feature's state changes can't affect another
 - **No race conditions** — each agent has its own isolated files
 - **Clean git state** — the agent sees normal committed files, not symlinked/untracked files
-- **Automatic merge** — different features touch different paths, so no merge conflicts
 
-Master planning files (`PRD.md`, `PROGRESS.md`, etc.) are copied into the worktree for reference but excluded from git commits via `.git/info/exclude`.
+Files that already exist in git are held back from the worktree's commits (`git update-index --assume-unchanged`), so a worktree can never merge its fork-time snapshot of *another* feature's state over the real thing. They stay on disk so agents can still read cross-feature context. New files created inside the worktree — `MILESTONE.md`, for instance — are committed normally and travel home in the merge.
+
+Because tracked edits are held back, Belmont copies the feature's state directory back to the main repo itself, immediately after each successful merge:
+
+- **Whole-feature worktrees** (multi-feature runs) — the worktree covered every milestone, so its copy replaces the main repo's.
+- **Per-milestone worktrees** (parallel waves) — siblings merge one after another into the same main repo, so only the merged milestone's block of `PROGRESS.md` is taken from the worktree. Everything else, including the marks siblings earned earlier in the same wave, stays as the main repo has it.
+
+Master planning files (`PRD.md`, `PROGRESS.md`, etc.) are copied into the worktree for reference only.
 
 ### Live Status
 
