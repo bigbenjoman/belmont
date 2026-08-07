@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -235,4 +236,147 @@ func runEvidenceCheck(cfg loopConfig, action loopAction, pre *progressSnapshot) 
 	_ = amend.Run()
 	logEvidenceRevert(cfg.Feature, action.MilestoneID, missing)
 	injectEvidenceSteering(cfg, action, missing)
+}
+
+// detectViolations is the pure rule engine — no IO. Takes parsed milestones,
+// returns a list of findings. Safe for test coverage.
+func detectViolations(slug string, milestones []milestone) []validationViolation {
+	var out []validationViolation
+	for _, m := range milestones {
+		// Rule 1: milestone name matches a polish/follow-up pattern.
+		if polishMilestoneNameRe.MatchString(m.Name) {
+			out = append(out, validationViolation{
+				Feature:       slug,
+				Milestone:     m.ID,
+				MilestoneName: m.Name,
+				Rule:          "polish_milestone_name",
+				Message: fmt.Sprintf(
+					"milestone %s %q looks like a polish/follow-up catch-all. Follow-ups belong in their source milestone (the one that discovered them) as new `[ ]` tasks, not a dedicated milestone. Run `/belmont:tech-plan` to restructure.",
+					m.ID, m.Name),
+			})
+		}
+		// Rule 2: task IDs reference a milestone other than the one they live in.
+		currentNum := milestoneNumber(m.ID)
+		for _, t := range m.Tasks {
+			match := taskIDMilestoneRefRe.FindStringSubmatch(t.ID)
+			if len(match) < 2 {
+				continue
+			}
+			refNum, err := strconv.Atoi(match[1])
+			if err != nil {
+				continue
+			}
+			if refNum != currentNum {
+				out = append(out, validationViolation{
+					Feature:       slug,
+					Milestone:     m.ID,
+					MilestoneName: m.Name,
+					TaskID:        t.ID,
+					Rule:          "cross_milestone_task_id",
+					Message: fmt.Sprintf(
+						"task %q in milestone %s names milestone M%d in its ID. It belongs under M%d. Move it there — keeping it here is the dependency-graph lie that causes parallel merge conflicts.",
+						t.ID, m.ID, refNum, refNum),
+				})
+			}
+		}
+	}
+	return out
+}
+
+// parseProgressSnapshot splits the PROGRESS.md content into milestone blocks.
+// A block begins at a line matching the milestone header regex; it ends when
+// the next block begins, or when a `## ` level-2 heading is encountered, or
+// at EOF. Non-milestone content is not stored as a separate block; instead
+// the Raw field is kept so the rebuilder can do line-boundary-preserving
+// replacement via string operations.
+func parseProgressSnapshot(path, content string) *progressSnapshot {
+	snap := &progressSnapshot{Path: path, Raw: content, ByID: map[string]int{}}
+	msHeaderRe := regexp.MustCompile(`(?m)^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):\s*(.+)$`)
+	depsRe := regexp.MustCompile(`\(depends:\s*(M[\d]+(?:\s*,\s*M[\d]+)*)\)\s*$`)
+	taskRe := regexp.MustCompile(`(?m)^\s*-\s+\[(.)\]\s+(\S+?):`)
+
+	lines := strings.Split(content, "\n")
+	var current *milestoneBlockText
+	flush := func() {
+		if current != nil {
+			snap.ByID[current.ID] = len(snap.Blocks)
+			snap.Blocks = append(snap.Blocks, *current)
+			current = nil
+		}
+	}
+	for _, line := range lines {
+		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 3 {
+			flush()
+			id := "M" + m[1]
+			name := strings.TrimSpace(m[2])
+			name = strings.TrimSpace(depsRe.ReplaceAllString(name, ""))
+			current = &milestoneBlockText{ID: id, Name: name, TaskStates: map[string]string{}}
+			current.RawLines = append(current.RawLines, line)
+			continue
+		}
+		// A non-milestone level-2 heading closes the current block.
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, "## ") && !strings.HasPrefix(trim, "### ") {
+			flush()
+			continue
+		}
+		if current != nil {
+			current.RawLines = append(current.RawLines, line)
+			if tm := taskRe.FindStringSubmatch(line); len(tm) >= 3 {
+				current.TaskStates[tm[2]] = tm[1]
+			}
+		}
+	}
+	flush()
+	return snap
+}
+
+// revertEvidenceMissing rebuilds PROGRESS.md so that each entry in `missing`
+// reverts its task line from "[v]" back to the prior state captured in pre.
+// Uses a line-level replacement scoped to each task's milestone block.
+func revertEvidenceMissing(post, pre *progressSnapshot, missing []evidenceMissing) string {
+	// Build a map: milestone -> taskID -> fromState, for O(1) lookup.
+	byMS := map[string]map[string]string{}
+	for _, m := range missing {
+		if byMS[m.Milestone] == nil {
+			byMS[m.Milestone] = map[string]string{}
+		}
+		fromState := m.FromState
+		if fromState == "" {
+			fromState = " "
+		}
+		byMS[m.Milestone][m.TaskID] = fromState
+	}
+
+	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):\s*(.+)$`)
+	taskRe := regexp.MustCompile(`^(\s*-\s+\[)(.)\](\s+)(\S+?)(:.*)$`)
+
+	var out strings.Builder
+	var currentMS string
+	lines := strings.Split(post.Raw, "\n")
+	for i, line := range lines {
+		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 3 {
+			currentMS = "M" + m[1]
+		} else {
+			trim := strings.TrimSpace(line)
+			if strings.HasPrefix(trim, "## ") && !strings.HasPrefix(trim, "### ") {
+				currentMS = ""
+			}
+		}
+		if currentMS != "" {
+			if overrides, ok := byMS[currentMS]; ok {
+				if tm := taskRe.FindStringSubmatch(line); len(tm) >= 6 {
+					taskID := tm[4]
+					if from, hit := overrides[taskID]; hit && tm[2] == "v" {
+						line = tm[1] + from + "]" + tm[3] + tm[4] + tm[5]
+					}
+				}
+			}
+		}
+		out.WriteString(line)
+		if i < len(lines)-1 {
+			out.WriteString("\n")
+		}
+	}
+	return out.String()
 }

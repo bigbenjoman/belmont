@@ -34,48 +34,6 @@ var (
 	BuildDate = "unknown"
 )
 
-// Model tier registry: maps (tool, tier) to the CLI --model identifier.
-// Tiers (low/medium/high) are stable across releases; model IDs get bumped
-// here as tools ship new versions. This is the single source of truth —
-// skill bodies reference the same mapping via _partials/tier-registry.md.
-var modelTiers = map[string]map[string]string{
-	"claude": {
-		"low":    "haiku",
-		"medium": "sonnet",
-		"high":   "opus",
-	},
-	"codex": {
-		"low":    "gpt-5.4-mini",
-		"medium": "gpt-5.4",
-		"high":   "gpt-5.5",
-	},
-	"gemini": {
-		"low":    "gemini-2.5-flash-lite",
-		"medium": "gemini-2.5-flash",
-		"high":   "gemini-2.5-pro",
-	},
-	"cursor": {
-		"low":    "sonnet-4",
-		"medium": "sonnet-4-thinking",
-		"high":   "gpt-5",
-	},
-	"copilot": {
-		"low":    "haiku-4.5",
-		"medium": "claude-sonnet-4.5",
-		"high":   "gpt-5.4",
-	},
-	// opencode model IDs are `provider/model` pairs. The defaults below assume
-	// the Anthropic provider (opencode's most common frontier setup); users on
-	// another provider (opencode zen, OpenAI, local models, …) override per
-	// tier via `opencode.tiers.<tier>.model` in local-llms.json or
-	// BELMONT_OPENCODE_MODEL_<TIER> env vars — see resolveOpencodeModelFlags.
-	"opencode": {
-		"low":    "anthropic/claude-haiku-4-5",
-		"medium": "anthropic/claude-sonnet-4-6",
-		"high":   "anthropic/claude-opus-4-8",
-	},
-}
-
 // toolSupportsModel indicates whether the tool's CLI accepts --model at all.
 //
 // Pi is `true` so the model-flag dispatch fires, but Pi is deliberately absent
@@ -476,49 +434,6 @@ type workspaceInfo struct {
 	HasDev   bool // package.json has scripts.dev / Cargo bin target / etc. (used for primary selection)
 }
 
-// walkForManifests scans subdirectories of root/base looking for the named
-// manifest file. depth=-1 means recurse without bound; depth=1 means only
-// immediate children. node_modules and .git directories are skipped.
-func walkForManifests(root, base, manifestName string, depth int) []string {
-	startDir := filepath.Join(root, base)
-	st, err := os.Stat(startDir)
-	if err != nil || !st.IsDir() {
-		return nil
-	}
-	var out []string
-	var walk func(rel string, remaining int)
-	walk = func(rel string, remaining int) {
-		entries, err := os.ReadDir(filepath.Join(root, rel))
-		if err != nil {
-			return
-		}
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			name := e.Name()
-			if name == "node_modules" || name == ".git" || strings.HasPrefix(name, ".") {
-				continue
-			}
-			child := filepath.Join(rel, name)
-			if fileExists(filepath.Join(root, child, manifestName)) {
-				out = append(out, child)
-				continue
-			}
-			if remaining == 0 {
-				continue
-			}
-			next := remaining
-			if remaining > 0 {
-				next = remaining - 1
-			}
-			walk(child, next)
-		}
-	}
-	walk(base, depth)
-	return out
-}
-
 // jsManifestName extracts the `name` field from a package.json file.
 // Returns "" if the manifest is missing, malformed, or has no name.
 func jsManifestName(path string) string {
@@ -533,56 +448,6 @@ func jsManifestName(path string) string {
 		return ""
 	}
 	return pkg.Name
-}
-
-// jsManifestSignals reads a package.json and returns env-consumption signals
-// plus whether the manifest has a `dev` script (used for primary-workspace
-// selection).
-func jsManifestSignals(path string) (envSignals, bool) {
-	var sig envSignals
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return sig, false
-	}
-	var pkg struct {
-		Scripts          map[string]string `json:"scripts"`
-		Dependencies     map[string]string `json:"dependencies"`
-		DevDependencies  map[string]string `json:"devDependencies"`
-		PeerDependencies map[string]string `json:"peerDependencies"`
-	}
-	if err := json.Unmarshal(data, &pkg); err != nil {
-		return sig, false
-	}
-	hasDev := false
-	for k := range pkg.Scripts {
-		if k == "dev" {
-			hasDev = true
-		}
-		if k == "postinstall" || strings.HasPrefix(k, "postinstall:") {
-			sig.Postinstall = true
-		}
-	}
-	merged := map[string]struct{}{}
-	for k := range pkg.Dependencies {
-		merged[k] = struct{}{}
-	}
-	for k := range pkg.DevDependencies {
-		merged[k] = struct{}{}
-	}
-	for k := range pkg.PeerDependencies {
-		merged[k] = struct{}{}
-	}
-	for _, prismaDep := range []string{"prisma", "@prisma/client"} {
-		if _, ok := merged[prismaDep]; ok {
-			sig.PrismaDep = true
-		}
-	}
-	for _, dotenvDep := range []string{"dotenv", "dotenv-cli", "drizzle-kit", "tsx", "vite-node"} {
-		if _, ok := merged[dotenvDep]; ok {
-			sig.DotenvDep = true
-		}
-	}
-	return sig, hasDev
 }
 
 // cargoCrateName extracts `name` from a Cargo.toml [package] section.
@@ -3405,51 +3270,6 @@ var polishMilestoneNameRe = regexp.MustCompile(`(?i)(\bpolish\b|\bfollow[- ]?ups
 // P1-M4-FIX-2. Capture group 1 is the milestone number referenced by the ID.
 var taskIDMilestoneRefRe = regexp.MustCompile(`^P\d+-(?:FWLUP-)?M(\d+)(?:-|$)`)
 
-// detectViolations is the pure rule engine — no IO. Takes parsed milestones,
-// returns a list of findings. Safe for test coverage.
-func detectViolations(slug string, milestones []milestone) []validationViolation {
-	var out []validationViolation
-	for _, m := range milestones {
-		// Rule 1: milestone name matches a polish/follow-up pattern.
-		if polishMilestoneNameRe.MatchString(m.Name) {
-			out = append(out, validationViolation{
-				Feature:       slug,
-				Milestone:     m.ID,
-				MilestoneName: m.Name,
-				Rule:          "polish_milestone_name",
-				Message: fmt.Sprintf(
-					"milestone %s %q looks like a polish/follow-up catch-all. Follow-ups belong in their source milestone (the one that discovered them) as new `[ ]` tasks, not a dedicated milestone. Run `/belmont:tech-plan` to restructure.",
-					m.ID, m.Name),
-			})
-		}
-		// Rule 2: task IDs reference a milestone other than the one they live in.
-		currentNum := milestoneNumber(m.ID)
-		for _, t := range m.Tasks {
-			match := taskIDMilestoneRefRe.FindStringSubmatch(t.ID)
-			if len(match) < 2 {
-				continue
-			}
-			refNum, err := strconv.Atoi(match[1])
-			if err != nil {
-				continue
-			}
-			if refNum != currentNum {
-				out = append(out, validationViolation{
-					Feature:       slug,
-					Milestone:     m.ID,
-					MilestoneName: m.Name,
-					TaskID:        t.ID,
-					Rule:          "cross_milestone_task_id",
-					Message: fmt.Sprintf(
-						"task %q in milestone %s names milestone M%d in its ID. It belongs under M%d. Move it there — keeping it here is the dependency-graph lie that causes parallel merge conflicts.",
-						t.ID, m.ID, refNum, refNum),
-				})
-			}
-		}
-	}
-	return out
-}
-
 // milestoneNumber extracts the integer from a milestone ID like "M5".
 func milestoneNumber(id string) int {
 	trimmed := strings.TrimPrefix(id, "M")
@@ -3527,54 +3347,6 @@ type progressSnapshot struct {
 	Raw    string
 	Blocks []milestoneBlockText
 	ByID   map[string]int // milestone ID -> index in Blocks
-}
-
-// parseProgressSnapshot splits the PROGRESS.md content into milestone blocks.
-// A block begins at a line matching the milestone header regex; it ends when
-// the next block begins, or when a `## ` level-2 heading is encountered, or
-// at EOF. Non-milestone content is not stored as a separate block; instead
-// the Raw field is kept so the rebuilder can do line-boundary-preserving
-// replacement via string operations.
-func parseProgressSnapshot(path, content string) *progressSnapshot {
-	snap := &progressSnapshot{Path: path, Raw: content, ByID: map[string]int{}}
-	msHeaderRe := regexp.MustCompile(`(?m)^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):\s*(.+)$`)
-	depsRe := regexp.MustCompile(`\(depends:\s*(M[\d]+(?:\s*,\s*M[\d]+)*)\)\s*$`)
-	taskRe := regexp.MustCompile(`(?m)^\s*-\s+\[(.)\]\s+(\S+?):`)
-
-	lines := strings.Split(content, "\n")
-	var current *milestoneBlockText
-	flush := func() {
-		if current != nil {
-			snap.ByID[current.ID] = len(snap.Blocks)
-			snap.Blocks = append(snap.Blocks, *current)
-			current = nil
-		}
-	}
-	for _, line := range lines {
-		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 3 {
-			flush()
-			id := "M" + m[1]
-			name := strings.TrimSpace(m[2])
-			name = strings.TrimSpace(depsRe.ReplaceAllString(name, ""))
-			current = &milestoneBlockText{ID: id, Name: name, TaskStates: map[string]string{}}
-			current.RawLines = append(current.RawLines, line)
-			continue
-		}
-		// A non-milestone level-2 heading closes the current block.
-		trim := strings.TrimSpace(line)
-		if strings.HasPrefix(trim, "## ") && !strings.HasPrefix(trim, "### ") {
-			flush()
-			continue
-		}
-		if current != nil {
-			current.RawLines = append(current.RawLines, line)
-			if tm := taskRe.FindStringSubmatch(line); len(tm) >= 3 {
-				current.TaskStates[tm[2]] = tm[1]
-			}
-		}
-	}
-	flush()
-	return snap
 }
 
 // scopeViolation is one finding from the post-phase guard.
@@ -3724,56 +3496,6 @@ func taskHasCommit(root, taskID, sinceRef string) bool {
 		}
 	}
 	return false
-}
-
-// revertEvidenceMissing rebuilds PROGRESS.md so that each entry in `missing`
-// reverts its task line from "[v]" back to the prior state captured in pre.
-// Uses a line-level replacement scoped to each task's milestone block.
-func revertEvidenceMissing(post, pre *progressSnapshot, missing []evidenceMissing) string {
-	// Build a map: milestone -> taskID -> fromState, for O(1) lookup.
-	byMS := map[string]map[string]string{}
-	for _, m := range missing {
-		if byMS[m.Milestone] == nil {
-			byMS[m.Milestone] = map[string]string{}
-		}
-		fromState := m.FromState
-		if fromState == "" {
-			fromState = " "
-		}
-		byMS[m.Milestone][m.TaskID] = fromState
-	}
-
-	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):\s*(.+)$`)
-	taskRe := regexp.MustCompile(`^(\s*-\s+\[)(.)\](\s+)(\S+?)(:.*)$`)
-
-	var out strings.Builder
-	var currentMS string
-	lines := strings.Split(post.Raw, "\n")
-	for i, line := range lines {
-		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 3 {
-			currentMS = "M" + m[1]
-		} else {
-			trim := strings.TrimSpace(line)
-			if strings.HasPrefix(trim, "## ") && !strings.HasPrefix(trim, "### ") {
-				currentMS = ""
-			}
-		}
-		if currentMS != "" {
-			if overrides, ok := byMS[currentMS]; ok {
-				if tm := taskRe.FindStringSubmatch(line); len(tm) >= 6 {
-					taskID := tm[4]
-					if from, hit := overrides[taskID]; hit && tm[2] == "v" {
-						line = tm[1] + from + "]" + tm[3] + tm[4] + tm[5]
-					}
-				}
-			}
-		}
-		out.WriteString(line)
-		if i < len(lines)-1 {
-			out.WriteString("\n")
-		}
-	}
-	return out.String()
 }
 
 // logEvidenceRevert prints a one-line summary per verify-guard revert batch.
