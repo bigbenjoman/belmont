@@ -15,7 +15,7 @@ Sequential, four digits, never reused. `0001` and `0002` are claimed by the desi
 | 0003 | [Design quality without Figma](0003-design-quality-without-figma.md) | Draft — revision 5. Design moved from `implement` Phase 2 into `tech-plan`. Awaits one adversarial pass |
 | — | [0003 restructure brief](0003-DESIGN-RESTRUCTURE.md) | Background for rev 5. **Superseded in part** — see its header for the facts rev 5 corrected |
 | 0004 | [Context budget, with evidence](0004-context-budget-with-evidence.md) | Draft — revision 5 |
-| 0005 | [Split `main.go`, add CI](0005-maintainability.md) | Draft — rewritten for the reviewer. No revision history in the document; use `git log` for it |
+| 0005 | [Split `main.go`, add CI](0005-maintainability.md) | **Done** — PR #23 merged 2026-08-07, shipped in v0.10.16 |
 | 0006 | [Plugin generator correctness](0006-plugin-generator-correctness.md) | **Done** — PR #21 merged 2026-08-07, shipped in v0.10.15 |
 
 ## Gate — cleared
