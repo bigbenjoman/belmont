@@ -54,7 +54,7 @@ The *curation* — which rules matter and how they compose into a checkable cont
 | [ux-copywriter](https://drive.google.com/drive/folders/1lSwUatVOzOX5TGWgBDjKA820RiUsVLNr) | Microcopy Rules |
 | [ux-motion](https://drive.google.com/drive/folders/1gYrK4aT4A-LYr4GbM88-PaKu0wYyY4C6) | Motion Contract |
 
-**Do not vendor their files.** All five are distributed as downloads with **no LICENSE, no repository and no redistribution grant** — verified against the actual packages, not the website. Belmont states the same published standards in its own words and credits the source. If written permission is obtained (`yummylabs@yummydesign.xyz`), vendoring with attribution can replace the baseline in a follow-up.
+**Do not vendor their files.** All four are distributed as downloads with **no LICENSE, no repository and no redistribution grant** — verified against the actual packages, not the website. Belmont states the same published standards in its own words and credits the source. If written permission is obtained (`yummylabs@yummydesign.xyz`), vendoring with attribution can replace the baseline in a follow-up.
 
 ## 4. Design
 
@@ -187,6 +187,7 @@ blame or jokes. Empty states: what appears here, why it's empty, the action to f
 Destructive confirmations: name what is destroyed. Possessive framing for user-owned objects.
 
 ### Motion Contract
+**Applies**: [yes | N/A — no motion in this feature]
 Duration bands — instant feedback ≤ 100ms · state change 150–200ms · context shift 250–300ms ·
 page transition 300–400ms. Above 400ms must justify itself.
 Easing — one documented curve per class (enter / exit / move). Bounce and overshoot are opt-in per
@@ -194,6 +195,10 @@ product voice, never a default.
 Performance — animate `transform` and `opacity` only. Animating layout properties is a defect.
 Reduced motion — `prefers-reduced-motion: reduce` removes movement, never functionality.
 ```
+
+**The Motion Contract is conditional.** Set `**Applies**: N/A — no motion in this feature` when the feature introduces no transition, animation or micro-interaction, and leave the four rules unfilled. This is the same pattern as R1's `**Mode**` gate: an explicit N/A, never an empty section, so a downstream agent can tell "does not apply" from "not done". **Silence is not allowed.**
+
+Two consequences downstream. Verification skips the three motion rows when `**Applies**` is `N/A` and records them as such rather than `UNVERIFIABLE` — a skipped check and an unmeasurable one are different findings and must not be conflated. And `prefers-reduced-motion` stays in the Accessibility Floor regardless: it is a WCAG requirement about honouring a user preference, and a feature with no motion satisfies it trivially rather than being exempt from it.
 
 **Derivation order — reuse before invention.** Walk in order; stop at the first rung that supplies a token family, and name it in `**Source**`. Never invent a competing scale where one exists.
 
@@ -243,6 +248,8 @@ verification-agent **already reads** TECH_PLAN (`:20`, `:60`), but only as a pla
 | Transition durations within declared bands | `browser_evaluate` → `transitionDuration` / `animationDuration` |
 | Only `transform`/`opacity` animated | `browser_evaluate` → `transitionProperty` / keyframe inspection |
 | Reduced motion removes movement, not function | `browser_run_code_unsafe` → `page.emulateMedia({ reducedMotion: 'reduce' })`, then re-run the state pass and assert the element still reaches its end state. **This is the only row needing a write-capable tool**; if it is unavailable, record `UNVERIFIABLE` |
+
+**Motion rows are conditional.** When the contract records `**Applies**: N/A — no motion in this feature`, the three motion rows are recorded `N/A` and skipped. Do **not** record them `UNVERIFIABLE` — that value means "the mechanism was unavailable", and conflating it with "the check does not apply" would make a genuinely missing tool look like a design decision.
 
 **Make MCP tool references install-independent.** `verification-agent.md:93-94` and `implementation-agent.md:192-193` hardcode `mcp__playwright__browser_*`; the same files hardcode `mcp__plugin_figma_figma__*` elsewhere. Neither prefix is canonical — Claude Code synthesises `mcp__plugin_<plugin>_<server>__` for plugin-registered servers and `mcp__<server>__` for directly-registered ones, and Belmont's own README recommends the direct install. **Instruct agents to resolve the browser tools by matching `*browser_navigate` / `*browser_evaluate` in their available tools rather than pinning a prefix**, and record `UNVERIFIABLE` when none matches.
 
@@ -400,6 +407,7 @@ Fail: a fresh contract → R4/R8 not implemented, and the approved design is sil
 - [ ] `references/design-authority-baseline.md` created, cited as a literal `references/…` path, and present in `skills/belmont/tech-plan/references/` after `./scripts/generate-skills.sh`
 - [ ] Tier 2 runs underneath tier 1; per-section enrichment; schema identical across tiers; no consumer branches on tier
 - [ ] `**Authorities**` names the skill per section, never omitted
+- [ ] `### Motion Contract` carries an `**Applies**` field; an unanimated feature records `N/A — no motion in this feature` rather than an empty section, and verification records those three rows `N/A`, never `UNVERIFIABLE`
 - [ ] All four Yummy Labs skills credited with links; **no file from `~/.claude/skills/` copied into the repo**
 - [ ] `design-authority-baseline.md` carries the **obtaining table** (§4.3) — source link and `~/.claude/skills/<name>/` install path per skill, and a plain statement that none is bundled and tier 2 works without them
 - [ ] Every link in that table checked resolving at branch time — they are third-party URLs and this PR does not control them
@@ -465,6 +473,7 @@ Rev 5 was reviewed by six adversarial lenses producing 72 findings; each was the
 | Durability implied to be mechanical | **Prose-enforced and unguarded, stated as such.** Mechanical guard deferred to its own proposal |
 | — | **Storybook added as the first project-local derivation rung**, read statically — planning sessions may not run build commands |
 | Five tier-1 skills, `interactive-prototype` → State Inventory | **Dropped to four.** `interactive-prototype` is a *builder*: five of its eight steps produce React code with a named animation library, and its own description excludes static specs. Loading it inside `tech-plan` — a session forbidden from writing code — invites the behaviour that skill instructs. Its one relevant contribution (interactions implied but not drawn) overlaps `ux-designer` and `ux-motion`, which now own State Inventory between them. It belongs to implementation, not planning |
+| Motion Contract unconditional | **Conditional on an `**Applies**` field.** A feature that animates nothing records `N/A — no motion in this feature` rather than carrying an empty section, and verification records its three rows `N/A` rather than `UNVERIFIABLE` — a check that does not apply and a mechanism that was unavailable are different findings. `prefers-reduced-motion` stays in the Accessibility Floor either way, since it is about honouring a user preference |
 
 **Blockers fixed**
 
