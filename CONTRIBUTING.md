@@ -78,7 +78,7 @@ To produce a release-style build locally:
 ```
 belmont/
 ├── cmd/belmont/
-│   ├── main.go          # All CLI logic (single file, no external deps)
+│   ├── main.go          # Most CLI logic (stdlib only, no external deps)
 │   ├── embed.go         # go:embed directives (release builds)
 │   └── embed_dev.go     # Empty embed vars (dev builds)
 ├── skills/belmont/      # Generated skill markdown files (source of truth)
@@ -135,7 +135,7 @@ go run ./cmd/belmont install --source . --project ~/your-project --no-prompt
 
 ### CLI (Go code)
 
-All CLI logic is in `cmd/belmont/main.go`. There are no external dependencies. After making changes, verify it compiles:
+Most CLI logic is in `cmd/belmont/main.go`; `local_llms.go` and the build-constrained `process_unix.go` / `process_windows.go` sit beside it. There are no external dependencies — that rule constrains what the binary imports, not how many files it spans. After making changes, verify it compiles:
 
 ```bash
 go build ./cmd/belmont

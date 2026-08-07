@@ -6,9 +6,13 @@
 belmont/
 ├── cmd/
 │   └── belmont/
-│       ├── main.go              # Go CLI entrypoint
+│       ├── main.go              # Go CLI entrypoint, most CLI logic
+│       ├── local_llms.go        # Pi provider/model tier resolution chain
 │       ├── embed.go             # go:embed directives (release builds)
-│       └── embed_dev.go         # Empty embed vars (dev builds)
+│       ├── embed_dev.go         # Empty embed vars (dev builds)
+│       ├── process_unix.go      # Process-group signalling (//go:build !windows)
+│       ├── process_windows.go   # Process-group signalling (//go:build windows)
+│       └── *_test.go            # Unit tests (nine files) — run by CI
 ├── go.mod
 ├── skills/
 │   └── belmont/
@@ -44,7 +48,8 @@ belmont/
 │   └── generate-skills.sh      # Generate skills from templates + partials
 ├── .github/
 │   └── workflows/
-│       └── release.yml          # CI: cross-compile + publish on tag push
+│       ├── ci.yml               # Build, test, vet, staticcheck, generators, 5-platform
+│       └── release.yml          # Cross-compile + publish on tag push
 ├── install.sh                   # Public installer (curl | sh)
 ├── bin/
 │   ├── install.sh               # Dev installer (macOS/Linux)
