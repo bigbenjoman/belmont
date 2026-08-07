@@ -4,7 +4,7 @@
 
 Interactive `/belmont:debug-manual` is the **only** Belmont skill that may edit spec prose in place. The relaxation is deliberate and bounded:
 
-- This skill never runs from `belmont auto` (only `/belmont:debug-auto` does — see `cmd/belmont/main.go`'s `actionDebug` wiring). The auto-mode `runScopeGuard` cannot fire against debug-manual edits.
+- This skill never runs from `belmont auto` (only `/belmont:debug-auto` does — see the `actionDebug` wiring in the Belmont CLI source (`grep -rn actionDebug cmd/belmont/`)). The auto-mode `runScopeGuard` cannot fire against debug-manual edits.
 - A human is in the loop for every edit. Each spec change is presented as a unified diff and gated on explicit `y / N / edit / skip` approval before any write.
 - Edits are atomic with the code fix they correspond to — same commit, so the spec-change rationale lives in `git log` alongside the code change that motivated it.
 

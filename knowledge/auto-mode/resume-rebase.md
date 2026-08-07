@@ -12,7 +12,7 @@
 
 ## How it's enforced
 
-In `cmd/belmont/main.go`:
+In `cmd/belmont/worktree.go`:
 
 - `rebaseWorktreeOnMain(mainRoot, wtPath string) (newCommits int, err error)` — pure helper near `removeWorktree`. Returns `errWorktreeDirty` (with `newCommits == 0`) on dirty-tree skip; returns a wrapped `"rebase conflict: …"` error after `git rebase --abort` on conflict; returns `(N, nil)` after a successful rebase where `N` is the number of new main commits brought in (computed via `git rev-list --count <merge-base>..<mainHEAD>`). The target SHA is reached directly (no fetch) because the worktree shares `.git/objects` with `mainRoot`.
 - `announceWorktreeRebase(id, n, err)` — shared logging helper so both call sites print identical wording (`↻ Rebased <id> worktree onto main (<N> new commits)` on success, `⚠ Skipped rebase of <id>…` on dirty, `⚠ Rebase of <id> aborted…` on conflict, silent on a no-op).
@@ -51,3 +51,4 @@ Test coverage in `cmd/belmont/rebase_test.go`:
 ## Revisions
 
 - 2026-05-12 — initial (`rebaseWorktreeOnMain` helper, fresh-invocation gate, clean-tree skip, conflict abort, STEERING preservation verified). Motivated by geoguesser-meta cross-feature implicit task dep cascade.
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

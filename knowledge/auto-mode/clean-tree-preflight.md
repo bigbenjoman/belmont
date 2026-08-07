@@ -10,7 +10,7 @@
 
 ## How it's enforced
 
-In `cmd/belmont/main.go`:
+In `cmd/belmont/autocmd.go`:
 
 - `requireCleanWorkingTree(root)` (near `validateRepoState`) runs `git status --porcelain --untracked-files=normal`. Non-empty output → error. Returns nil silently when the path isn't a git repo (rare but possible — `auto` will fail downstream anyway with a clearer message).
   - Path classification via `pathIsBelmontManaged` against `belmontManagedPaths` (`.agents/belmont`, `.agents/skills/belmont`, `.claude/agents/belmont`, `.claude/commands/belmont`, `.codex/belmont`, `.cursor/rules/belmont`, `.windsurf/rules/belmont`, `.gemini/rules/belmont`, `.copilot/belmont`, `AGENTS.md`). When any porcelain entry matches, the error message names the `belmont update` situation explicitly; otherwise it's a generic dirty-tree warning.
@@ -52,3 +52,4 @@ Test coverage in `cmd/belmont/commit_update_test.go` exercises the happy path, n
 ## Revisions
 
 - 2026-04-30 — initial (clean-tree preflight in `runAutoCmd` + `update` auto-commit + `--allow-dirty` / `--no-commit` opt-outs).
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

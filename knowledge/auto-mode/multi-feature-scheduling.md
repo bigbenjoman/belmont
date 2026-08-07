@@ -13,7 +13,7 @@
 
 ## How it's enforced
 
-In `cmd/belmont/main.go`:
+In `cmd/belmont/multifeature.go`:
 
 - `filterWaveByBlocked(wave, failed, paused)` — pure helper near `computeFeatureWaves`. Scans each feature's deps in declaration order; first failed dep wins (failed > paused for messaging since "failed" is the harder signal and the user should see it first). Returns `(runnable, []skipResult)` where `skipResult{Slug, DepSlug, Reason}` lets the caller emit per-reason coloured logs and route the slug into the correct set.
 - `runAutoMultiFeature`:
@@ -60,3 +60,4 @@ Test coverage in `cmd/belmont/scope_guard_test.go`:
 
 - 2026-04-30 — initial (cascade-skip on pause via `pausedSlugs`, CLI-order via input-slice iteration, `scanReadiness` pre-flight warning, structured halt summary).
 - 2026-05-12 — clarified serial-merge semantic at `MaxParallel <= 1` (each feature merges inline before the next starts); paired with `auto-mode/resume-rebase.md`. Motivated by geoguesser-meta cascade where `reference-browse` merged after `core-drill` paused with an implicit `/browse` blocker, leaving the worktree pinned to a stale fork point.
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

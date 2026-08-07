@@ -20,7 +20,7 @@ When a monorepo is detected (or declared via `worktree.json`):
 
 Three mechanisms in combination, in this order of precedence:
 
-1. **CLI auto-detection (mechanical).** `detectWorkspaces(root)` in `cmd/belmont/main.go` probes the root for signal files in dominance order: `turbo.json` > `nx.json` > `pnpm-workspace.yaml` > `package.json#workspaces` > `lerna.json` > `rush.json` > `Cargo.toml#[workspace]` > `go.work` > `pyproject.toml#[tool.uv.workspace]`. Each parser is tolerant — malformed signal files return `(nil, false)` rather than aborting. Workspaces are deduplicated by path so a Turborepo with both `turbo.json` and `pnpm-workspace.yaml` reports once.
+1. **CLI auto-detection (mechanical).** `detectWorkspaces(root)` in `cmd/belmont/worktree.go` probes the root for signal files in dominance order: `turbo.json` > `nx.json` > `pnpm-workspace.yaml` > `package.json#workspaces` > `lerna.json` > `rush.json` > `Cargo.toml#[workspace]` > `go.work` > `pyproject.toml#[tool.uv.workspace]`. Each parser is tolerant — malformed signal files return `(nil, false)` rather than aborting. Workspaces are deduplicated by path so a Turborepo with both `turbo.json` and `pnpm-workspace.yaml` reports once.
 
 2. **Worktree.json override (explicit).** `worktreeHooks.Workspaces` (a `map[string]workspaceOverride`) replaces auto-detection when present. `resolveWorkspaces(root, hooks)` returns the merged result and picks the primary via `pickPrimary`: explicit `primary_workspace` field > first workspace with a `dev` script > first detected.
 
@@ -62,3 +62,4 @@ State copy: `copyBelmontStateToWorktree` carries `worktree.json` from master int
 ## Revisions
 
 - 2026-05-07 — initial: detect Turborepo/Nx/pnpm/npm/yarn/bun/Lerna/Rush/Cargo/Go/uv; seed env into qualifying workspace dirs; export BELMONT_MONOREPO* env vars; skill + agent additive updates; `worktree.json` schema extension with `primary_workspace` + `workspaces` overrides.
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

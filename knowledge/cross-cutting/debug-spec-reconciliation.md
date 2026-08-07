@@ -8,7 +8,7 @@
 
 Interactive `/belmont:debug-manual` is the **only** skill that may edit spec prose in place (PRD task text, TECH_PLAN narrative, NOTES root-cause patterns, PROGRESS `[x]` follow-up flips). Every other skill — `implement`, `verify`, `next`, `debug-auto`, `tech-plan`, triage — continues to operate under `milestone-immutability.md`, which forbids restructuring and is the load-bearing constraint for auto-mode parallel orchestration. The relaxation is bounded:
 
-- **Interactive only.** `debug-manual` is never invoked from `belmont auto` — `actionDebug` routes to `/belmont:debug-auto` (`cmd/belmont/main.go`). The auto-mode `runScopeGuard` cannot fire against `debug-manual` edits.
+- **Interactive only.** `debug-manual` is never invoked from `belmont auto` — `actionDebug` routes to `/belmont:debug-auto` (`cmd/belmont/guards.go`). The auto-mode `runScopeGuard` cannot fire against `debug-manual` edits.
 - **Human-gated.** Each spec edit is presented as a unified diff and gated on explicit `y / N / edit / skip` approval. No silent writes.
 - **No restructuring.** `debug-manual` may not add/rename/remove milestone headings, may not use polish/follow-up/cleanup/FWLUP/"deviations from"/"verification fixes" naming, may not add new `[ ]` follow-up tasks for unfixed drift, and may not flip a task to `[v]`. `[x]` flips are scoped to the current or last-shipped milestone of the feature being debugged.
 - **Atomic commit.** Code edits and spec edits land in one commit. Spec changes are auditable in `git log` next to the code change they correspond to.
@@ -41,7 +41,7 @@ Three failure modes, ranked by severity:
 - `skills/belmont/_partials/debug-scope-rules.md` — the explicit allow/deny list, swapped in for `milestone-immutability.md` in this skill only.
 - `skills/belmont/_partials/feature-detection-multi.md` — multi-feature variant; per-feature approval gates spec edits across features.
 - `skills/belmont/_src/references/debug-manual-spec-reconcile.md` — drift catalogue, per-edit decision flow, root-cause pattern template.
-- `cmd/belmont/main.go` `actionDebug` wiring confirms `debug-manual` is never invoked from auto (only `debug-auto`).
+- `cmd/belmont/types.go` `actionDebug` wiring confirms `debug-manual` is never invoked from auto (only `debug-auto`).
 
 ## Known rough edges
 
@@ -52,3 +52,4 @@ Three failure modes, ranked by severity:
 ## Revisions
 
 - 2026-05-11 — initial: `debug-manual` enhanced with deep context load + multi-feature + in-place spec reconciliation; `debug-scope-rules.md` partial added; `milestone-immutability.md` include removed from this skill only.
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

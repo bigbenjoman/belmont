@@ -14,7 +14,7 @@
 
 ## How it's enforced
 
-In `cmd/belmont/main.go`:
+In `cmd/belmont/steer.go`:
 
 - **Write path**: `runSteerCmd` — CLI flags `--feature`, `--milestone`, `--message`, `--file`, `-` (stdin), `$EDITOR` fallback. Resolves the feature from `auto.json` (explicit or auto-detected when single); resolves targets (broadcast to every active worktree for the feature, or narrow to `--milestone`); appends a `(pending)` entry per target with RFC3339 UTC timestamp and optional `[M5]` milestone tag.
 - **Read/consume path**: `consumePendingSteering(root, feature, milestoneID, phase)` called at the top of `executeLoopAction`. Parses entries, matches pending ones by milestone tag (empty tag matches any milestone), returns the formatted block prefixed with `steeringHeader()` plus count. Rewrites STEERING.md with only remaining pending entries; deletes the file when `len(remainingPending) == 0`.
@@ -52,3 +52,4 @@ In `cmd/belmont/main.go`:
 - 2026-04-21 — v2 lifecycle: drop consumed, delete when empty (replaced flip-in-place v1 to save agent input tokens).
 - 2026-04-21 — preserve STEERING.md across `copyBelmontStateToWorktree` resume.
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

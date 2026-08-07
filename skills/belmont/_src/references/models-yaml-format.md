@@ -35,7 +35,7 @@ tiers:
 
 ## Tier → Model mapping
 
-The Belmont Go CLI maps each tier to a CLI-specific model ID. See the `modelTiers` map in `cmd/belmont/main.go` for the canonical table. Current mapping (check the Go source for latest):
+The Belmont Go CLI maps each tier to a CLI-specific model ID. See the `modelTiers` map in the Belmont CLI source for the canonical table (`grep -rn "modelTiers" cmd/belmont/`). Current mapping (check the Go source for latest):
 
 | Tool    | low                        | medium                | high                |
 |---------|----------------------------|-----------------------|---------------------|

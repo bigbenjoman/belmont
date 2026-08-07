@@ -18,7 +18,7 @@ In a worktree (`$BELMONT_WORKTREE=1`):
 
 Two mechanisms in combination:
 
-1. **Environment variables (mechanical; doesn't require agent cooperation).** `buildWorktreeEnv(port, extraEnv)` in `cmd/belmont/main.go` exports:
+1. **Environment variables (mechanical; doesn't require agent cooperation).** `buildWorktreeEnv(port, extraEnv)` in `cmd/belmont/worktree.go` exports:
    - `PORT=<assigned>`
    - `BELMONT_PORT=<assigned>`
    - `BELMONT_BASE_URL=http://localhost:<assigned>`
@@ -64,3 +64,4 @@ Two mechanisms in combination:
 
 - 2026-04-22 — initial: env var fallback (`PLAYWRIGHT_BASE_URL` etc.), hardened partial with decision tree + bundler table + hard rules, agent files updated.
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

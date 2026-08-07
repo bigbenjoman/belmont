@@ -39,10 +39,11 @@ Every change to tool integration, skill content, sub-agent dispatch, model-tier 
 
 - `skills/belmont/_partials/dispatch-strategy.md` already routes Claude (parallel sub-agents via Task tool) vs everyone else (sequential inline) — this is the dispatch half of the dual-path concern.
 - `skills/belmont/_partials/tier-preflight.md` only fires for non-Claude CLIs in interactive mode (auto mode handles tier via `--model` flag passed to the subprocess) — this is the tier half.
-- `cmd/belmont/main.go` `setupTool` shows both shapes side-by-side: Claude Code gets per-skill symlinks (because of its commands-discovery model), while Codex / Cursor / Windsurf / Gemini / GitHub Copilot / Pi / opencode all get the same no-op (auto-discovery via agentskills.io). Adding a new tool means deciding which side it lands on.
+- `cmd/belmont/install.go` `setupTool` shows both shapes side-by-side: Claude Code gets per-skill symlinks (because of its commands-discovery model), while Codex / Cursor / Windsurf / Gemini / GitHub Copilot / Pi / opencode all get the same no-op (auto-discovery via agentskills.io). Adding a new tool means deciding which side it lands on.
 - Pi integration plan (this entry's prompting cause): first draft covered only `belmont auto` shell-out; user rejected and asked for explicit interactive coverage. Plan now has Part 1.5 (interactive-mode integration) sitting alongside Part 2 (auto-mode integration).
 
 ## Revisions
 
 - 2026-05-10 — created during Pi integration planning; rule was already implicit in the codebase (dispatch-strategy + tier-preflight partials reflect both paths) but had no front-of-house statement to gate planning sessions.
 - 2026-06-03 — opencode integration followed the rule from the start: interactive mode verified against opencode's skill scanner source (recursive `skills/**/SKILL.md` glob over `.agents/`, frontmatter-named, description required for system-prompt visibility) and auto mode via `opencode run --dangerously-skip-permissions` with Pi-style prompt rewriting in `adaptPromptForTool` (opencode's `run` passes the message as plain text; its discovered skill names are bare, so the literal `/belmont:<skill>` form is ambiguous there).
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

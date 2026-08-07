@@ -8,7 +8,7 @@ Every `[v]` flip in PROGRESS.md must be preceded by at least one commit on the c
 
 ## How it's enforced
 
-In `cmd/belmont/main.go`, called after `runScopeGuard`:
+In `cmd/belmont/guards.go`, called after `runScopeGuard`:
 
 - `runEvidenceCheck(cfg, action, preSnap)` is invoked after every `actionVerify` phase. Other phases are skipped — only verify marks tasks `[v]`.
 - `findEvidenceMissingFlips(root, pre, post, targetMS)` walks post-snapshot's milestones, collects every task whose state flipped to `v` this phase, and calls `taskHasCommit(root, taskID, sinceRef)` per candidate.
@@ -45,3 +45,4 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestFindEvidenceMissingFli
 
 - 2026-04-21 — initial: commit-log evidence check, word-boundary regex, fail-open on git errors.
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
