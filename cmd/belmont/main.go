@@ -2221,55 +2221,6 @@ func parseMasterDeps(root string) (deps map[string][]string, priorities map[stri
 	return
 }
 
-// parseMasterFeatureStatuses reads the ## Features table in the master .belmont/PROGRESS.md
-// and returns a map of slug → status string (e.g. "Complete", "In Progress").
-// New table format: | Feature | Slug | Priority | Dependencies | Status | Milestones | Tasks |
-func parseMasterFeatureStatuses(root string) map[string]string {
-	statuses := make(map[string]string)
-
-	progressPath := filepath.Join(root, ".belmont", "PROGRESS.md")
-	content, err := os.ReadFile(progressPath)
-	if err != nil {
-		return statuses
-	}
-
-	lines := strings.Split(string(content), "\n")
-	inTable := false
-	colIdx := parseMasterTableColumns(lines)
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.HasPrefix(trimmed, "## Features") {
-			inTable = true
-			continue
-		}
-
-		if inTable && strings.HasPrefix(trimmed, "## ") {
-			break
-		}
-
-		if !inTable || !strings.HasPrefix(trimmed, "|") {
-			continue
-		}
-
-		cells := splitTableCells(trimmed)
-		slugCol := colIdx["Slug"]
-		statusCol := colIdx["Status"]
-		if slugCol < 0 || statusCol < 0 || len(cells) <= slugCol || len(cells) <= statusCol {
-			continue
-		}
-
-		slug := strings.TrimSpace(cells[slugCol])
-		if slug == "Slug" || strings.HasPrefix(slug, "-") || strings.HasPrefix(slug, ":") {
-			continue
-		}
-
-		status := strings.TrimSpace(cells[statusCol])
-		statuses[slug] = status
-	}
-	return statuses
-}
-
 // parseMasterTableColumns finds column indices by header name in the master PROGRESS.md features table.
 func parseMasterTableColumns(lines []string) map[string]int {
 	result := map[string]int{
@@ -4680,32 +4631,6 @@ func removeMarkedSection(content, startMarker, endMarker string) (string, bool) 
 	return content[:start] + content[end:], true
 }
 
-func upsertMarkedSection(content, startMarker, endMarker, section string) (string, bool) {
-	newSection := strings.TrimSpace(section)
-	if strings.TrimSpace(content) == "" {
-		return newSection + "\n", true
-	}
-
-	start := strings.Index(content, startMarker)
-	end := strings.Index(content, endMarker)
-	if start >= 0 && end > start {
-		end += len(endMarker)
-		currentSection := strings.TrimSpace(content[start:end])
-		if currentSection == newSection {
-			return content, false
-		}
-		replacement := newSection
-		if !strings.HasSuffix(replacement, "\n") {
-			replacement += "\n"
-		}
-		updated := content[:start] + replacement + content[end:]
-		return updated, updated != content
-	}
-
-	trimmed := strings.TrimRight(content, "\n")
-	return trimmed + "\n\n" + newSection + "\n", true
-}
-
 func filesEqual(a, b string) (bool, error) {
 	ab, err := os.ReadFile(a)
 	if err != nil {
@@ -4777,15 +4702,6 @@ func dirExists(path string) bool {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
-}
-
-func containsTool(tools []string, name string) bool {
-	for _, tool := range tools {
-		if tool == name {
-			return true
-		}
-	}
-	return false
 }
 
 // syncEmbeddedDir mirrors syncMarkdownDir but reads from an embed.FS.
@@ -7379,26 +7295,6 @@ func classifyChanges(root, preSHA string) (workType, int) {
 	return workMixed, total
 }
 
-// isCriticalConfig returns true if changed files include runtime-affecting config.
-func isCriticalConfig(files []string) bool {
-	for _, f := range files {
-		base := strings.ToLower(filepath.Base(f))
-		ext := strings.ToLower(filepath.Ext(f))
-		if ext == ".css" || ext == ".scss" || ext == ".less" {
-			return true
-		}
-		if strings.Contains(base, ".env") || strings.Contains(base, "styles") {
-			return true
-		}
-		if base == "tailwind.config.js" || base == "tailwind.config.ts" ||
-			base == "postcss.config.js" || base == "vite.config.ts" ||
-			base == "next.config.js" || base == "next.config.mjs" {
-			return true
-		}
-	}
-	return false
-}
-
 // buildMilestoneLoopStates derives per-milestone state from the loop history.
 func buildMilestoneLoopStates(history []historyEntry, milestones []milestone) map[string]*milestoneLoopState {
 	states := make(map[string]*milestoneLoopState)
@@ -8260,16 +8156,6 @@ func detectFwlupTasksForMilestone(root, feature string, report statusReport, mil
 	return false
 }
 
-// hasPendingTasks returns true if any task in the report is todo or in progress.
-func hasPendingTasks(report statusReport) bool {
-	for _, t := range report.Tasks {
-		if t.Status == taskTodo || t.Status == taskInProgress {
-			return true
-		}
-	}
-	return false
-}
-
 // pendingTasksInRange checks for incomplete tasks under milestones
 // that fall within the from/to range in the feature's PROGRESS.md.
 // When from and to are both empty, falls back to checking all milestones.
@@ -8793,34 +8679,6 @@ func (wt *worktreeTracker) teardownEntry(id string) {
 		// typically simple (kill servers, remove volumes) and don't need
 		// workspace context. Passing nil keeps the call site lean.
 		_ = runWorktreeHookCommands(hooks.Teardown, entry.Path, entry.Port, hooks.Env, nil, "", monorepoNone)
-	}
-}
-
-func (wt *worktreeTracker) cleanupAll(root string) {
-	wt.mu.Lock()
-	defer wt.mu.Unlock()
-	for id, entry := range wt.entries {
-		fmt.Fprintf(os.Stderr, "  Cleaning up worktree for %s...\n", id)
-		// Kill process group if running
-		if entry.Pgid != 0 {
-			signalProcessGroup(entry.Pgid)
-		}
-		// Run teardown hooks
-		if wt.hooks != nil && len(wt.hooks.Teardown) > 0 {
-			_ = runWorktreeHookCommands(wt.hooks.Teardown, entry.Path, entry.Port, wt.hooks.Env, nil, "", monorepoNone)
-		}
-		removeWorktree(root, entry.Path, id)
-		// Also delete the branch to prevent stale branch on restart
-		delCmd := exec.Command("git", "branch", "-D", entry.Branch)
-		delCmd.Dir = root
-		delCmd.Run() // best-effort
-	}
-	wt.entries = make(map[string]worktreeEntry)
-
-	// Clean up the worktree base directory if empty
-	baseDir := worktreeBasePath(root)
-	if entries, err := os.ReadDir(baseDir); err == nil && len(entries) == 0 {
-		os.Remove(baseDir)
 	}
 }
 
@@ -9909,70 +9767,6 @@ func ensureCleanMergeState(root string) error {
 	return nil
 }
 
-// prepareWorktreesGitignore adds .belmont/worktrees/ and .belmont/auto.json to .gitignore and commits the change.
-// This must happen before creating worktrees so they branch from a clean HEAD with the entry.
-func prepareWorktreesGitignore(root string) {
-	ensureGitignoreEntry(root, ".belmont/worktrees/")
-	ensureGitignoreEntry(root, ".belmont/auto.json")
-
-	// Check if .gitignore was modified
-	statusCmd := exec.Command("git", "status", "--porcelain", ".gitignore")
-	statusCmd.Dir = root
-	out, err := statusCmd.Output()
-	if err != nil || strings.TrimSpace(string(out)) == "" {
-		return // nothing to commit
-	}
-
-	// Commit the .gitignore change so worktrees branch from clean HEAD
-	addCmd := exec.Command("git", "add", ".gitignore")
-	addCmd.Dir = root
-	if _, err := addCmd.CombinedOutput(); err != nil {
-		return
-	}
-	commitCmd := exec.Command("git", "commit", "-m", "belmont: add worktrees to gitignore")
-	commitCmd.Dir = root
-	commitCmd.CombinedOutput() // best-effort
-}
-
-// excludeBelmontInWorktree adds .belmont/ to the worktree's local git exclude file.
-// Unlike modifying .gitignore (which gets committed and causes merge conflicts),
-// the local exclude is never committed and is specific to the worktree.
-func excludeBelmontInWorktree(wtPath string) {
-	// Read .git file to find worktree git dir
-	gitFile := filepath.Join(wtPath, ".git")
-	data, err := os.ReadFile(gitFile)
-	if err != nil {
-		return
-	}
-	// Parse "gitdir: /path/to/.git/worktrees/{name}"
-	line := strings.TrimSpace(string(data))
-	if !strings.HasPrefix(line, "gitdir: ") {
-		return
-	}
-	gitDir := strings.TrimPrefix(line, "gitdir: ")
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(wtPath, gitDir)
-	}
-
-	// Write to info/exclude
-	infoDir := filepath.Join(gitDir, "info")
-	os.MkdirAll(infoDir, 0755)
-	excludePath := filepath.Join(infoDir, "exclude")
-	existing, _ := os.ReadFile(excludePath)
-	if strings.Contains(string(existing), ".belmont/") {
-		return // already present
-	}
-	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
-		f.WriteString("\n")
-	}
-	f.WriteString(".belmont/\n")
-}
-
 // copyBelmontStateToWorktree copies feature state and read-only context into a worktree.
 // The feature's own state (features/<slug>/) is copied as writable — the agent commits these.
 // Master context files (PRD.md, PROGRESS.md, etc.) are copied for reference but excluded from git.
@@ -10801,7 +10595,6 @@ func runReverifyCmd(args []string) error {
 				return fmt.Errorf("reverify: failed to reset verified tasks: %w", err)
 			}
 			// Re-parse after rewrite so downstream filtering sees [x] tasks.
-			progressContent = []byte(newContent)
 			milestones = parseMilestones(newContent)
 			inRange = milestonesInRange(milestones, from, to)
 		}
