@@ -11,7 +11,7 @@
 
 ## How it's enforced
 
-In `cmd/belmont/main.go`:
+In `cmd/belmont/worktree.go`:
 
 - `untrackBelmontInWorktree(wtPath, slug)` — iterates `git ls-files .belmont/` and runs `git update-index --assume-unchanged` per path, best-effort. Called at the end of `copyBelmontStateToWorktree`.
 - `commitWorktreeChanges(wtPath, label)` — `git add -A` plus commit, so untracked `.belmont/` files are staged.
@@ -53,3 +53,4 @@ So the fix needs a decision first, not a call: replace unconditionally, merge th
 ## Revisions
 
 - 2026-08-07 — initial. Records the asymmetric isolation (tracked held back, new files committable), the removal of `writeWorktreeGitExcludes`, the two rejected repairs, and the `recoverMerge` gap.
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

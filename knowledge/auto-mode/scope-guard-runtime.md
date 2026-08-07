@@ -13,7 +13,7 @@ Any deviation — a new milestone heading added, a sibling milestone's checkbox 
 
 ## How it's enforced
 
-All in `cmd/belmont/main.go`:
+All in `cmd/belmont/auto_loop.go`:
 
 - `executeLoopAction` and `executeTriageAction` snapshot PROGRESS.md before the shell-out via `snapshotProgress` → `progressSnapshot` struct. After `cmd.Wait()` returns (success or failure), they call `runScopeGuard(cfg, action, preSnap)`.
 - `runScopeGuard` skips for `actionReplan` (tech-plan legitimately restructures), otherwise re-reads PROGRESS.md, calls `diffScopeViolations(pre, post, action.MilestoneID)` to produce a list of `scopeViolation` structs (`new_milestone` or `out_of_scope_flip` kinds), then `rebuildAfterScopeGuard(pre, post, targetMS)` produces the repaired content, the file is rewritten, `git commit -a --amend --no-edit` folds the revert into the agent's commit, and a `(pending)` entry is appended to STEERING.md via `injectScopeGuardSteering` so the agent sees an explicit correction on its next phase.
@@ -49,3 +49,4 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestDiffScopeViolations_*`
 
 - 2026-04-21 — initial: scope guard + diff/rebuild + STEERING correction loop.
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

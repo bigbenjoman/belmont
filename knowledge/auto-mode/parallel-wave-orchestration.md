@@ -13,7 +13,7 @@
 
 ## How it's enforced
 
-In `cmd/belmont/main.go`:
+In `cmd/belmont/auto_parallel.go`:
 
 - `runAutoParallel` unconditionally dispatches to `runWaveParallel` for every wave (no single-milestone master-tree shortcut; that was removed 2026-04-22). The shortcut helper `singleMilestoneHasExistingWorktree` was deleted.
 - `runWaveParallel` → `runMilestoneInWorktree`:
@@ -62,3 +62,4 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestOverlayLiveMilestones_
 - 2026-04-22 — added `reportMergeOverlap` pre-merge visibility.
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
 - 2026-05-12 — added `MaxParallel <= 1` inline-merge semantic (every unit still goes through a worktree; only the merge interleaves). Paired with `resume-rebase.md`. See [`auto-mode/multi-feature-scheduling.md`](multi-feature-scheduling.md) for the multi-feature-mode equivalent.
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

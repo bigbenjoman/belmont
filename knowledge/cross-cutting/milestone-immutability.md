@@ -22,7 +22,7 @@ Routing for discovered work:
 Three layers, each sufficient on its own but deployed together for defense in depth:
 
 1. **Skill prose** — canonical text lives in `skills/belmont/_partials/milestone-immutability.md` and is `@include`d into `implement.md`, `verify.md`, `next.md`, `debug-auto.md`, `tech-plan.md`, and referenced by `prompts/belmont/post-verify-triage.md`. The partial is the single source of truth for those skills; skill bodies point to it rather than paraphrasing. `debug-manual.md` is the sole exception — it `@include`s `debug-scope-rules.md` instead, which permits in-place spec edits while keeping the structural prohibitions (no new/renamed milestones, no polish-pattern naming) intact.
-2. **Runtime scope guard** — `runScopeGuard` in `cmd/belmont/main.go` reverts new milestone headings added during any non-`actionReplan` phase. See [auto-mode/scope-guard-runtime.md](../auto-mode/scope-guard-runtime.md).
+2. **Runtime scope guard** — `runScopeGuard` in `cmd/belmont/types.go` reverts new milestone headings added during any non-`actionReplan` phase. See [auto-mode/scope-guard-runtime.md](../auto-mode/scope-guard-runtime.md).
 3. **CLI lint** — `belmont validate` detects residual violations in PROGRESS.md (polish-pattern milestone names; cross-milestone task IDs like `P3-FWLUP-M2-1` sitting under a non-M2 milestone). Runs at `belmont auto` startup; interactive runs get `[y/N]` prompt, non-interactive abort.
 
 ## Failure mode if you break it
@@ -55,3 +55,4 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestDetectViolations_Polis
 - 2026-04-21 — initial: canonical partial, `implement.md` loophole closed, tech-plan / verify / triage tightened, `belmont validate` lint added.
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
 - 2026-05-11 — `debug-manual` switched from `milestone-immutability.md` to `debug-scope-rules.md`; spec-text edits permitted in interactive sessions under per-edit user approval; structural prohibitions unchanged. See [debug-spec-reconciliation.md](debug-spec-reconciliation.md).
+- 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
