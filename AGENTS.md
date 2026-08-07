@@ -78,7 +78,9 @@ go run ./cmd/belmont install --source . --project /tmp/test-project --no-prompt
 
 **Important**: `go run` and plain `go build` do NOT embed skills/agents (they use the `!embed` build tag). The `install` command will fall back to source resolution (`--source` flag, `BELMONT_SOURCE` env, config file, or walking up from binary). Use `scripts/build.sh` to produce a release binary with embedded content.
 
-There is no linter configured. A small focused test file exists at `cmd/belmont/commit_update_test.go` covering the clean-tree preflight + update auto-commit; run `go test ./cmd/belmont`. Otherwise verify by compiling (`go build ./cmd/belmont`) and manually testing commands.
+`go vet ./...` and `staticcheck ./...` both run in CI and are currently clean — keep them that way rather than suppressing findings. Install staticcheck with `go install honnef.co/go/tools/cmd/staticcheck@latest`.
+
+Tests live in `cmd/belmont/*_test.go` (nine files); run them with `go test ./cmd/belmont`. `.github/workflows/ci.yml` runs build, test, vet, staticcheck, gofmt, `GOOS=windows go vet`, the generator `--check` scripts, a plugin-agent truncation assertion, and a five-platform build matrix on every push and pull request.
 
 ## Skills Generation
 
