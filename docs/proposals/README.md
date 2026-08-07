@@ -31,6 +31,8 @@ gh pr view 21 --repo blake-simpson/belmont --json state
 **0005 → 0004 → 0003.** One per session; 0005 in particular is large.
 
 - **0005 first.** It owns `.github/workflows/ci.yml`, which 0004's eval harness wires into, so building it first means 0004 extends a file that exists rather than creating one 0005 will rewrite. Its `main.go` split also touches every later diff's line numbers, so going first spares the others a rebase.
+
+  0005's two halves are independently landable — see its §10. The CI half is what 0004 depends on and what the shipped plugin defect argues for; the `main.go` split is a judgement call the reviewer can refuse separately. If the split is rejected or deferred, the sequencing above still holds on the CI half alone.
 - **0004 second.** It touches no non-test Go, so it cannot conflict with 0005's relocation of `executeLoopAction`.
 - **0003 last**, and only after its rev 5 restructure — moving UX/UI design out of `implement` Phase 2 and into `tech-plan`.
 
@@ -51,12 +53,14 @@ Genuine overlaps: 0003 and 0004 both edit `_src/next.md`; 0003 and 0005 both edi
 
 ## Revision history
 
-0003 and 0005 are at revision 4 and 0004 at revision 5, after three adversarial reviews against the codebase. Round 1 found design-level blockers in all three. Round 2 found that several v2 fixes had not landed — including a replacement proof mechanism that was broken in both directions — and surfaced 0006's shipping defect as a side effect. Round 3 (`redteam-round3.md`) produced rev 4, finding four blockers in 0003 alone. 0004's rev 5 is an ordering amendment only, not a review outcome. Each proposal carries per-revision change tables.
+0003 is at revision 4 and 0004 at revision 5, after three adversarial reviews against the codebase. Round 1 found design-level blockers in all three. Round 2 found that several v2 fixes had not landed — including a replacement proof mechanism that was broken in both directions — and surfaced 0006's shipping defect as a side effect. Round 3 (`redteam-round3.md`) produced rev 4, finding four blockers in 0003 alone. 0004's rev 5 is an ordering amendment only, not a review outcome. Those two proposals carry per-revision change tables.
+
+**0005 no longer does.** It went through the same four rounds, but the revision tables and the "an earlier draft claimed X" asides were removed on 2026-08-07: they made the reader work through the document's history before reaching what it proposed. The history is in `git log -- docs/proposals/0005-maintainability.md`, which is where it belongs. Prefer that treatment for the others when they are next revised — a proposal is read by someone deciding whether to accept it, not by someone auditing how it was written.
 
 Three lessons are worth keeping.
 
 A specification that reads as coherent is not the same as one that is correct about the system it describes — verify claims against the code before building on them. A review agent asserted that `cmd/belmont/tools.go` already existed; it never has, on any branch, and the claim was accepted unchecked and shipped into two revisions.
 
-A verification mechanism is itself a claim. 0005's purity proof was specified twice without being run, and failed both times. It is now tested against a legitimate-move control and a deliberately-broken control before appearing in a Definition of Done.
+A verification mechanism is itself a claim. The purity proof for 0005's `main.go` split was specified twice without being run, and was impossible both times — first `cmp` on `-trimpath` binaries, then a `sed`/`sort` recipe that failed in both directions. The replacement is tested against a legitimate-move control and a deliberately-broken one before appearing in a Definition of Done. Note the control run itself has not been reproduced in-repo: `scripts/declsum/` does not exist yet, so re-verify before relying on it.
 
 And fixes introduce defects at the same rate as first drafts. Several round-3 findings were created by round-2 repairs. Re-verify what the previous round changed, not only what it left alone.

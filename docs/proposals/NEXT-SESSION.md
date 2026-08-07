@@ -16,7 +16,7 @@ Written at the end of a long planning session. Assumes you know nothing about it
 | `0003-design-quality-without-figma.md` | **rev 7 — written 2026-08-07.** Two full adversarial passes done (rev 5: 53 fixed; rev 6: 53 fixed, 1 blocker). Evidence: [`rev6-CONFIRMED-DEFECTS.md`](rev6-CONFIRMED-DEFECTS.md), [`rev5-CONFIRMED-DEFECTS.md`](rev5-CONFIRMED-DEFECTS.md) |
 | `0003-DESIGN-RESTRUCTURE.md` | background brief; four of its facts were refuted — see its header |
 | `0004-context-budget-with-evidence.md` | rev 5 — GO (v5 = ordering amendment, see "Resolved decision" below) |
-| `0005-maintainability.md` | rev 4 — GO |
+| `0005-maintainability.md` | **GO — rewritten for the reviewer 2026-08-07.** No revision tables; history is in `git log`. Sections renumbered — old §4.1 is now §2.1, old §4.3 is now §3 |
 | `0006-plugin-generator-correctness.md` | shipped as PR #21 |
 | `redteam-round3.md` | the review that produced rev 4 |
 
@@ -40,11 +40,17 @@ gh pr view 21 --repo blake-simpson/belmont --json state
 
 ## Task B — implement 0005
 
-Follow `docs/proposals/0005-maintainability.md`. Split `cmd/belmont/main.go` (12,613 lines) into domain files **in the same package**, then add `go vet` + staticcheck + CI.
+Follow `docs/proposals/0005-maintainability.md`. Two independent halves — read its §10 before starting, because they can land separately and the reviewer may want only one.
 
-- One commit per §4.3 table row. The table is a **proposal** — re-cut it if the boundaries are wrong, but every declaration needs a stated home before commit 1.
-- Build `scripts/declsum/main.go` (§4.1) and **re-verify it against both controls** — a real extraction and a deliberately broken one — before the DoD depends on it.
+**The CI half** (final commit): `.github/workflows/ci.yml`, delete the eight dead functions, fix the docs. ~100 lines of YAML against ~200 deleted lines of Go. This is the half that answers a defect which has already shipped — four 0-byte plugin agents in every release since 2026-06-04 — and the half 0004's eval harness wires into. Low risk, ten-minute review.
+
+**The split half** (commits 1–N): `cmd/belmont/main.go`, 12,613 lines, into domain files **in the same package**. Bigger, and a judgement call the reviewer can decline.
+
+- One commit per **§3** table row. The table is a **proposal** — re-cut it if the boundaries are wrong, but every declaration needs a stated home before commit 1, and re-cutting mid-split means re-running the purity check on every commit already made.
+- Build `scripts/declsum/main.go` (**§2.1**) and **re-verify it against both controls** — a real extraction and a deliberately broken one — before the DoD depends on it. The tool does not exist in the repo; the 398-declaration control run quoted in the spec came from a scratch directory and has not been reproduced.
 - Decl-set diff empty at every extraction commit.
+
+If the split is deferred, the CI half still stands alone and the build order below is unaffected.
 
 ---
 
@@ -105,7 +111,7 @@ These specs went through three adversarial review rounds. Every round found defe
 - A review agent claimed `cmd/belmont/tools.go` already existed. **It never has** — zero commits, any branch. The claim was accepted without checking and shipped into two revisions. Do not trust a finding — from a review, a spec, or a previous session — without running the command yourself.
 - **When a claim spans two documents, grep both and diff them.** Keep this rule permanently; it is not specific to one round. A claim gets written once, cited elsewhere, and the citation outlives the correction. Both instances so far were found this way and neither was visible from one file: the `0003`↔`0004` build order disagreed across *three* documents with no single "current" one, and `main.go:9980` — the wrong line for an `os.RemoveAll` that lives at `:10010` — had propagated into **four**. A document that reads as authoritative is not evidence; the code is.
 - **A predicted failure is a claim too, and cheaper to test than to reason about.** Three revisions asserted that 0003 and 0004 "will conflict" in `_src/verify.md` because their edits sit inside default diff context. Reproducing it took one scratch repo and showed the rebase is clean — the context rule governs `git am`/`git apply`, not the three-way merge. Nobody had run it.
-- Two purity-proof mechanisms were specified before being run, and both were impossible. The current one (0005 §4.1) *is* verified, but re-verify before the DoD depends on it.
+- Two purity-proof mechanisms were specified before being run, and both were impossible. The current one (0005 **§2.1**) is described as verified against two controls — but `scripts/declsum/` is not in the repo, so that run has never been reproduced here. Build it and re-run both controls before the DoD depends on it.
 
 ## Resolved decision — 0003 ↔ 0004 baseline order (2026-08-06)
 
