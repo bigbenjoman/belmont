@@ -16,7 +16,7 @@ This session requires ultrathink-level reasoning — deeply analyze architecture
 3. When done asking questions, write plan(s) to the appropriate TECH_PLAN.md file(s) (see routing logic below).
 4. **Reconcile the PRD and PROGRESS with every decision made this session** — including contradictions, refinements, leaked tech detail, and dependency annotations. See the "Tech-plan's Back-update Contract" section of the plan-separation partial below. This is not optional; skipping it is the #1 cause of implementation drift.
 5. Respect milestone sizing rules — see the plan-separation partial. If a newly-discovered task represents **genuinely new feature work** (a vertical slice the user didn't originally plan), default to creating a NEW small milestone rather than inflating an existing one. **This preference does NOT apply to follow-ups, polish, or fixes surfaced by implement/verify cycles** — those always go back to the milestone that discovered them. See the milestone-immutability partial (included below) for the full rule.
-6. After writing the tech plan AND completing Phase 4.5 (PRD Reconciliation), say "Tech plan complete." and STOP.
+6. The last mandatory phase is **Phase 4.6 (Model Tier Assignment)**. Only after Phase 3.5 (Design Contract, when it applies), Phase 4 (Write Plan), Phase 4.5 (PRD Reconciliation) and Phase 4.6 have all completed do you say "Tech plan complete." and STOP.
 
 ## Codex Plan-Mode Preflight
 
@@ -100,6 +100,7 @@ Kick off a research sub-agent (per the Proactive Research framework above) when 
 - Writing to `.belmont/TECH_PLAN.md` (master tech plan — create or update)
 - Writing to `{base}/TECH_PLAN.md` (feature tech plan — primary output)
 - Writing to `{base}/models.yaml` (per-feature model tiers — see Phase 4.6)
+- Writing to `{base}/design-preview.html` (the Design Contract's reviewable artifact — see Phase 3.5). This is a **planning artifact under `.belmont/`**, never project source: CRITICAL RULE 2 still forbids you from creating or editing any `.tsx`/`.ts`/`.css` file.
 - Updating `{base}/PRD.md` and `{base}/PROGRESS.md` if new tasks discovered
 - Using WebFetch for inline lookups of single user-provided URLs or specific docs pages
 - Spawning `Explore` or `general-purpose` sub-agents for deep web research (see Proactive Research)
@@ -157,7 +158,7 @@ Before starting, verify:
 - Read the feature PRD at `{base}/PRD.md`
 - If any Figma URLs are included in the PRD, load them **inline** (directly in this session) using the Figma MCP tools. Do NOT spawn a sub-agent for Figma — sub-agents cannot get MCP tool permissions approved. Extract design tokens, layout, typography, and component specs. Document findings in the tech plan.
 - Explore the codebase for existing patterns. This may be done in a sub-agent if the codebase is large.
-- Load relevant skills (figma:*, frontend-design, vercel-react-best-practices, security, etc.)
+- Load relevant skills by their exact registered name (`figma:*`, `frontend-design:frontend-design`, `vercel:react-best-practices`, etc.). A name that doesn't resolve loads nothing and fails silently.
 - Consider middleware, webhooks, infrastructure (how are we hosted?), etc.
 - **Web research in parallel** — if any signal from the **Research Triggers** checklist is present in the PRD or brief (framework/library choice, version/LTS check, migration path, etc.), dispatch an `Explore` or `general-purpose` sub-agent per the *Proactive Research* framework. Don't block the interview on it — the sub-agent's report will arrive during Phase 3 and feed into the final decision.
 
@@ -216,6 +217,99 @@ If something in the PRD is ambiguous or incomplete, ask for clarification — bu
 
 - Once you are confident, ask the user if they have more input or if you should finalize writing the plan.
 
+### Phase 3.5 - Design Contract
+
+A feature with a UI but no Figma has no design authority: the design agent has
+nothing to extract, and verification has nothing to check against, so it falls
+back to acceptance criteria — a correctness check, not a design-quality one.
+This phase derives that authority **once per feature, here, where a human is
+already reviewing**, rather than per-milestone inside a sub-agent.
+
+**Gate — run this phase only when BOTH hold:**
+
+1. The feature has a **user interface** — a page, component, layout, style, or
+   user-facing copy surface.
+2. **No task in `{base}/PRD.md` carries a Figma URL.** Check *every* task
+   regardless of its `[ ]`/`[x]`/`[v]` state — this is a feature-level gate, and
+   keying it on the incomplete subset would flip it as work progresses.
+
+**Mixed Figma coverage**: a feature counts as a Figma feature if **any** task
+carries a Figma URL, even where other UI tasks carry none. A partially-covered
+feature has no single design authority to reconcile against, and inventing one
+would contradict the Figma tokens already extracted for its covered tasks.
+
+**Detect Figma, do not load it.** This phase needs to know *whether* Figma URLs
+exist, not what is inside them. (Phase 1 already loads any that exist, in-session
+— sub-agents cannot get MCP tool permissions approved.)
+
+**Record the outcome either way. Silence is not allowed** — a downstream agent
+must be able to tell "not applicable" from "not done". The contract's `**Mode**`
+field is the single machine-read signal:
+
+| Situation | `**Mode**` | Contract body |
+|---|---|---|
+| UI, no Figma | `derived — UI, no Figma` | all six subsections, populated |
+| No user interface | `N/A — no UI` | the `**Mode**` line only |
+| Any task has Figma | `N/A — Figma present` | the `**Mode**` line, plus the Figma tokens you extracted in Phase 1 |
+
+Neither `N/A` value is "a contract". Only `derived — UI, no Figma` is.
+
+#### Deriving it
+
+1. **Read `references/design-authority-baseline.md`.** It carries the authority
+   ladder (which design skills enrich which section), the derivation order
+   (reuse before invention — master contract, sibling contract, Storybook,
+   project config, then baseline defaults), and the tier-2 baseline rules.
+2. Derive all six subsections — Token Contract, Accessibility Floor, UX Strategy,
+   State Inventory, Microcopy Rules, Motion Contract — using the Phase 3 answers
+   about design system details, existing components to reuse, and animation
+   approach.
+3. Fill `**Source**` with the ladder rung you actually stopped at, and
+   `**Authorities**` with the skill enriching each section.
+4. **Present the contract to the user for approval using your structured
+   question tool.** The mandatory rules in *Asking Questions* apply in full: a
+   Markdown pick-list is not an approval gate, and if you are Codex without the
+   structured question tool, stop and tell the user to restart in plan mode.
+5. On approval, set `**Approval**: approved <ISO date>` and write the contract
+   into `{base}/TECH_PLAN.md`'s `## Design Contract` section in Phase 4.
+6. Write `{base}/design-preview.html` — a **self-contained** page (no external
+   assets, no network references) rendering the contract for review: colour
+   swatches with computed contrast ratios, the type ramp, the spacing scale,
+   radius and elevation samples, and one state row per State Inventory entry.
+
+#### Who may write this section
+
+> **Only this skill writes `## Design Contract`.** `/belmont:implement`,
+> `/belmont:verify`, `/belmont:next` and `/belmont:debug-auto` read it and never
+> write it. `/belmont:debug-manual` may edit other TECH_PLAN prose under its
+> documented per-edit approval, but not this section — it carries an approval
+> stamp that flow does not renew. `/belmont:review-plans` treats it as read-only.
+
+The rule is scoped to the **section**, not the file, because other skills
+legitimately write elsewhere in `TECH_PLAN.md`. Nothing mechanical enforces it.
+
+#### Running headlessly (auto mode)
+
+Under `belmont auto`, `actionReplan` invokes this skill with no user and no
+structured question tool. In that case you MUST:
+
+- **Never create a contract.** If `{base}/TECH_PLAN.md` has no `## Design
+  Contract` section at all, derive nothing and leave the design surface
+  untouched. Contract authoring is interactive only — adopting a pre-contract
+  feature into a gate its author never approved is exactly the failure this
+  rule exists to prevent.
+- **Preserve an existing contract verbatim.** Derive only *subsections* that are
+  absent from a contract that already exists. Never regenerate an approved one.
+- Set `**Approval**: unreviewed (headless replan <ISO date>)`.
+- Regenerate `design-preview.html` **only if a subsection changed**, stamping it
+  `<!-- unreviewed: headless replan <ISO date> -->`.
+
+#### Codex packet
+
+When emitting a `BELMONT_PLAN_PACKET` instead of writing directly, enumerate
+**both** `{base}/TECH_PLAN.md` and `{base}/design-preview.html` as operations.
+Both are under `.belmont/`, so both satisfy the packet's path constraint.
+
 ### Phase 4 - Write Plan
 
 - Say: "I will now write the technical plan."
@@ -234,6 +328,22 @@ If something in the PRD is ambiguous or incomplete, ask for clarification — bu
 1. Update `.belmont/TECH_PLAN.md` in-place using the **Master TECH_PLAN.md Format** below. Actively curate: edit existing sections, remove stale info, update decisions that have changed.
 
 - The plan must include all information below including exact component specifications and file hierarchies/structures.
+
+**Preserving the Design Contract (CRITICAL).** The feature template is a
+whole-file structure, so writing it naively destroys an approved `## Design
+Contract`. Before writing `{base}/TECH_PLAN.md`:
+
+- If the file already carries a `## Design Contract` and Phase 3.5 did **not**
+  derive a new one this session, reproduce that section **byte-for-byte**,
+  including its `**Approval**` line. Do not reformat it, do not "improve" it, do
+  not refresh the date.
+- If Phase 3.5 derived and the user approved a contract this session, write the
+  approved version.
+- If Phase 3.5's gate did not fire, write the `**Mode**` line for the applicable
+  `N/A` value and nothing else under that heading.
+
+This is the same rule as Phase 3.5's headless clause, restated here because this
+is the instruction that actually touches the file.
 
 **Adding tasks / milestones (if new work was discovered):**
 - Follow the milestone sizing rules in the plan-separation partial — target 3–5 tasks per milestone, soft ceiling of 6.
@@ -264,7 +374,15 @@ Before saying "Tech plan complete.", walk this checklist. Skipping it is the #1 
 
 Decide per-agent model tiers for this feature so downstream work uses the right-capability model per domain. Tiers are user-facing (`low`/`medium`/`high`); the Belmont CLI maps them to the correct model ID for whichever AI CLI is in use.
 
-1. **Reason about the effort profile from the tech-plan you just wrote** — what will the design-agent actually do on this feature? How much visual matching will verification need? Is the implementation work novel or boilerplate? Pick a free-form profile label that fits (`frontend-heavy`, `backend-heavy`, `fullstack`, `infra`, `docs`, `research`, `refactor`, or anything else that describes this feature).
+1. **Reason about the effort profile from the tech-plan you just wrote** — what will the design-agent actually do on this feature? Extract Figma specs, derive per-task specs against a Design Contract, or nothing at all? How much visual matching will verification need, and does it now have a contract to check against? Is the implementation work novel or boilerplate? Pick a free-form profile label that fits (`frontend-heavy`, `backend-heavy`, `fullstack`, `infra`, `docs`, `research`, `refactor`, or anything else that describes this feature).
+
+   **Never downgrade an agent that authors or checks a design contract.** A
+   feature whose `**Mode**` is `derived — UI, no Figma` gives the design agent
+   real derivation work and gives verification an objective standard to measure
+   against — `design=low` is wrong there even though the feature has no Figma.
+   Contract authoring itself wants the strongest model available; note that the
+   `planning` tier is forced to `high` only inside `belmont auto`, so a user
+   typing `/belmont:tech-plan` into a weaker session gets that session's model.
 
 2. **Pick a starting recommendation for each agent** — `codebase`, `design`, `implementation`, `verification`, `code-review`, `reconciliation`. Base the pick on what that agent will concretely do for THIS feature, not a pattern-match to the profile label. The reference file `references/models-yaml-format.md` lists a few loose starting-point examples (frontend-heavy features *typically* warrant design=high + verification=high, etc.), but these are illustrative, not definitive — exercise judgment.
 

@@ -40,6 +40,7 @@ Curated operational knowledge for working on Belmont itself. Scan the table belo
 | [cross-cutting/verified-flip-recording.md](cross-cutting/verified-flip-recording.md) | skills, cli, state, auto-mode | change how `[v]` is recorded, touch `verify.md`'s Mark Verified Tasks section or the verify report format, alter `computeOverallStatus` / `doneNotVerifiedTasks` / the `belmont status` done-but-unverified warning, or change any stop condition that treats `Complete` as finished |
 | [cross-cutting/model-tier-economics.md](cross-cutting/model-tier-economics.md) | agents, skills, cli, auto-mode | add a `model:` pin to any `agents/belmont/*.md`, change the `modelTiers` registry or `planningTier`/`reconciliationDefaultTier`, touch how `models.yaml` tiers resolve to a dispatch model, or trade model quality against token cost |
 | [cross-cutting/codex-plan-handoff.md](cross-cutting/codex-plan-handoff.md) | skills, cli | touch `codex-plan-apply`, the `BELMONT_PLAN_PACKET` emit logic in `product-plan`/`tech-plan`, or design how a tool-specific skill is scoped to one CLI without mechanical install gating |
+| [cross-cutting/design-authority.md](cross-cutting/design-authority.md) | agents, skills | touch the `## Design Contract` section or who may write it, `tech-plan` Phase 3.5, `design-authority-baseline.md`, the design-agent skip condition in `implement.md`, `verification-agent.md`'s Phase 2 branches or its `no design references` escape clause, or the design tier's meaning in `models-yaml-format.md` |
 
 ### Meta
 

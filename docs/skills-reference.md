@@ -38,6 +38,7 @@ Technical planning session. Creates a detailed implementation specification.
 - Calibrates silently from the PRD and existing master tech plan (no visible tier) and walks a fixed **Domains to Cover** checklist (rendering, data model, auth, observability, testing, CI/CD, migration, etc.) — skipping domains already settled by the master tech plan or prior answers
 - Runs as many rounds per domain as the work requires; digs on ambiguity and only exits when every relevant domain is resolved
 - Loads Figma designs and extracts exact design tokens
+- Derives a **Design Contract** with you when the feature has a UI but no Figma (Phase 3.5), and writes a reviewable `design-preview.html` alongside it
 - Produces concrete file structures, component skeletons, API types
 - Maps PRD tasks to specific code sections
 - Delegates framework / library / version / migration / security research to `Explore` / `general-purpose` sub-agents, flags stale sources (>12 months), and cites URLs in the `## References` section
@@ -65,7 +66,7 @@ Implements the next pending milestone from the PRD.
 - Creates a **MILESTONE file** (`.belmont/MILESTONE.md`) with orchestrator context
 - Runs 3 agents, each reading from and writing to the MILESTONE file:
   1. **Codebase Scan** (codebase-agent) -- Reads MILESTONE + codebase, writes `## Codebase Analysis` *(parallel with 2)*
-  2. **Design Analysis** (design-agent) -- Reads MILESTONE + Figma, writes `## Design Specifications` *(parallel with 1)*
+  2. **Design Analysis** (design-agent) -- Reads MILESTONE plus either Figma or the feature's Design Contract, writes `## Design Specifications` *(parallel with 1)*. Skipped entirely when the milestone has no design input at all and the feature has no contract
   3. **Implementation** (implementation-agent) -- Reads MILESTONE only, writes code + `## Implementation Log` *(after 1+2)*
 - After each task: marks it as `[x]` done in PROGRESS.md
 - After all milestone tasks: marks the milestone complete
@@ -93,7 +94,7 @@ Implements just the next single pending task — a lightweight alternative to th
 Runs verification and code review on all completed tasks.
 
 - Runs two agents **in parallel**:
-  - **Verification Agent** -- Checks acceptance criteria, Figma pixel comparison (Playwright headless), i18n text keys, edge cases, accessibility
+  - **Verification Agent** -- Checks acceptance criteria, visual verification (Figma pixel comparison, or measurement against the Design Contract, via a headless browser), i18n text keys, edge cases, accessibility
   - **Code Review Agent** -- Runs build and test commands (auto-detects package manager: npm, pnpm, yarn, or bun), reviews code against project patterns, checks PRD alignment
 - Both agents read the PRD, TECH_PLAN, and archived MILESTONE files for full context
 - Categorizes issues: Critical / Warnings / Suggestions

@@ -4,6 +4,13 @@ Write to `{base}/TECH_PLAN.md` with this structure.
 
 > **Related output**: per-feature model tiers live in a separate file, `{base}/models.yaml`. The tech-plan skill writes it after Phase 4.6 (Model Tier Assignment). See `references/models-yaml-format.md` for the schema and tier semantics.
 
+> **CRITICAL — `## Design Contract` is not yours to regenerate.** This is a
+> whole-file template, so writing it naively destroys an approved contract.
+> Reproduce any existing `## Design Contract` section **byte-for-byte**,
+> including its `**Approval**` line, unless Phase 3.5 derived and the user
+> approved a new one in this session. See the tech-plan skill's Phase 3.5 for
+> the full rule and its headless clause.
+
 ```markdown
 # Technical Plan: [Feature Name]
 
@@ -41,8 +48,49 @@ src/
 
 ---
 
-## Design Tokens (from Figma)
-[Exact values extracted from Figma - colors, spacing, typography]
+## Design Contract
+**Mode**: [derived — UI, no Figma | N/A — no UI | N/A — Figma present]
+**Source**: [storybook | tailwind.config.ts | globals.css | components.json | master TECH_PLAN |
+             sibling feature <slug> | none — established here]
+**Authorities**: baseline[; ui-designer (tokens); ux-designer (strategy, states); ux-copywriter (microcopy);
+             ux-motion (motion); frontend-design:frontend-design (aesthetic)]
+**Approval**: [approved <ISO date> | unreviewed (headless replan <ISO date>)]
+
+### Token Contract
+Spacing — 8pt grid: 4, 8, 12, 16, 24, 32, 48, 64, 96. Internal ≤ external on every component.
+Typography — ratio [1.25], sizes [list], line-height 1.4–1.6 body / 1.1–1.3 heading. Max 4 sizes.
+Colour — 60/30/10. Max 3 hues + neutrals. Never pure #000/#FFF. Body ≥ 4.5:1.
+  Each semantic (success/error/warning/info) declares bg, border, text, icon.
+Radius — committed value [8px]. Nested children strictly smaller than parent.
+Elevation — [levels]. Interactive elements rise one level on hover.
+
+### Accessibility Floor
+Targets ≥ 44×44px (SC 2.5.5, AAA — adopted as Belmont's floor) · contrast ≥ 4.5:1 text / 3:1 large
+(SC 1.4.3, AA) · visible focus on every interactive element (SC 2.4.7, AA) · every input has a visible
+label, never placeholder-only · `prefers-reduced-motion` respected (SC 2.3.3, AAA) · no meaning by
+colour alone.
+
+### UX Strategy
+User · emotional state on arrival · hero element · primary action · biggest UX risk. Five lines.
+
+### State Inventory
+Per interactive component: default · hover · focus · active · disabled · loading · empty · error,
+plus any gesture or transition state the interaction introduces (drag, swipe, long-press, optimistic
+update). Components the feature only consumes get no entry. Omissions carry a reason.
+
+### Microcopy Rules
+Buttons: verb matching the outcome, never "Submit". Errors: what happened / why / what next, never
+blame or jokes. Empty states: what appears here, why it's empty, the action to fill it.
+Destructive confirmations: name what is destroyed. Possessive framing for user-owned objects.
+
+### Motion Contract
+**Applies**: [yes | N/A — no motion in this feature]
+Duration bands — instant feedback ≤ 100ms · state change 150–200ms · context shift 250–300ms ·
+page transition 300–400ms. Above 400ms must justify itself.
+Easing — one documented curve per class (enter / exit / move). Bounce and overshoot are opt-in per
+product voice, never a default.
+Performance — animate `transform` and `opacity` only. Animating layout properties is a defect.
+Reduced motion — `prefers-reduced-motion: reduce` removes movement, never functionality.
 
 ---
 
@@ -83,7 +131,10 @@ src/
 
 ## Verification Checklist
 ### Per-Component Checks
-- [ ] Matches Figma design pixel-perfect
+- [ ] **If `**Mode**` is `N/A — Figma present`**: matches Figma design pixel-perfect
+- [ ] **If `**Mode**` is `derived — UI, no Figma`**: spacing, type sizes, colours, radius and
+      elevation all on the declared scales; contrast and touch targets meet the Accessibility
+      Floor; every State Inventory entry renders; motion within the declared bands
 - [ ] Responsive: mobile, tablet, desktop
 - [ ] Accessibility: keyboard nav, screen reader
 - [ ] Loading/error/empty states implemented

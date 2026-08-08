@@ -17,7 +17,7 @@ Codex plan mode provides keyboard-navigable structured questions, but may not be
 
 1. Do NOT ask product or technical planning questions.
 2. Do NOT infer missing PRD, PROGRESS, TECH_PLAN, or models.yaml content.
-3. Do NOT edit source code.
+3. Do NOT edit source code. **This prohibition is about project source, not file extension.** A planning artifact under `.belmont/` is in scope even when its extension looks like code — specifically `{base}/design-preview.html`, the self-contained review page for a Design Contract. Apply it like any other packet file. What remains forbidden is writing to the project's own `.tsx`/`.ts`/`.css`/etc. files, at any path outside `.belmont/`.
 4. Only write files under `.belmont/`.
 5. Only write, create, or update files explicitly listed in the packet.
 6. Preserve existing content unless the packet explicitly says a file should be replaced.
@@ -57,7 +57,7 @@ YAML-like structure is preferred, but exact YAML parsing is not required. The ke
 
 1. Read the packet.
 2. Validate that every target path is under `.belmont/`.
-3. Validate that no source-code paths are listed.
+3. Validate that no **project source-code** paths are listed. A `.html`, `.css` or `.json` file under `.belmont/` is a planning artifact and is allowed; the same extension outside `.belmont/` is not.
 4. Apply the file changes exactly as specified.
 5. Run:
    ```bash
@@ -78,6 +78,6 @@ Stop without editing if:
 
 - No `BELMONT_PLAN_PACKET` is present.
 - Any target path escapes `.belmont/`.
-- The packet asks for source-code changes.
+- The packet asks for project source-code changes (any path outside `.belmont/`).
 - The packet asks you to make new planning decisions.
 - The packet conflicts with existing files and does not state whether to update or replace.

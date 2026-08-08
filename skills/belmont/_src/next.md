@@ -128,6 +128,16 @@ Create `{base}/MILESTONE.md` with a focused, lightweight version of the mileston
 ## Design Specifications
 [Not populated — lightweight mode skips the design agent. Note any Figma URLs here if present.]
 
+**Carry forward, do not clobber.** Before writing these two placeholders, check
+for an existing archive at `{base}/MILESTONE-[MilestoneID].done.md`. If its
+`## Codebase Analysis` or `## Design Specifications` section is **populated**
+(i.e. does not start `[Not populated —`), copy that section's content into this
+file instead of the placeholder. Those sections were produced by full
+`/belmont:implement` runs and hold the per-task design specs — including any
+`**Contract Source**` line and its derived tokens and states. Step 5 overwrites
+the archive with this file, so a placeholder written here destroys them
+permanently, and the next verify has nothing to check against.
+
 ## Implementation Log
 [Written by implementation-agent]
 ```
@@ -170,7 +180,7 @@ After the implementation agent completes:
 
 ## Step 5: Clean Up MILESTONE File
 
-Archive the MILESTONE file: `{base}/MILESTONE.md` → `{base}/MILESTONE-[MilestoneID].done.md` (e.g., `MILESTONE-M2.done.md`). Use the **milestone ID** (M1, M2, etc.), NOT the task ID. If a file with that name already exists (from a previous task in the same milestone), overwrite it.
+Archive the MILESTONE file: `{base}/MILESTONE.md` → `{base}/MILESTONE-[MilestoneID].done.md` (e.g., `MILESTONE-M2.done.md`). Use the **milestone ID** (M1, M2, etc.), NOT the task ID. If a file with that name already exists (from a previous task in the same milestone), overwrite it — this is safe only because Step 2 carried its populated `## Codebase Analysis` and `## Design Specifications` sections forward. If you skipped that carry-forward, do NOT overwrite: merge those two sections back in first.
 
 This prevents stale context from bleeding into the next run.
 

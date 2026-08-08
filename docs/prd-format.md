@@ -51,6 +51,10 @@ Tasks may additionally use `[WEB]` / `[API]` prefixes (e.g. `[WEB] Render the ne
 **Verification**: Visual parity with Figma at all three breakpoints; sidebar collapses below md.
 ```
 
+**Figma is one design input among several, not the design source.** A `**Figma**:` field gives the design-agent an exact reference to extract from, and gives verification something to compare screenshots against. It is not required. Where a feature has a UI but no Figma URL on any task, `/belmont:tech-plan` derives a **Design Contract** into the feature's `TECH_PLAN.md` instead, and that becomes the design authority — see [workflow.md](workflow.md). Where a feature has no UI at all, neither applies.
+
+Note the granularity: a feature counts as a Figma feature if **any** task carries a URL. Mixing covered and uncovered UI tasks in one feature means no contract is derived, because there is no single authority to reconcile the two against — so prefer either annotating every UI task or none.
+
 **Key points:**
 - No status markers (emoji) on task headers -- status lives in PROGRESS.md only
 - Follow-up tasks discovered during implementation are added as plain tasks (no special tag)

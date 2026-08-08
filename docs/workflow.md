@@ -58,6 +58,10 @@ Other:        Load skills/belmont/tech-plan.md as context
 **What happens:**
 - AI reads the PRD and explores the codebase
 - Interactive discussion about architecture, patterns, edge cases
+- **If the feature has a UI and no Figma URLs anywhere in its PRD**, the AI derives a **Design Contract** (Phase 3.5) and presents it to you for approval: design tokens, an accessibility floor, UX strategy, a component state inventory, microcopy rules, and a motion contract. On approval it is written into the feature's `TECH_PLAN.md` under `## Design Contract`, alongside a self-contained `design-preview.html` you can open to review it. Downstream agents implement against it and verification measures the running UI against it.
+  - Features with Figma URLs record `**Mode**: N/A — Figma present` and keep today's Figma-driven behaviour. Features with no UI record `**Mode**: N/A — no UI`. Only `derived — UI, no Figma` is a contract.
+  - **The gate is not retroactive.** A feature planned before contracts existed has no `## Design Contract` and keeps its existing acceptance-criteria verification — applying a new quality standard to an already-approved plan would fail milestones on a bar their author never agreed to. To adopt it, re-run `/belmont:tech-plan --feature <slug>` and approve the contract.
+  - **Only `/belmont:tech-plan` writes that section.** Implement, verify, next and debug read it and never write it; `review-plans` treats it as read-only. Under `belmont auto`, a headless replan preserves an existing contract verbatim and never creates one.
 - AI writes `.belmont/TECH_PLAN.md` with file structures, component specs, API types
 - AI assesses per-agent effort (codebase / design / implementation / verification / code-review / reconciliation) and proposes **model tiers** — `low` / `medium` / `high` per agent. You confirm or adjust; the choice is written to `.belmont/features/<slug>/models.yaml`. If you accept Belmont defaults, no file is written and each agent inherits the session model (auto mode forces the high tier only for planning and reconciliation). See `skills/belmont/references/models-yaml-format.md` for the schema and tier → model mapping per CLI.
 
@@ -74,7 +78,7 @@ Other:        Load skills/belmont/implement.md as context
 **What happens:**
 1. Orchestrator creates `.belmont/MILESTONE.md` with task list, PRD context, and TECH_PLAN context
 2. `codebase-agent` reads MILESTONE, scans codebase, writes patterns to MILESTONE *(parallel with 3)*
-3. `design-agent` reads MILESTONE, loads Figma, writes design specs to MILESTONE *(parallel with 2)*
+3. `design-agent` reads MILESTONE and derives design specs — from Figma where it exists, otherwise against the feature's Design Contract — and writes them to MILESTONE *(parallel with 2)*
 4. `implementation-agent` reads MILESTONE (only), writes code, tests, verification, commits
 5. PROGRESS.md task states are updated, follow-up tasks added as plain `[ ]` entries
 6. MILESTONE file is archived (`MILESTONE-M2.done.md`)

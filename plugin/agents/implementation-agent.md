@@ -192,16 +192,19 @@ Skip this section for tasks with zero visual output (CLI tools, API routes, data
 
 If this task creates or modifies anything visual (pages, components, layouts, styles, design tokens):
 1. **Start the project's preview tool** if not already running. For component-only tasks, prefer a component preview tool if available (e.g., Storybook). Apply the port rules from the `## Build & Test Checks` section above — primary dev server goes on `$BELMONT_PORT` via the bundler CLI directly, secondary servers get a dynamic free port, and all URLs you use are `$BELMONT_BASE_URL/...` (never `localhost:3000` even if config files say so). Wait for the server to be ready before navigating.
-2. **Navigate with Playwright MCP** (`mcp__playwright__browser_navigate`) to the relevant page or component story.
-3. **Take a screenshot** (`mcp__playwright__browser_take_screenshot`).
-4. **Compare against design references**. Check the MILESTONE file's `## Design Specifications` for Figma sources or other visual references:
-   - If Figma `fileKey`/`nodeId` are present in the Figma Sources table, call `mcp__plugin_figma_figma__get_screenshot` with those values and compare each dimension: layout structure, spacing, typography, colors, component shapes, alignment. Fix any discrepancies before proceeding.
+2. **Navigate with the browser MCP** (the tool whose name ends with `browser_navigate`) to the relevant page or component story.
+3. **Take a screenshot** (`*browser_take_screenshot`).
+4. **Compare against the design authority.** Check the MILESTONE file's `## Design Specifications` for what your spec was derived from:
+   - If Figma `fileKey`/`nodeId` are present in the Figma Sources table, call the Figma MCP's `get_screenshot` with those values and compare each dimension: layout structure, spacing, typography, colors, component shapes, alignment. Fix any discrepancies before proceeding.
    - If other reference images are linked (screenshots, mockups), load and compare against those.
-   - If no visual reference exists, note "No design reference available" in the Implementation Log — do not skip silently.
+   - **If the spec carries a `**Contract Source**` line**, your authority is the feature's Design Contract at that path. There is no image to compare against — check the rendered result against the contract instead: spacing, type sizes, colours, radius and elevation all on the declared scales; contrast ≥ 4.5:1 for body text; touch targets ≥ 44×44; a visible focus indicator on every interactive element; every input visibly labelled; every State Inventory state implemented; transitions inside the declared bands, using the declared easing, animating only `transform`/`opacity`. Verification will check these with measurements, so fix them now rather than shipping them into a failing gate.
+   - If no reference and no contract exists, note "No design reference available" in the Implementation Log — do not skip silently.
 5. Fix any visual discrepancies found, then re-run Step 3.
 6. Clean up any screenshot files created during validation.
 
-If Playwright MCP is unavailable (tools not found or connection fails), document this in the Implementation Log as "Visual validation skipped: Playwright MCP unavailable" — do NOT silently skip.
+**Resolve browser MCP tools by suffix, not by a pinned prefix** — Claude Code synthesises `mcp__plugin_<plugin>_<server>__` for plugin-registered servers and `mcp__<server>__` for directly-registered ones, so neither is canonical. Match `*browser_navigate`, `*browser_take_screenshot`, `*browser_evaluate` and so on, and match `*get_screenshot` for Figma.
+
+If no browser MCP tool is available (none matches, or the connection fails), document this in the Implementation Log as "Visual validation skipped: browser MCP unavailable" — do NOT silently skip.
 
 **3. Self-Validation Gate**
 

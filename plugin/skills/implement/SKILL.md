@@ -412,19 +412,23 @@ Use the dispatch method you selected in "Choosing Your Dispatch Method" above. F
 
 ### Phase 2: Design Analysis (design-agent) — *runs in parallel with Phase 1*
 
-**Purpose**: Analyze Figma designs (if provided) for ALL tasks, write design specifications to the MILESTONE file.
+**Purpose**: Establish the design authority for ALL tasks and write per-task design specifications into the MILESTONE file. Where Figma URLs exist, that authority is the Figma design. Where the feature has a UI but no Figma, it is the **Design Contract** in `{base}/TECH_PLAN.md` — an approved, per-feature standard covering tokens, accessibility, states, microcopy and motion, which the design agent turns into per-task specs and verification later checks against.
 
 **Skip this phase entirely when the milestone has no design input.** You have already read the active tasks' PRD sections in Setup. Skip when **none** of them:
 
 - carries a `**Figma**:` field or any Figma URL,
 - links a mockup, screenshot or reference image, or
-- produces visible UI — a page, component, layout, style, or user-facing copy change.
+- produces visible UI — a page, component, layout, style, or user-facing copy change,
+
+**and** `{base}/TECH_PLAN.md` has no Design Contract. Check that last one cheaply — grep the file for `## Design Contract` and read only its `**Mode**` line. A contract counts **only** when `**Mode**` is `derived — UI, no Figma`; both `N/A` values and an absent section are "no contract".
+
+A contract is an explicit, human-approved statement that this feature has a UI worth holding to a standard. The three bullets above are judgement calls about the tasks in front of you; this one is not, so it wins. **A milestone whose feature has a contract never skips Phase 2** — otherwise the standard its author approved is silently ignored for exactly the milestones it was written for.
 
 When you skip, write this into the MILESTONE file's `## Design Specifications` section and go straight to Phase 3:
 
 ```
 [Not populated — no design input: no task in this milestone has a Figma URL,
-reference image, or visible UI.]
+reference image, or visible UI, and the feature has no Design Contract.]
 ```
 
 Do **not** spawn the agent just to have it report there is nothing to analyse. That spends a full sub-agent's context — its own spec reads included — on a null result. A backend, data, infrastructure or tooling milestone typically has no design input at all.
@@ -463,7 +467,7 @@ If you are NOT using Agent Teams: Spawn a sub-agent with this prompt:
 
 If you ARE using Agent Teams: Add an implementation-agent into the team per task in the milestone, with the same prompt as above. Use the team-lead to coordinate between them if they need to edit the same areas fo the codebase.
 
-**Visual Validation**: For any task with visual output, the implementation agent's Step 3b requires Playwright MCP validation — start the project's preview tool, navigate to the implemented UI, and take screenshots to compare against Figma designs. Do NOT silently skip this step.
+**Visual Validation**: For any task with visual output, the implementation agent's Step 3b requires browser-MCP validation — start the project's preview tool, navigate to the implemented UI, and take screenshots. What it compares them against depends on what authority exists: Figma designs or reference images where those exist, otherwise the feature's Design Contract (tokens on the declared scales, the Accessibility Floor met, every State Inventory entry rendered). Do NOT silently skip this step.
 
 **Wait for**: Sub-agent to complete with all tasks implemented, verified, and committed. Verify that `## Implementation Log` in the MILESTONE file has been populated.
 

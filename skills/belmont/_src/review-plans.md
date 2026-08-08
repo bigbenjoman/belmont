@@ -209,6 +209,16 @@ Present each finding with:
 2. Add to notes as discovery — append to NOTES.md
 3. Skip
 
+### `## Design Contract` is READ-ONLY
+
+A feature TECH_PLAN's `## Design Contract` section carries an approval stamp from the `/belmont:tech-plan` session where a human reviewed it. This skill's per-finding flow does not renew that approval, so it must never rewrite the section.
+
+- **Never** offer "update plan to match reality", "rewrite both", or any other option that edits `## Design Contract`. Drop those options for findings that touch it.
+- **Do** report the finding — a contract that has drifted from the code is worth knowing about. Emit it as a finding whose only resolution options are *Create follow-up task to realign the code*, *Add note as intentional deviation*, and *Skip*.
+- If the contract itself is genuinely wrong, the fix is to re-run `/belmont:tech-plan --feature <slug>` so the user re-approves it. Say that in the finding.
+
+The rest of `TECH_PLAN.md` is editable as normal.
+
 ### When Updating Documents
 
 - **Creating tasks**: Add to feature PRD under Tasks section as `P0-X-REVIEW: [description]` with `**Source**: Review audit [date]`. Add the task to the appropriate PROGRESS milestone.

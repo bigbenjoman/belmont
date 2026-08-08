@@ -47,3 +47,4 @@ Every other tool (Claude Code, opencode, Cursor, Windsurf, Gemini, GitHub Copilo
 ## Revisions
 
 - 2026-06-09 — created when landing PR #19; renamed the skill `plan-apply` → `codex-plan-apply` and recorded the prose-only (un-gated) Codex scoping as a known interim, with mechanical per-tool skill visibility flagged as future work.
+- 2026-08-08 — the packet gained its first **non-Markdown payload**: `{base}/design-preview.html`, the Design Contract's review artifact. `codex-plan-apply` applies two gates — a path constraint (satisfied: it is under `.belmont/`) and a source-code content prohibition, which a self-contained `.html` would otherwise trip. The prohibition is now scoped to *project* source rather than file extension: any file under `.belmont/` is a planning artifact regardless of extension, and the same extension outside `.belmont/` is still refused.

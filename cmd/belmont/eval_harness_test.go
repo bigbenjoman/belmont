@@ -173,6 +173,40 @@ func evalFixtures() []evalFixture {
 			LiveExpect: map[string][]taskStatus{"P1-M1-1": {taskDone}},
 		},
 		{
+			// The design-quality negative fixture, and the only one covering the
+			// third design state: visible UI with no Figma anywhere. The other
+			// five are either design-free or unconcerned with design.
+			//
+			// Its TECH_PLAN carries a Design Contract with
+			// **Mode**: derived — UI, no Figma. badge.css satisfies every
+			// acceptance criterion in PRD.md while violating that contract
+			// (2.6:1 error text against a 4.5:1 floor; a semantic declaring a
+			// background but no border or text colour). The separation is
+			// deliberate: acceptance criteria alone cannot catch it, so only a
+			// verify that actually runs the contract checks can fail this
+			// milestone. That is what makes it a gate rather than a checkbox.
+			//
+			// Tier 1 pins the same surprising fact as failing-acceptance:
+			// milestoneAllDone treats [x] as done, so a fresh loop over an
+			// all-[x] milestone resolves to COMPLETE and yields no waves.
+			// Tier 2 drives actionVerify directly.
+			Name:       "ui-no-figma",
+			Milestones: 1,
+			TaskStates: map[string]taskStatus{
+				"P1-M1-1": taskDone, "P1-M1-2": taskDone,
+			},
+			DecidesTo: actionComplete,
+			Waves:     nil,
+			Live:      true,
+			// Exactly one acceptable state per task. [v] here means the agent
+			// verified a UI that violates the design contract its own feature
+			// plan declares — the regression this fixture exists to catch.
+			LiveExpect: map[string][]taskStatus{
+				"P1-M1-1": {taskDone},
+				"P1-M1-2": {taskDone},
+			},
+		},
+		{
 			// Two independent milestones. Used by the manual /belmont:loop
 			// before/after comparison, because the loop must advance from one
 			// milestone to the next rather than running a single phase.
@@ -523,13 +557,16 @@ const evalLiveRuns = 3
 
 // liveActionFor picks the phase each live fixture exercises.
 //
-// failing-acceptance is driven straight to VERIFY rather than through the
-// decision engine: its milestone is all-[x], which milestoneAllDone treats as
-// done, so the engine would return COMPLETE and no agent would ever run. See
-// the fixture comment.
+// failing-acceptance and ui-no-figma are driven straight to VERIFY rather than
+// through the decision engine: their milestones are all-[x], which
+// milestoneAllDone treats as done, so the engine would return COMPLETE and no
+// agent would ever run. See the fixture comments.
 func liveActionFor(fx evalFixture) loopAction {
-	if fx.Name == "failing-acceptance" {
+	switch fx.Name {
+	case "failing-acceptance":
 		return loopAction{Type: actionVerify, MilestoneID: "M1", Reason: "eval: verify a milestone with a known defect"}
+	case "ui-no-figma":
+		return loopAction{Type: actionVerify, MilestoneID: "M1", Reason: "eval: verify a milestone that violates its design contract"}
 	}
 	return loopAction{Type: actionImplementMilestone, MilestoneID: "M1", Reason: "eval: implement"}
 }

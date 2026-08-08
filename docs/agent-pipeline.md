@@ -22,16 +22,27 @@ Reads the MILESTONE file, then scans the project:
 
 **File**: `.agents/belmont/design-agent.md`
 
-Reads the MILESTONE file, then analyzes Figma designs when provided:
+Reads the MILESTONE file, then produces per-task design specs. It has **two modes**, chosen by whether the PRD task definitions carry Figma URLs — never by whether a Figma load succeeded.
+
+**Figma mode** (any active task has a Figma URL):
 - Loads designs via Figma Plugin or MCP
 - Extracts exact colors, typography, spacing, effects
 - Maps to existing design system components
 - Identifies new components to create
 - Produces implementation-ready component code
 
+**Contract mode** (no Figma URLs, and the feature has an approved Design Contract):
+- Reads the `## Design Contract` from `{base}/TECH_PLAN.md` and the master TECH_PLAN
+- Picks values off the contract's declared scales — never mints new ones
+- Enumerates every State Inventory state for each component the task builds
+- Applies the Accessibility Floor to each component spec
+- Writes the same per-task structure, with a `**Contract Source**` line in place of the Figma Sources table
+
+A feature with neither — including the uncovered tasks of a mixed-Figma feature — keeps the older behaviour: follow existing component patterns and flag that no design was given.
+
 **Writes to**: `## Design Specifications` section of MILESTONE.md
 
-**Blocking**: If Figma URLs are provided but fail to load, the task is blocked.
+**Blocking**: If Figma URLs are provided but fail to load, the task is blocked. A Design Contract is **not** a fallback for a failed load — it is only ever an authority where no design exists to read.
 
 ## Phase 3: Implementation (implementation-agent) — *after Phases 1+2*
 
@@ -55,7 +66,7 @@ Reads the complete MILESTONE file (all research phases' output):
 Verifies implementations against requirements:
 - Reads PRD, TECH_PLAN, and archived MILESTONE files for context
 - Acceptance criteria pass/fail
-- Visual comparison with Figma (Playwright headless)
+- Visual verification, three-way: comparison against Figma/reference images where they exist, measurement against the Design Contract where one is approved, and acceptance criteria where neither exists. A contract's checks run *in addition to* a reference comparison, never instead of it
 - i18n key verification
 - Functional testing (happy path, edge cases, accessibility)
 

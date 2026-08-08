@@ -379,7 +379,7 @@ If the existing PRD/PROGRESS already contains standalone verification/QA/testing
 
 ## Process
 
-1. Load relevant skills for the domain (figma:*, frontend-design, vercel-react-best-practices, security, etc.)
+1. Load relevant skills for the domain by their exact registered name (`figma:*`, `frontend-design:frontend-design`, `vercel:react-best-practices`, etc.). A name that doesn't resolve loads nothing and fails silently.
 2. Ask the user what they want to build.
 3. **Calibrate silently** (see *Dynamic Questioning Depth* above) — read the brief, decide which domains are in scope, note the obvious unknowns. Do not announce a tier to the user; just start asking.
 4. Walk the **Domains to Cover** checklist. For each relevant domain, run as many rounds as it takes to actually resolve it. Dig on ambiguity; skip what the brief, PRD, or prior answers already settle. No round cap.

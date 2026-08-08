@@ -10,7 +10,9 @@ Strong guardrails are in place to keep the agent focused and on task.
 
 **Working Backwards (PR/FAQ)** -- Belmont supports Amazon's Working Backwards methodology as a strategic first step. Define your product vision with a PR/FAQ document before breaking it into features and tasks.
 
-**Figma-first design workflow** -- Belmont is built heavily around understanding Figma designs. The design-agent extracts exact tokens (colors, typography, spacing), maps them to your design system, and produces implementation-ready component specs. The verification-agent compares your implementation against the Figma source using Playwright headless screenshots. For the best experience, install [figma-mcp](https://github.com/nichochar/figma-mcp) so Belmont can load and analyze your designs automatically.
+**Design quality with or without Figma** -- where Figma designs exist, Belmont is built around understanding them: the design-agent extracts exact tokens (colors, typography, spacing), maps them to your design system, and produces implementation-ready component specs, and the verification-agent compares your implementation against the Figma source using headless browser screenshots. For the best experience, install [figma-mcp](https://github.com/nichochar/figma-mcp) so Belmont can load and analyze your designs automatically.
+
+Where a feature has a UI but **no** Figma, `/belmont:tech-plan` derives a **Design Contract** with you instead -- a per-feature standard covering design tokens, an accessibility floor, UX strategy, component states, microcopy and motion. It is approved once, by you, and then downstream agents implement against it and verification measures the running UI against it. Without one, a no-Figma UI feature has no design authority at all and verification silently falls back to checking acceptance criteria.
 
 ---
 
@@ -105,7 +107,7 @@ Orchestrator
     │
     ├─ 2. Research phases (parallel — both run simultaneously):
     │     ├─ codebase-agent ─── reads MILESTONE.md + codebase ── writes Codebase Analysis section
-    │     └─ design-agent ───── reads MILESTONE.md + Figma ──── writes Design Specifications section
+    │     └─ design-agent ───── reads MILESTONE.md + Figma/Contract ─ writes Design Specifications section
     │
     ├─ 3. Spawns implementation-agent ── reads MILESTONE.md ── writes code + Implementation Log
     │
@@ -123,7 +125,7 @@ When you run the implement skill, the orchestrator creates a MILESTONE file, the
 | Phase              | Agent                  | Model* | Reads                | Writes to MILESTONE                                  |
 |--------------------|------------------------|--------|----------------------|------------------------------------------------------|
 | 1. Codebase Scan   | `codebase-agent`       | Session | MILESTONE + codebase | `## Codebase Analysis`                               |
-| 2. Design Analysis | `design-agent`         | Session | MILESTONE + Figma    | `## Design Specifications`                           |
+| 2. Design Analysis | `design-agent`         | Session | MILESTONE + Figma **or** Design Contract | `## Design Specifications`       |
 | 3. Implementation  | `implementation-agent` | Session | MILESTONE (only)     | Code, unit tests, E2E tests, `## Implementation Log` |
 
 \* Agents pin no model — each sub-agent inherits your **session model** by default (run Belmont on a strong model and the whole pipeline follows). Set per-feature tiers in `.belmont/features/<slug>/models.yaml` to pin specific models per agent — see [Per-feature model tiers](docs/workflow.md). When choosing tiers, optimize for first-pass correctness: a failed milestone re-runs the whole pipeline, which costs far more tokens than a premium tier saves.
@@ -136,7 +138,7 @@ When you run the verify skill, two agents run:
 
 | Agent                | Model* | What It Does                                                                                                   |
 |----------------------|--------|----------------------------------------------------------------------------------------------------------------|
-| `verification-agent` | Session | Checks acceptance criteria, visual Figma comparison via Playwright headless, i18n keys                         |
+| `verification-agent` | Session | Checks acceptance criteria, visual comparison against Figma or measurement against the Design Contract (headless browser), i18n keys |
 | `code-review-agent`  | Session | Runs build, test, and E2E test commands (auto-detects package manager), reviews code quality and PRD alignment |
 
 \* Inherits your session model; pin per feature via `models.yaml`. A verification false-pass is the most expensive mistake in the pipeline (it surfaces later as a debug loop), so set verification `high` when you configure tiers.

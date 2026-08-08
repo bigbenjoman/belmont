@@ -13,7 +13,7 @@ Interactive `/belmont:debug-manual` is the **only** Belmont skill that may edit 
 | File | What you may change |
 |---|---|
 | `{base}/PRD.md` | Acceptance criteria text, `**Solution**:` / `**Verification**:` field text, task descriptions, Overview / Problem Statement prose, Success Criteria, Out of Scope |
-| `{base}/TECH_PLAN.md` | Decision narrative, library choices, file-path references, API shapes — anything where reality has moved past the written record |
+| `{base}/TECH_PLAN.md` | Decision narrative, library choices, file-path references, API shapes — anything where reality has moved past the written record. **Except `## Design Contract`**, which is written only by `/belmont:tech-plan` and carries an approval stamp this flow cannot renew |
 | `.belmont/TECH_PLAN.md` | Cross-cutting decisions that the fix proved wrong or incomplete |
 | `.belmont/PR_FAQ.md` | Only with per-edit explicit approval. PR_FAQ is strategic — flag it for the user before proposing diffs |
 | `.belmont/PRD.md` | Master feature-catalog entries (status text, dependency notes) |

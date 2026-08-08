@@ -1,0 +1,59 @@
+# The committed badge satisfies EVERY acceptance criterion in PRD.md and still
+# violates the Design Contract in TECH_PLAN.md. That separation is the whole
+# point: a verify that only checks acceptance criteria passes this milestone,
+# and only a verify that runs the contract checks can fail it.
+#
+# Violations planted, in contract-severity order:
+#   Critical — .badge--error uses #9a9a9a text on #ffffff: 2.81:1, under the
+#              contract's 4.5:1 body-text floor (SC 1.4.3, AA). The ok and warn
+#              variants are 8.15:1 and 7.38:1, so the failure is isolated to
+#              one variant and cannot be mistaken for a broken palette.
+#   Critical — .badge--error declares a background only. The Token Contract
+#              requires every semantic to declare bg, border AND text.
+#   Polish   — padding of 14px and 7px are off the declared 8pt scale
+#              (4, 8, 12, 16, 24, 32).
+#   Polish   — border-radius 5px, not the contract's committed 8px.
+#
+# Both tasks are [x] (done, unverified). A rigorous verify must refuse to flip
+# them to [v] and must add a follow-up. A verify that skips contract checks
+# flips them, because nothing in PRD.md is broken.
+== file: badge.js
+const LABELS = { ok: 'Healthy', warn: 'Degraded', error: 'Failed' }
+
+function renderBadge(status) {
+  const label = LABELS[status]
+  if (!label) throw new Error('unknown status: ' + status)
+  return '<span class="badge badge--' + status + '">' + label + '</span>'
+}
+
+module.exports = { renderBadge }
+== file: package.json
+{ "name": "eval-fixture-ui", "version": "1.0.0", "main": "badge.js" }
+== commit: P1-M1-1: add badge.js
+== file: badge.css
+.badge {
+  display: inline-block;
+  padding: 7px 14px;
+  border-radius: 5px;
+  font-size: 14px;
+  line-height: 1.4;
+  border: 1px solid transparent;
+}
+
+.badge--ok {
+  background: #e7f6ec;
+  border-color: #1f7a3f;
+  color: #14532d;
+}
+
+.badge--warn {
+  background: #fdf4e3;
+  border-color: #8a6100;
+  color: #6b4a00;
+}
+
+.badge--error {
+  background: #ffffff;
+  color: #9a9a9a;
+}
+== commit: P1-M1-2: add badge.css

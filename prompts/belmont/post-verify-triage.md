@@ -34,10 +34,25 @@ Apply these rules in order:
 - Runtime errors or broken functionality
 - Security vulnerabilities
 - Acceptance criteria not met
-- Significant visual mismatches from Figma design (layout broken, wrong colors, missing components)
+- Significant visual mismatches from the design authority — a Figma design, a reference image, or the feature's Design Contract (layout broken, wrong colors, missing components)
+- **Design Contract violations** (see the non-deferrable list below)
 - Missing required features specified in the PRD
 - Scope violations (implemented out-of-scope work that should be reverted)
 - i18n keys missing for primary user-facing text
+
+### Design Contract violations — NEVER deferrable
+
+If `{{.FeatureBase}}/TECH_PLAN.md` carries a `## Design Contract` whose `**Mode**` is `derived — UI, no Figma`, these follow-ups are **always blocking**, regardless of how minor the wording makes them sound. They come from an accessibility floor a human approved, and deferring them defeats the gate:
+
+- Contrast below the contract's ratio (4.5:1 body, 3:1 large)
+- A missing or invisible focus indicator on any interactive element
+- An input with no visible label, or a placeholder used as a label
+- A missing State Inventory state (no error state, no loading state, no empty state)
+- `prefers-reduced-motion` not respected
+- Meaning conveyed by colour alone
+- A verification check recorded `UNVERIFIABLE` where the contract required it — that is an unmeasured gate, not a passed one
+
+The rest of a contract's findings — off-scale spacing, off-scale radius, elevation or easing inconsistency — follow the normal rules and may be deferred.
 
 ### Deferrable (fix later)
 - Missing aria-labels or aria-describedby
@@ -99,5 +114,5 @@ Fields:
 - **Read the actual follow-up descriptions** — don't just count them. A single critical follow-up matters more than 10 polish items.
 - **Err on the side of fixing** — when genuinely unsure if something is blocking or deferrable, treat it as blocking. It's better to fix too much than to ship bugs.
 - **UI/visual issues are usually blocking** — design fidelity matters. Only defer truly minor visual polish (1-2px tweaks, animation smoothness).
-- **The circuit breaker (fix round >= 2) is absolute** — after 2 rounds, defer everything regardless. The loop must not get stuck.
+- **The circuit breaker (fix round >= 2) is absolute** — after 2 rounds, defer everything regardless, including Design Contract violations. The loop must not get stuck. But when the breaker defers a contract violation, say so explicitly in `reason` and label the NOTES.md entry `Deferred by circuit breaker — Design Contract violation, still outstanding`. An accessibility failure that the loop gave up on must not read like a polish item someone chose to postpone.
 - **Always output the JSON block** — the Go loop parses this to determine the next action.
