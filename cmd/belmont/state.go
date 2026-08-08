@@ -191,6 +191,35 @@ func canonicalMarker(marker string) (taskStatus, bool) {
 	}
 }
 
+// taskStatePriority orders task states by how advanced they are. Used wherever
+// two versions of the same task must be reconciled — merge-conflict resolution
+// and the post-merge worktree state sync.
+//
+// Blocked is deliberately below todo: `[!]` is a human signal that something
+// needs attention, so it must never be silently overwritten by a "more
+// advanced" state from the other side. Callers special-case it.
+var taskStatePriority = map[taskStatus]int{
+	taskTodo:       0,
+	taskInProgress: 1,
+	taskDone:       2,
+	taskVerified:   3,
+	taskBlocked:    -1,
+}
+
+// markerRank returns how advanced a raw marker is, and whether it was
+// recognised. Unrecognised markers report (0, false) — callers must treat that
+// as "cannot compare", NOT as "equal to todo". Ranking an unreadable marker
+// alongside real states is what let `[X]` lose to `[>]` and let unrecognised
+// markers be silently overwritten at merge time. See issue #27.
+func markerRank(marker string) (int, bool) {
+	st, ok := canonicalMarker(marker)
+	if !ok {
+		return 0, false
+	}
+	p, known := taskStatePriority[st]
+	return p, known
+}
+
 // markerIsVerified reports whether a raw marker means "verified". Used by the
 // evidence guard, which works on raw markers read out of PROGRESS.md rather
 // than on parsed tasks.

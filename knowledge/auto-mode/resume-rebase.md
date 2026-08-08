@@ -38,6 +38,7 @@ Test coverage in `cmd/belmont/rebase_test.go`:
 ## Don't re-do
 
 - **Fetch from `origin` before rebasing.** Considered. Unnecessary — worktree and main repo share `.git/objects`, so the main HEAD SHA is already reachable. Fetching `origin` also touches user-configured remotes (network calls, auth) and isn't relevant: we want main's local tip, not its remote.
+- **Let worktree seeding run on resume.** `copyBelmontStateToWorktree` is a destructive replace of the feature dir, so on a preserved worktree it overwrites the agent's completed tasks with master's fork-time snapshot — and `--assume-unchanged` means those flips are in no commit, so they are gone. `runMilestoneInWorktree` did this for its whole life (#29). Both callers now go through `createWorktreeIfNeeded`, which returns early when `resumed`. Same reasoning as the entry below, one layer earlier.
 - **Refresh `.belmont/features/<slug>/PROGRESS.md` from main after a successful rebase.** Considered. The worktree's PROGRESS.md is the *live* state (with `[!]` markers, in-progress flips, etc.); main's copy is the *last-merged* snapshot, which is stale for any paused feature. Overlaying main's would clobber the worktree's truth. Trust the worktree's PROGRESS.md and let the agent re-evaluate blockers.
 - **Eagerly propagate each merge to other paused sibling worktrees mid-wave at `MaxParallel > 1`.** Considered. Adds conflict-handling complexity in the hot path and would require stdin per paused sibling. The next fresh invocation catches the same cases via this entry's rebase-on-resume; no need to do it mid-wave.
 - **Use `git pull --rebase` instead of `git rebase <sha>`.** `git pull` requires an upstream tracking branch, which Belmont feature branches don't have. The direct SHA form keeps the helper self-contained and doesn't touch remote config.
@@ -52,3 +53,4 @@ Test coverage in `cmd/belmont/rebase_test.go`:
 
 - 2026-05-12 — initial (`rebaseWorktreeOnMain` helper, fresh-invocation gate, clean-tree skip, conflict abort, STEERING preservation verified). Motivated by geoguesser-meta cross-feature implicit task dep cascade.
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
+- 2026-08-08 — added the seeding-on-resume rejection after #29: `runMilestoneInWorktree` ran `copyBelmontStateToWorktree` unguarded, wiping resumed worktrees' completions. Guard now lives in `createWorktreeIfNeeded`, shared by both callers.

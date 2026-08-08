@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -317,6 +318,40 @@ func untrackBelmontInWorktree(wtPath, slug string) {
 	}
 }
 
+// createWorktreeIfNeeded creates the git worktree for a branch and seeds it with
+// the feature's .belmont/ state. It is a NO-OP when resuming.
+//
+// The resume guard is the whole point of this helper existing. Seeding calls
+// copyBelmontStateToWorktree, which is a destructive replace of the feature
+// dir — run against a preserved worktree it overwrites the live PROGRESS.md
+// (the agent's completed tasks) with master's fork-time snapshot, and those
+// flips are in no commit anywhere because `.belmont/` is assume-unchanged in
+// worktrees. knowledge/auto-mode/resume-rebase.md rejects exactly this under
+// "Don't re-do".
+//
+// This lived inline in two callers that drifted apart: runFeatureInWorktree
+// guarded it, runMilestoneInWorktree did not. Keep it in one place so they
+// cannot diverge again. See issue #29.
+func createWorktreeIfNeeded(root, wtPath, branch, slug string, resumed bool) error {
+	if resumed {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(wtPath), 0755); err != nil {
+		return fmt.Errorf("create worktree dir: %w", err)
+	}
+	cmd := exec.Command("git", "worktree", "add", "-b", branch, wtPath, "HEAD")
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git worktree add: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	if err := copyBelmontStateToWorktree(root, wtPath, slug); err != nil {
+		return fmt.Errorf("copy .belmont state to worktree: %w", err)
+	}
+	// Commit the initial feature state so the AI agent starts from a clean git state
+	commitWorktreeFeatureState(wtPath, slug)
+	return nil
+}
+
 // syncFeatureStateAfterMerge copies the feature's .belmont/ state from a worktree
 // back to the main repo after a successful merge. Since .belmont/ is excluded from
 // git tracking in worktrees (assume-unchanged), state must be synced separately.
@@ -328,11 +363,176 @@ func syncFeatureStateAfterMerge(mainRoot, wtPath, slug string) {
 		return
 	}
 
-	// Replace the main repo's feature state with the worktree's version
+	// PROGRESS.md is merged, not replaced. Every other file in the feature dir
+	// still takes the worktree's version wholesale.
+	//
+	// Why: this function runs once per sibling merge inside runWaveParallel's
+	// merge loop, and sibling worktrees each hold a FULL copy of the same
+	// feature dir taken at fork time. A destructive replace is therefore
+	// last-writer-wins across the wave — M2 merges and master records its
+	// tasks done, then M3 merges and master reverts them to their fork-time
+	// state. The flips are in no commit anywhere (`.belmont/` is
+	// assume-unchanged in worktrees, so this copy is the only transport), so
+	// they are unrecoverable. resolveProgressConflict — the union merge built
+	// for exactly this — never fires, because assume-unchanged means git never
+	// registers a conflict on the file. See issue #24.
+	//
+	// Reading master's copy BEFORE the wipe and merging it back after mirrors
+	// the STEERING.md preservation in copyBelmontStateToWorktree.
+	progressPath := filepath.Join(dstFeature, "PROGRESS.md")
+	masterProgress, masterReadErr := os.ReadFile(progressPath)
+
 	os.RemoveAll(dstFeature)
 	if err := copyDir(srcFeature, dstFeature); err != nil {
 		fmt.Fprintf(os.Stderr, "  \033[33m⚠ Failed to sync feature state for %s: %s\033[0m\n", slug, err)
+		return
 	}
+
+	if masterReadErr != nil {
+		return // master had no PROGRESS.md yet — the worktree's copy stands
+	}
+	wtProgress, err := os.ReadFile(progressPath)
+	if err != nil {
+		return
+	}
+	merged, warnings := mergeProgressState(string(masterProgress), string(wtProgress))
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "  \033[33m⚠ %s: %s\033[0m\n", slug, w)
+	}
+	if merged != string(wtProgress) {
+		if err := os.WriteFile(progressPath, []byte(merged), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "  \033[33m⚠ Failed to merge PROGRESS.md for %s: %s\033[0m\n", slug, err)
+		}
+	}
+}
+
+// mergeProgressState reconciles master's PROGRESS.md with a worktree's copy,
+// keeping the most-advanced state for every task and every task line either
+// side has. Returns the merged content plus any warnings worth printing.
+//
+// The worktree's document is the base, so structure and ordering are exactly
+// what a plain copy would have produced. Master then contributes:
+//
+//   - a more-advanced marker for any task it already recorded (this is the
+//     sibling-merge fix: master's `[x]` beats the worktree's stale `[ ]`)
+//   - any task line the worktree's fork-time copy predates entirely, e.g. a
+//     follow-up a sibling added to its own milestone after this worktree forked
+//
+// `[!]` blocked is never overwritten in either direction — it is a human signal
+// that something needs attention. An unrecognised marker on either side is left
+// exactly as written and reported, never ranked; see issue #27.
+//
+// Known limitation: tasks are matched by ID, so a task line without a parseable
+// `P<n>-…` ID is left as the worktree wrote it and never reconciled. Same
+// constraint as resolveProgressConflict, which uses the same shape of regex.
+// Belmont's own templates always emit IDs, so this bites only hand-written
+// entries.
+func mergeProgressState(masterContent, worktreeContent string) (string, []string) {
+	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
+	taskRe := regexp.MustCompile(`^(\s*-\s+)\[(.)\](\s+)(P\d+-[\w][\w-]*)(.*)$`)
+
+	type masterTask struct {
+		marker    string
+		line      string
+		milestone string
+	}
+	masterTasks := map[string]masterTask{}
+	currentMS := ""
+	for _, line := range strings.Split(masterContent, "\n") {
+		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 2 {
+			currentMS = "M" + m[1]
+			continue
+		}
+		if tm := taskRe.FindStringSubmatch(line); len(tm) >= 6 {
+			masterTasks[tm[4]] = masterTask{marker: tm[2], line: line, milestone: currentMS}
+		}
+	}
+	if len(masterTasks) == 0 {
+		return worktreeContent, nil
+	}
+
+	var warnings []string
+	seen := map[string]bool{}
+	lastTaskIdx := map[string]int{} // milestone -> index of its final task line
+	out := strings.Split(worktreeContent, "\n")
+
+	currentMS = ""
+	for i, line := range out {
+		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 2 {
+			currentMS = "M" + m[1]
+			continue
+		}
+		tm := taskRe.FindStringSubmatch(line)
+		if len(tm) < 6 {
+			continue
+		}
+		id := tm[4]
+		lastTaskIdx[currentMS] = i
+		mt, ok := masterTasks[id]
+		if !ok {
+			continue
+		}
+		seen[id] = true
+
+		wtMarker := tm[2]
+		// `[!]` on EITHER side wins, in both directions.
+		//
+		// A blocker is a human-attention signal, and the two failure modes are
+		// not symmetric: keeping a stale `[!]` costs someone a look (and auto
+		// pauses on blocked tasks, so it is loud), whereas dropping a live one
+		// means work is silently treated as fine. Rank alone would clear it —
+		// taskBlocked sorts below todo, so literally anything outranks it.
+		if wtMarker == "!" {
+			continue // already blocked here; leave the line as written
+		}
+		if mt.marker == "!" {
+			out[i] = tm[1] + "[!]" + tm[3] + tm[4] + tm[5]
+			continue
+		}
+		wtRank, wtOK := markerRank(wtMarker)
+		msRank, msOK := markerRank(mt.marker)
+		if !wtOK || !msOK {
+			warnings = append(warnings, fmt.Sprintf(
+				"task %s has an unrecognised marker ([%s] here, [%s] on main) — left as written, not merged",
+				id, wtMarker, mt.marker))
+			continue
+		}
+		if msRank > wtRank {
+			out[i] = tm[1] + "[" + mt.marker + "]" + tm[3] + tm[4] + tm[5]
+		}
+	}
+
+	// Carry over task lines master has that this worktree never saw — e.g. a
+	// follow-up a sibling added to its own milestone after this worktree
+	// forked. Collect first, keyed by the milestone's final task line, then
+	// splice in one pass: computing indices as we mutate would mis-place
+	// insertions whenever the two documents order milestones differently.
+	pending := map[int][]string{}
+	for _, line := range strings.Split(masterContent, "\n") {
+		tm := taskRe.FindStringSubmatch(line)
+		if len(tm) < 6 || seen[tm[4]] {
+			continue
+		}
+		mt := masterTasks[tm[4]]
+		at, ok := lastTaskIdx[mt.milestone]
+		if !ok {
+			warnings = append(warnings, fmt.Sprintf(
+				"task %s exists on main under %s, which this worktree's PROGRESS.md does not contain — not merged",
+				tm[4], nonEmpty(mt.milestone, "an unknown milestone")))
+			continue
+		}
+		pending[at] = append(pending[at], mt.line)
+	}
+	if len(pending) == 0 {
+		return strings.Join(out, "\n"), warnings
+	}
+
+	merged := make([]string, 0, len(out)+len(masterTasks))
+	for i, line := range out {
+		merged = append(merged, line)
+		merged = append(merged, pending[i]...)
+	}
+	return strings.Join(merged, "\n"), warnings
 }
 
 // commitWorktreeChanges commits all uncommitted changes in a worktree before merge.
