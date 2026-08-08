@@ -49,10 +49,19 @@ Then use the skills:
 
 ```
 /belmont:product-plan
+/belmont:tech-plan
 /belmont:implement
-/belmont:next
+/belmont:verify
 /belmont:status
 ```
+
+Or hand one feature to `/belmont:loop` and let it drive itself to completion:
+
+```
+/belmont:loop checkout      # or just /belmont:loop to pick from a list
+```
+
+`/belmont:loop` is **Claude Code only** — a thin wrapper around Claude Code's built-in `/loop` that repeats implement → verify → next → status for a single feature, pausing between iterations so you can watch and steer. It needs no CLI and no worktrees, which makes it the lightest path to end-to-end automation. For parallel milestones, worktree isolation, and milestone dependency tracking, use the CLI's `belmont auto` instead (see [Feature Auto](#feature-auto)).
 
 **Optional: Install the Belmont CLI** for auto mode -- automated end-to-end feature implementation with headless AI agents, worktree parallelism, and milestone dependency tracking:
 
@@ -188,6 +197,49 @@ If your environment supports **agent teams** (e.g. Claude Code's multi-agent fea
 Belmont auto-detects monorepos and adjusts worktree setup so AI agents run commands in the right package, find env files where postinstall scripts actually need them, and discover sibling workspaces. Detection signals: `turbo.json`, `nx.json`, `pnpm-workspace.yaml`, `package.json` `workspaces`, `lerna.json`, `rush.json`, `Cargo.toml` `[workspace]`, `go.work`, `pyproject.toml` `[tool.uv.workspace]`. When detected, Belmont seeds `.env*` into qualifying workspace dirs (those whose manifest signals env consumption — Prisma deps, postinstall scripts, etc.), and exports `BELMONT_MONOREPO`, `BELMONT_PRIMARY_WORKSPACE`, `BELMONT_PRIMARY_WORKSPACE_PATH`, and `BELMONT_WORKSPACES` so agents can scope their `--filter`/`-w`/`-p` commands. Override auto-detection with optional `workspaces` and `primary_workspace` fields in `.belmont/worktree.json`. See [docs/monorepo-support.md](docs/monorepo-support.md).
 
 Single-package projects are unaffected — none of the monorepo env vars are exported when no workspace is detected.
+
+---
+
+## Design Quality Without Figma
+
+Belmont has three design states, and each gets a different authority:
+
+| Your feature has | What happens |
+|---|---|
+| **No user interface** | The design phase is skipped entirely — no sub-agent is spawned for a backend, data, or infra milestone |
+| **UI and Figma URLs** | `design-agent` extracts exact tokens from the design; `verification-agent` compares your implementation against it |
+| **UI and no Figma** | `/belmont:tech-plan` derives a **Design Contract** with you — the design authority for the whole feature |
+
+The third row is the one that used to fail silently. Without a design reference there is nothing for verification to check against, so it fell back to acceptance criteria — a correctness check, not a design-quality one. Nothing errored: you got a green report and a quietly mediocre UI, with inconsistent spacing, unreadable contrast, missing focus states and no empty state.
+
+### The Design Contract
+
+During `/belmont:tech-plan`, when your feature has a UI and no Figma URLs, Belmont interviews you and derives a contract into `.belmont/features/<slug>/TECH_PLAN.md`:
+
+| Section | What it pins down |
+|---|---|
+| **Token Contract** | Spacing scale, type scale and ratio, colour distribution, radius, elevation |
+| **Accessibility Floor** | Contrast ratios, touch targets, focus visibility, labels, reduced motion |
+| **UX Strategy** | The user, their state on arrival, hero element, primary action, biggest risk |
+| **State Inventory** | Every state each component must implement — hover, focus, loading, empty, error… |
+| **Microcopy Rules** | Button verbs, error structure, empty-state copy, destructive confirmations |
+| **Motion Contract** | Duration bands, easing per class, what may be animated, reduced-motion behaviour |
+
+**You approve it once**, via a structured question, before any code is written. Belmont also writes a self-contained `design-preview.html` next to it — colour swatches with computed contrast ratios, the type ramp, the spacing scale, state rows — so you can review the contract by looking at it rather than reading it.
+
+From then on the contract is the standard: `design-agent` derives per-task specs from it instead of inventing values, `implementation-agent` validates against it, and `verification-agent` **measures the running UI against it** with real mechanisms — computed styles for spacing and type, luminance maths for contrast, tab-and-assert for focus indicators, `emulateMedia` for reduced motion. A check whose tooling is unavailable is recorded `UNVERIFIABLE`, never `PASS`.
+
+**Reuse before invention.** The contract is derived by walking a ladder and stopping at the first rung that supplies values: a master or sibling feature's contract, then Storybook (read statically — never booted), then `tailwind.config.*` / CSS custom properties / `components.json`, and only then baseline defaults. Existing components are recorded as law, not redesigned, and `**Source**` names the rung it stopped at.
+
+**It is not retroactive.** Features planned before you upgrade keep their existing verification — applying a new quality bar to an already-approved plan would fail milestones on a standard nobody agreed to. Adopt it per feature by re-running `/belmont:tech-plan --feature <slug>`.
+
+### Optional: richer contracts on Claude Code
+
+Belmont's built-in baseline is the tested path and needs nothing installed. If you happen to have these **user-scope Claude Code skills** in `~/.claude/skills/`, Belmont will use each to enrich the matching contract section — `ui-designer` for tokens, `ux-designer` for strategy and component states, `ux-copywriter` for microcopy, `ux-motion` for motion and transitions.
+
+They are not bundled with Belmont, none is required, and the contract has the same six sections whether or not any are present. See [design-authority-baseline.md](skills/belmont/_src/references/design-authority-baseline.md) for where to get them.
+
+> **Credit**: the curation behind these sections — which rules matter for a checkable contract, and how they compose into one — is drawn from the [**Yummy Labs**](https://www.yummy-labs.com/) Claude design skills. Belmont ships none of their files; its baseline is original prose stating published standards (WCAG 2.1 SC 1.4.3 and 2.4.7 at Level AA, SC 2.5.5 and 2.3.3 at Level AAA, the 8pt grid, ratio-derived type scales, the 60-30-10 convention), adopted as Belmont's own floor. Thanks to them for the framing.
 
 ---
 
@@ -365,6 +417,8 @@ See [Supported Tools](docs/supported-tools.md) for detailed per-tool setup instr
 Belmont includes a built-in auto orchestrator (`belmont auto`) that takes a planned feature (with PRD + TECH_PLAN) and executes it end-to-end: implementing milestones, verifying, fixing follow-up issues, and continuing until the feature is complete. Independent milestones can run in parallel via git worktrees, and multiple features can execute in parallel across worktrees. Pure Go, no Node.js required.
 
 > **Alias**: `belmont loop` still works as an alias for `belmont auto`.
+>
+> **Not to be confused with `/belmont:loop`**, which is a different thing with a confusingly similar name. `belmont loop` / `belmont auto` is the **Go CLI** orchestrator — headless agents, git worktrees, parallel waves, milestone dependencies. `/belmont:loop` is a **Claude-Code-only skill** you type in the REPL that delegates to Claude Code's built-in `/loop`; it needs no CLI and runs serially in your working tree. Use the skill for the lightest path to end-to-end automation on one feature; use the CLI when you want parallelism and isolation.
 
 ```bash
 # Run auto for a feature
@@ -442,8 +496,8 @@ See [Feature Auto](docs/feature-auto.md) for full documentation.
 ## Requirements
 
 - An AI coding tool (Claude Code, Codex, Cursor, Windsurf, Gemini, Copilot, Pi, opencode, or any tool that reads markdown)
-- [figma-mcp](https://github.com/nichochar/figma-mcp) (recommended) -- enables Belmont to load Figma designs, extract design tokens, and perform visual verification
-- [playwright-mcp](https://github.com/microsoft/playwright-mcp) (recommended) -- enables agents to interact with browsers for visual verification and E2E test debugging
+- [figma-mcp](https://github.com/nichochar/figma-mcp) (recommended, only if you use Figma) -- enables Belmont to load Figma designs, extract design tokens, and perform visual verification. Not needed without Figma -- see [Design Quality Without Figma](#design-quality-without-figma)
+- [playwright-mcp](https://github.com/microsoft/playwright-mcp) (recommended) -- enables agents to interact with browsers for visual verification and E2E test debugging. **This is what makes Design Contract checks measurable**: without a browser MCP, contract checks are recorded `UNVERIFIABLE` rather than passed
 - [RTK](https://www.rtk-ai.app/) (recommended) -- hook-based CLI proxy that filters command output (tests, lints, git) before it reaches the model; typically halves tool-I/O input tokens across Belmont's agent pipeline
 - No Go required (pre-built binaries)
 - No Docker required
@@ -455,10 +509,20 @@ See [Feature Auto](docs/feature-auto.md) for full documentation.
 
 ## Authors
 
-|                                                             | Name                                                                   | Contributions                                                 |
-|-------------------------------------------------------------|------------------------------------------------------------------------|---------------------------------------------------------------|
-| <img src="https://github.com/blake-simpson.png" width="50"> | **Blake Simpson** ([@blake-simpson](https://github.com/blake-simpson)) | Creator & maintainer                                          |
-| <img src="https://github.com/bigbenjoman.png" width="50">   | **Ben Lavender** ([@bigbenjoman](https://github.com/bigbenjoman))      | PR/FAQ skill, Product skill + PRD formats, Test & maintenance |
+|                                                             | Name                                                                   | Contributions |
+|-------------------------------------------------------------|------------------------------------------------------------------------|---------------|
+| <img src="https://github.com/blake-simpson.png" width="50"> | **Blake Simpson** ([@blake-simpson](https://github.com/blake-simpson)) | Creator & maintainer |
+| <img src="https://github.com/bigbenjoman.png" width="50">   | **Ben Lavender** ([@bigbenjoman](https://github.com/bigbenjoman))      | PR/FAQ skill, product skill + PRD formats; opencode and Codex integrations; model tiers via `models.yaml`; `/belmont:loop`; design contracts; CI and maintenance |
+
+**Ben Lavender's merged contributions:**
+
+| Area | PRs |
+|---|---|
+| **Tool support** — opencode as a first-class tool, its `/belmont/<skill>` slash menu, and Codex skill grouping in the `$`-mention popup | [#14](https://github.com/blake-simpson/belmont/pull/14), [#15](https://github.com/blake-simpson/belmont/pull/15), [#16](https://github.com/blake-simpson/belmont/pull/16) |
+| **Model tiers** — stopped pinning models in agent frontmatter (it was never read at runtime) in favour of inheriting the session model with `models.yaml` as the single override; tuned Codex tiers | [#17](https://github.com/blake-simpson/belmont/pull/17), [#18](https://github.com/blake-simpson/belmont/pull/18) |
+| **Skills** — Claude-only `/belmont:loop`, and the Codex plan-mode handoff apply step | [#19](https://github.com/blake-simpson/belmont/pull/19), [#20](https://github.com/blake-simpson/belmont/pull/20) |
+| **Maintainability** — GitHub Actions CI, dead-code removal, and the `main.go` split into 22 files | [#23](https://github.com/blake-simpson/belmont/pull/23) |
+| **Fixes** — plugin generator emitting empty agent files; coloured status markers under `--color=always` | [#9](https://github.com/blake-simpson/belmont/pull/9), [#21](https://github.com/blake-simpson/belmont/pull/21) |
 
 ---
 
