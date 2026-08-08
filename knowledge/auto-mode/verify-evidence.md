@@ -24,6 +24,10 @@ In `cmd/belmont/guards.go`, called after `runScopeGuard`:
 - **Guard classifies markers differently from the parser.** `findEvidenceMissingFlips` and `revertEvidenceMissing` work on the *raw* marker byte read out of PROGRESS.md, not on a parsed `taskStatus`. If the parser learns a spelling of "verified" that the guard does not, every flip written that way counts as verified across the whole state model while being invisible here — and nothing prints, so it looks exactly like a clean run. This shipped for real in PR #28: `[V]` was added to the parser as verified while both guard sites still compared against a literal lowercase `"v"`. Both now route through `markerIsVerified` / `canonicalMarker`, and `TestEveryVerifiedMarkerIsVisibleToEvidenceGuard` enumerates every marker the parser calls verified and asserts the guard both flags it and actually rewrites the line.
 - **Evidence sourced from master log instead of branch log**: picks up task IDs from prior features or unrelated work. Merge-base scoping is what makes the check specific to this branch's work.
 
+## The other half of the contract
+
+This entry covers a `[v]` written **without** justification. The mirror — an earned `[v]` that never gets written at all — is [`cross-cutting/verified-flip-recording.md`](../cross-cutting/verified-flip-recording.md). Note the asymmetry that makes the pair necessary: this guard can only ever *demote*, and no Go code anywhere promotes a task to verified. A missing flip is therefore permanent until a human runs `belmont reverify`.
+
 ## Don't re-do
 
 - **Heuristic depth checks** (file size delta, line count delta, AST depth beyond scaffold). Forgery-prone: an agent can satisfy them by padding stub files. Commit-log evidence requires a commit with the specific task ID, which is itself the thing we want.
@@ -48,3 +52,4 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestFindEvidenceMissingFli
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
 - 2026-08-08 — added the "guard classifies markers differently from the parser" failure mode after PR #28 review found `[V]` bypassing the check entirely. Both guard sites now route through `canonicalMarker`; `[V]` dropped from the parser.
+- 2026-08-08 — cross-referenced `cross-cutting/verified-flip-recording.md`, which covers the missing-flip direction (#30).

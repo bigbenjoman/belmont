@@ -148,6 +148,8 @@ PROGRESS.md is the single source of truth for task state. PRD.md is a pure spec 
 - **Complete**: All tasks are `[x]` or `[v]`
 - **Verified**: All tasks are `[v]`
 
+**Complete is not Verified.** A feature reading Complete with tasks still `[x]` means verification never recorded its result — every stop condition treats it as finished anyway. If the CLI reports done-but-unverified tasks, reproduce that warning verbatim in your output, including the `belmont reverify --feature <slug>` recovery. Do not summarise it away. See issue #30.
+
 ### Milestone Status (computed from tasks)
 Milestone status is computed from its tasks — no markers on milestone headers. A milestone is verified when all its tasks are `[v]`.
 

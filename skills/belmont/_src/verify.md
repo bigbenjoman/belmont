@@ -166,24 +166,12 @@ After both agents complete:
    - **Polish** — Minor improvements that do NOT affect functionality (aria-labels, code style, docs, minor a11y notes, small spacing tweaks). These do NOT block the milestone.
    - **Suggestions** — Informational only (refactoring ideas, alternative approaches). Not tracked.
 
-### Create Follow-up Tasks
+### Mark Verified Tasks
 
-The canonical placement rule for follow-ups is in the **Milestone structure is immutable** section at the top of this skill. Re-read it before modifying PROGRESS.md. The rules below describe only verify-specific details; they do not override the canonical rule.
+**Do this now, before writing the report.** This is the only place verification is recorded, and it runs on **every** outcome — including a clean ALL PASSED run with no follow-ups to create.
 
-**Scope violation safeguard**: For scope violation issues specifically, only create "revert" follow-up tasks for code that was **newly added by the current task**. If the scope violation involves pre-existing code from other features or milestones, do NOT create a follow-up task to delete it — instead note it in the summary as "pre-existing code outside current scope, no action needed." Deleting pre-existing features is catastrophic and must be prevented.
-
-If **all tasks pass verification** (no Critical or Warning issues):
-1. Mark each verified task as `[v]` in `{base}/PROGRESS.md` (change `[x]` to `[v]`)
-
-If **Critical or Warning** issues were found by either agent:
-1. For tasks that passed: mark as `[v]` in `{base}/PROGRESS.md`
-2. For tasks with issues: leave as `[x]` and add new `[ ]` follow-up tasks to the **same milestone** (per the canonical rule above). These are plain tasks, not specially tagged:
-   ```
-   - [ ] P1-M17-FIX-1: [Issue Description]
-   ```
-3. When verifying multiple milestones at once (e.g., M17+M18+M19), distribute follow-ups to their respective source milestones — do NOT group them, do NOT promote them into a new milestone.
-4. If the source milestone is truly ambiguous, add to the earliest pending milestone whose code the issue relates to. Never use that ambiguity as justification for a new milestone.
-4. **Update master PROGRESS** (`.belmont/PROGRESS.md`): If the file doesn't exist or still contains template/placeholder text (e.g., `[Feature Name]`, `[Milestone Name]`), initialize it first:
+1. For every task that passed, change `[x]` to `[v]` in `{base}/PROGRESS.md`. Tasks with Critical or Warning issues stay `[x]`.
+2. **Update master PROGRESS** (`.belmont/PROGRESS.md`): if the file doesn't exist or still contains template/placeholder text (e.g. `[Feature Name]`, `[Milestone Name]`), initialize it first using the format below. Then add a row to `## Recent Activity` noting verification results, and update the Tasks total in `## Features` if follow-ups were added.
    ```
    # Progress: [Product Name from .belmont/PRD.md]
    ## Features
@@ -193,7 +181,23 @@ If **Critical or Warning** issues were found by either agent:
    | Date | Feature | Activity |
    |------|---------|----------|
    ```
-   Then if follow-up tasks were added, update the Tasks total in the `## Features` table for this feature's row (add a new row if missing). Add a row to `## Recent Activity` noting verification results.
+3. **Re-read `{base}/PROGRESS.md` and confirm the flips are on disk.** Do not infer this from having intended to write them. The task IDs you confirm here are what you list in the report's `## Tasks Marked Verified` section.
+
+Nothing downstream can catch a missed flip. `[x]` means "done" to every stop condition Belmont has — `belmont status` reports a fully-`[x]` feature as **Complete** with no next milestone, and both the auto loop and `/belmont:loop` finish on that. The only recovery is a human running `belmont reverify`. See issue #30.
+
+### Create Follow-up Tasks
+
+The canonical placement rule for follow-ups is in the **Milestone structure is immutable** section at the top of this skill. Re-read it before modifying PROGRESS.md. The rules below describe only verify-specific details; they do not override the canonical rule.
+
+**Scope violation safeguard**: For scope violation issues specifically, only create "revert" follow-up tasks for code that was **newly added by the current task**. If the scope violation involves pre-existing code from other features or milestones, do NOT create a follow-up task to delete it — instead note it in the summary as "pre-existing code outside current scope, no action needed." Deleting pre-existing features is catastrophic and must be prevented.
+
+If **Critical or Warning** issues were found by either agent:
+1. For tasks with issues: leave as `[x]` and add new `[ ]` follow-up tasks to the **same milestone** (per the canonical rule above). These are plain tasks, not specially tagged:
+   ```
+   - [ ] P1-M17-FIX-1: [Issue Description]
+   ```
+2. When verifying multiple milestones at once (e.g., M17+M18+M19), distribute follow-ups to their respective source milestones — do NOT group them, do NOT promote them into a new milestone.
+3. If the source milestone is truly ambiguous, add to the earliest pending milestone whose code the issue relates to. Never use that ambiguity as justification for a new milestone.
 
 ### Record Polish Items
 
