@@ -241,12 +241,12 @@ Belmont's built-in baseline is the tested path and **needs nothing installed**. 
 
 | Skill | Enriches | Get it from |
 |---|---|---|
-| `ui-designer` | Token Contract — spacing, type, colour, radius, elevation | [Yummy Labs → UX/UI designer skills](https://www.yummy-labs.com/) |
-| `ux-designer` | UX Strategy, and the component-state half of State Inventory | [Yummy Labs → UX/UI designer skills](https://www.yummy-labs.com/) |
+| `ui-designer` | Token Contract — spacing, type, colour, radius, elevation | [Claude UX & UI Design Skills](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) — one download, both skills |
+| `ux-designer` | UX Strategy, and the component-state half of State Inventory | [Claude UX & UI Design Skills](https://yummy-design.notion.site/Claude-UX-UI-Design-Skills-31462791470981a99fe1c993b08c5347) — one download, both skills |
 | `ux-copywriter` | Microcopy Rules | [Claude UX Copywriter Skill](https://drive.google.com/drive/folders/1lSwUatVOzOX5TGWgBDjKA820RiUsVLNr) (`ux-copywriter.zip`) |
 | `ux-motion` | Motion Contract, and the transition half of State Inventory | [Claude UX Motion Skill by Yummy Labs](https://drive.google.com/drive/folders/1gYrK4aT4A-LYr4GbM88-PaKu0wYyY4C6) (`ux-motion.zip`) |
 
-Unzip each into its own directory under `~/.claude/skills/`. They are **user-scope Claude Code skills** — they do not exist on Belmont's seven other supported tools, and they cannot be installed into a project.
+`ui-designer` and `ux-designer` come together in a single download; `ux-copywriter` and `ux-motion` are separate. Unzip each skill into its own directory under `~/.claude/skills/`. They are **user-scope Claude Code skills** — they do not exist on Belmont's seven other supported tools, and they cannot be installed into a project.
 
 **None is required, and the contract has the same six sections whether or not any are present** — a missing skill falls back to the baseline for *that section alone*, and the contract records which authority produced each section on an `**Authorities**` line. Full detail, including the derivation ladder, is in [design-authority-baseline.md](skills/belmont/_src/references/design-authority-baseline.md).
 
