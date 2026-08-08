@@ -240,3 +240,65 @@ func resumeFixture(t *testing.T) (string, string, string) {
 	git("worktree", "add", "-q", "-b", "belmont/m2", wtPath, "HEAD")
 	return root, wtPath, filepath.Join(wtPath, ".belmont", "features", "demo", "PROGRESS.md")
 }
+
+// Red-team follow-ups on the #24/#29 fixes.
+
+// A duplicated task ID makes the ID->line match ambiguous. Collapsing them
+// silently would merge the wrong line, so the merge must decline and say so.
+func TestSyncRefusesToMergeDuplicateIDs(t *testing.T) {
+	master := "### M2: M\n- [x] P1-M2-1: first\n- [x] P1-M2-1: duplicate id\n"
+	wt := "### M2: M\n- [ ] P1-M2-1: first\n- [ ] P1-M2-1: duplicate id\n"
+	got, warnings := mergeProgressState(master, wt)
+	if strings.Contains(got, "- [x]") {
+		t.Errorf("merged an ambiguous duplicate ID:\n%s", got)
+	}
+	if len(warnings) == 0 {
+		t.Error("a duplicate task ID must be reported, not silently collapsed")
+	}
+}
+
+// An unrecognised marker must survive even when the other side is [!]. The
+// blocked rule used to run first and overwrite it.
+func TestSyncBlockedRuleNeverOverwritesUnrecognised(t *testing.T) {
+	got, warnings := mergeProgressState(
+		"### M2: M\n- [!] P1-M2-1: blocked on main\n",
+		"### M2: M\n- [?] P1-M2-1: withdrawn here\n",
+	)
+	if !strings.Contains(got, "- [?] P1-M2-1") {
+		t.Errorf("an unrecognised marker was rewritten to [!]:\n%s", got)
+	}
+	if len(warnings) == 0 {
+		t.Error("expected a warning about the unrecognised marker")
+	}
+}
+
+// Resume must still re-arm --assume-unchanged: handleStaleWorktree can
+// reattach a worktree with `git worktree add`, which builds a fresh index.
+func TestResumeReArmsUntracking(t *testing.T) {
+	root, wtPath, wtProgress := resumeFixture(t)
+
+	// Simulate the reattach path: a fresh index with the bits cleared.
+	clear := exec.Command("git", "update-index", "--no-assume-unchanged",
+		filepath.Join(".belmont", "features", "demo", "PROGRESS.md"))
+	clear.Dir = wtPath
+	clear.Run()
+
+	if err := createWorktreeIfNeeded(root, wtPath, "belmont/m2", "demo", true); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+
+	ls := exec.Command("git", "ls-files", "-v", filepath.Join(".belmont", "features", "demo", "PROGRESS.md"))
+	ls.Dir = wtPath
+	out, err := ls.Output()
+	if err != nil {
+		t.Fatalf("ls-files: %v", err)
+	}
+	if !strings.HasPrefix(string(out), "h ") {
+		t.Errorf("assume-unchanged not re-armed on resume (ls-files -v = %q) — the worktree's "+
+			".belmont edits are committable and would clobber sibling state at merge", strings.TrimSpace(string(out)))
+	}
+	// And the resume guarantee still holds: state was not overwritten.
+	if _, err := os.Stat(wtProgress); err != nil {
+		t.Fatalf("worktree PROGRESS.md missing: %v", err)
+	}
+}

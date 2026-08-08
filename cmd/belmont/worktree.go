@@ -334,6 +334,16 @@ func untrackBelmontInWorktree(wtPath, slug string) {
 // cannot diverge again. See issue #29.
 func createWorktreeIfNeeded(root, wtPath, branch, slug string, resumed bool) error {
 	if resumed {
+		// Skip the state copy — but NOT the untracking. `--assume-unchanged` is
+		// index state, and `handleStaleWorktree` can reattach a worktree whose
+		// directory was removed by running `git worktree add` again, which
+		// builds a fresh index with the bits cleared. Seeding used to re-arm it
+		// as a side effect of copyBelmontStateToWorktree; skipping the copy
+		// removed the only re-arming. Without it the worktree's `.belmont/`
+		// edits become committable and merge back over sibling state — the
+		// exact failure worktree-state-isolation.md exists to prevent.
+		// Idempotent and cheap, so just always do it.
+		untrackBelmontInWorktree(wtPath, slug)
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(wtPath), 0755); err != nil {
@@ -436,6 +446,30 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		line      string
 		milestone string
 	}
+	// Tasks are matched by ID, so a duplicated ID makes the match ambiguous:
+	// a plain map would silently collapse the entries and merge the wrong
+	// line. Count occurrences on both sides and refuse to merge any ID that is
+	// not unique — same policy as an unrecognised marker. Belmont does not
+	// guess, and it says so.
+	var warnings []string
+	dupIDs := map[string]bool{}
+	countIDs := func(content string) map[string]int {
+		n := map[string]int{}
+		for _, line := range strings.Split(content, "\n") {
+			if tm := taskRe.FindStringSubmatch(line); len(tm) >= 6 {
+				n[tm[4]]++
+			}
+		}
+		return n
+	}
+	for _, counts := range []map[string]int{countIDs(masterContent), countIDs(worktreeContent)} {
+		for id, n := range counts {
+			if n > 1 {
+				dupIDs[id] = true
+			}
+		}
+	}
+
 	masterTasks := map[string]masterTask{}
 	currentMS := ""
 	for _, line := range strings.Split(masterContent, "\n") {
@@ -444,14 +478,22 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			continue
 		}
 		if tm := taskRe.FindStringSubmatch(line); len(tm) >= 6 {
+			if dupIDs[tm[4]] {
+				continue
+			}
 			masterTasks[tm[4]] = masterTask{marker: tm[2], line: line, milestone: currentMS}
 		}
 	}
+	for id := range dupIDs {
+		warnings = append(warnings, fmt.Sprintf(
+			"task %s appears more than once — ambiguous, so its state was not merged; de-duplicate the ID", id))
+	}
 	if len(masterTasks) == 0 {
-		return worktreeContent, nil
+		// Still return warnings — every master task may have been skipped as a
+		// duplicate, and that is exactly when the user needs telling.
+		return worktreeContent, warnings
 	}
 
-	var warnings []string
 	seen := map[string]bool{}
 	lastTaskIdx := map[string]int{} // milestone -> index of its final task line
 	out := strings.Split(worktreeContent, "\n")
@@ -475,6 +517,20 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		seen[id] = true
 
 		wtMarker := tm[2]
+
+		// Recognition is checked BEFORE anything else, including the blocked
+		// rule. An unrecognised marker must never be rewritten — that is the
+		// whole of issue #27, and a `[!]`-wins rule that fired first would
+		// happily overwrite a `[?]` the user wrote deliberately.
+		wtRank, wtOK := markerRank(wtMarker)
+		msRank, msOK := markerRank(mt.marker)
+		if !wtOK || !msOK {
+			warnings = append(warnings, fmt.Sprintf(
+				"task %s has an unrecognised marker ([%s] here, [%s] on main) — left as written, not merged",
+				id, wtMarker, mt.marker))
+			continue
+		}
+
 		// `[!]` on EITHER side wins, in both directions.
 		//
 		// A blocker is a human-attention signal, and the two failure modes are
@@ -487,14 +543,6 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		}
 		if mt.marker == "!" {
 			out[i] = tm[1] + "[!]" + tm[3] + tm[4] + tm[5]
-			continue
-		}
-		wtRank, wtOK := markerRank(wtMarker)
-		msRank, msOK := markerRank(mt.marker)
-		if !wtOK || !msOK {
-			warnings = append(warnings, fmt.Sprintf(
-				"task %s has an unrecognised marker ([%s] here, [%s] on main) — left as written, not merged",
-				id, wtMarker, mt.marker))
 			continue
 		}
 		if msRank > wtRank {
