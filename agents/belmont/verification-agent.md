@@ -63,9 +63,11 @@ Visual verification has **two independent inputs**, and this phase is three-way 
 
 | | Branch | What you do |
 |---|---|---|
-| 1 | References exist | Steps 2.1–2.4 comparison flow, **plus** contract checks if a contract is also present |
-| 2 | No references, contract present | Contract checks only (Step 2.4b) |
-| 3 | No references, no contract | Acceptance-criteria fallback (Step 2.4, "when no design references exist") |
+| 1 | References exist | Steps 2.1 → 2.2 → 2.3 → 2.4 comparison flow, **plus** Step 2.4b contract checks if a contract is also present |
+| 2 | No references, contract present | Skip 2.1 (nothing to load), then 2.2 → 2.3 → **2.4b** |
+| 3 | No references, no contract | Skip 2.1, then 2.2 → 2.3 → 2.4's "no references and no contract" fallback |
+
+**Steps 2.2 (start the preview tool) and 2.3 (capture screenshots) run in every branch.** Branch 2 needs a running UI more than branch 1 does — its checks are measurements of computed styles, not a picture comparison, so skipping the server leaves it with nothing to measure and every row `UNVERIFIABLE`.
 
 Branch 3 is the failed-Figma-load path and the pre-contract-feature path. It is unchanged by design.
 
@@ -91,7 +93,7 @@ For each reference found in Step 2.0:
 - **Local images/screenshots**: Read them with the Read tool.
 - **External image URLs**: Fetch them with WebFetch.
 
-If no design references of any kind were found in Step 2.0, that's fine — note it and proceed to Step 2.2. You will verify against acceptance criteria and Playwright screenshots.
+If no design references of any kind were found in Step 2.0, that's fine — note it and proceed to Step 2.2. You will verify against the Design Contract if one is present (branch 2), and against acceptance criteria and your own screenshots otherwise (branch 3).
 
 #### Step 2.2: Start the Project's Preview Tool
 
