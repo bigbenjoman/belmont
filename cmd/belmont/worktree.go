@@ -527,13 +527,21 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		return worktreeContent, warnings
 	}
 
-	// wtHasID records every task ID the worktree document holds ANYWHERE,
-	// in-region or orphaned past a section break. The carry-over pass keys off
-	// it rather than off the in-region matches alone: an ID the worktree only
-	// holds as an orphan is still an ID the worktree holds, and splicing
-	// master's in-region copy in beside it produced a duplicate that the very
-	// next sibling merge then refused, deleting the completed line outright.
-	wtHasID := map[string]bool{}
+	// Task IDs this side holds, split by whether they are inside the region.
+	//
+	// The carry-over pass must key off the IN-REGION set only. Keying off both
+	// loses state: when the worktree holds an ID solely as an orphan — a
+	// fork-stale line an agent stranded behind a new `## ` heading, or a
+	// sibling's completion quoted into a log — master's in-region copy is the
+	// only counted one, and skipping it deletes the task from the document.
+	// `.belmont/` moves only by this copy, so that is unrecoverable.
+	//
+	// Splicing it back in is safe: countIDs above is region-scoped, so an
+	// in-region line plus an orphan sharing its ID is not a duplicate and the
+	// next sibling merge will not refuse it. The stray copy is left exactly as
+	// written and reported — never silently reconciled, never silently dropped.
+	wtInRegionID := map[string]bool{}
+	wtOrphanID := map[string]bool{}
 	lastTaskIdx := map[string]int{}   // milestone -> index of its final task line
 	lastHeaderIdx := map[string]int{} // milestone -> index of its header line
 	out := strings.Split(worktreeContent, "\n")
@@ -553,11 +561,12 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		if len(tm) < 6 {
 			continue
 		}
-		wtHasID[tm[4]] = true
 		if currentMS == "" {
+			wtOrphanID[tm[4]] = true
 			continue // outside every milestone: leave exactly as written
 		}
 		id := tm[4]
+		wtInRegionID[id] = true
 		lastTaskIdx[currentMS] = i
 		mt, ok := masterTasks[id]
 		if !ok {
@@ -605,9 +614,8 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	// insertions whenever the two documents order milestones differently.
 	pending := map[int][]string{}
 	for _, id := range masterOrder {
-		if wtHasID[id] {
-			continue // already present on this side — reconciled above, or an
-			// orphan we leave exactly as written rather than duplicate
+		if wtInRegionID[id] {
+			continue // reconciled in place by the walk above
 		}
 		mt := masterTasks[id]
 		// Anchor after the milestone's last task line, or after its header when
@@ -625,6 +633,11 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			continue
 		}
 		pending[at] = append(pending[at], mt.line)
+		if wtOrphanID[id] {
+			warnings = append(warnings, fmt.Sprintf(
+				"task %s is recorded under %s on main but sits outside every milestone here — main's copy was placed under %s and the stray line left as written; move or delete the stray one",
+				id, nonEmpty(mt.milestone, "an unknown milestone"), nonEmpty(mt.milestone, "its milestone")))
+		}
 	}
 	if len(pending) == 0 {
 		return strings.Join(out, "\n"), warnings
