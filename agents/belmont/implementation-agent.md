@@ -77,7 +77,7 @@ Do NOT commit this change as a separate commit — it lives in the working tree 
 #### Step 1: Preparation
 
 1. **Identify the current task** - Find this task's definition in the PRD (task IDs listed in MILESTONE's `### Active Task IDs`), its codebase context in `## Codebase Analysis`, and its design spec in `## Design Specifications`
-2. **Review technical context** - Read TECH_PLAN.md (path from MILESTONE's `### File Paths`, if present) for architectural constraints, interfaces, and patterns relevant to this task
+2. **Review technical context** - Read TECH_PLAN.md (path from MILESTONE's `### File Paths`, if present) when this task touches architecture it describes, for architectural constraints, interfaces and patterns. Skip it for self-contained tasks that add isolated code. **If in doubt, read it** — building against the wrong architecture costs a rework cycle, which is far more than the read.
 3. **Identify Files to Create/Modify** - List all files that need changes (validated in Step 0)
 4. **Plan Order of Changes** - Dependencies first, then dependents
 5. **Check CLAUDE.md** - Ensure you follow all project conventions (noted in `## Codebase Analysis`)

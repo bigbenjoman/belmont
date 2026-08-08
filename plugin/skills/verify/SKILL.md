@@ -180,7 +180,7 @@ whole feature instead of for the tasks in front of you.
 3. `{base}/PRD.md` — the sections defining those task IDs, including their acceptance criteria. Read the whole file if it has no per-task structure. **Never skip the acceptance criteria for a task you are verifying** — they are the thing being checked.
 4. `{base}/TECH_PLAN.md` — if the tasks touch architecture it describes (if exists).
 5. `.belmont/TECH_PLAN.md` — only when the tasks are cross-cutting: they change shared infrastructure or span features (if in feature mode and exists).
-6. Archived MILESTONE files (`{base}/MILESTONE-*.done.md`) — these carry implementation context from the milestone that produced the work. Prefer them over re-deriving that context from the specs, **but only when their sections are actually populated**: a milestone run via `/belmont:next` archives with `[Not populated — lightweight mode skips the …]` placeholders. When you see those, fall back to the specs.
+6. Archived MILESTONE files (`{base}/MILESTONE-*.done.md`) — these carry implementation context from the milestone that produced the work. Prefer them over re-deriving that context from the specs, **but only when their sections are actually populated**: a lightweight run, or a milestone with no design input, archives `[Not populated — …]` placeholders. When you see those, fall back to the specs.
 
 This is guidance for the common case, not a prohibition. If a file you skipped
 turns out to matter, read it. Verifying against an incomplete picture is worse
@@ -279,7 +279,7 @@ Before spawning sub-agents, collect design references for the tasks being verifi
    - `## Design Specifications` section with a Figma Sources table (has `fileKey`, `nodeId` columns)
    - Embedded or linked reference images, screenshots, or mockups
 
-   If that section reads `[Not populated — lightweight mode skips the design agent]`, the milestone ran via `/belmont:next` and holds no design references. Move on to step 2 rather than treating the placeholder as evidence there are none.
+   If that section starts `[Not populated —`, the milestone either ran via `/belmont:next` or had no design input at all, and holds no design references. Move on to step 2 rather than treating the placeholder as evidence there are none.
 2. Check `{base}/PRD.md` task definitions for `**Figma**:` fields or linked visual references
 3. Check `{base}/TECH_PLAN.md` and `{base}/NOTES.md` for any visual specifications
 
@@ -427,7 +427,7 @@ Spawn these two sub-agents **simultaneously** (or sequentially if using the Sequ
 >
 > Read the `{base}/PRD.md` sections defining the task IDs above — their acceptance criteria are what you are checking. Read the whole file if it has no per-task structure.
 > Read `{base}/TECH_PLAN.md` for technical specifications if these tasks touch architecture it describes (if it exists).
-> Check for archived MILESTONE files (`{base}/MILESTONE-*.done.md`) for implementation context — prefer them over re-deriving from the specs, but only where their sections are populated (a `/belmont:next` run archives `[Not populated — …]` placeholders; fall back to the specs there).
+> Check for archived MILESTONE files (`{base}/MILESTONE-*.done.md`) for implementation context — prefer them over re-deriving from the specs, but only where their sections are populated (a lightweight or design-free milestone archives `[Not populated — …]` placeholders; fall back to the specs there).
 >
 > Check acceptance criteria, visual design comparison, i18n keys, and functional testing.
 >
@@ -466,7 +466,7 @@ Spawn these two sub-agents **simultaneously** (or sequentially if using the Sequ
 >
 > Read the `{base}/PRD.md` sections defining the task IDs above for task details and planned solution. Read the whole file if it has no per-task structure.
 > Read `{base}/TECH_PLAN.md` for technical specifications if these tasks touch architecture it describes (if it exists).
-> Check for archived MILESTONE files (`{base}/MILESTONE-*.done.md`) for implementation context — prefer them over re-deriving from the specs, but only where their sections are populated (a `/belmont:next` run archives `[Not populated — …]` placeholders; fall back to the specs there).
+> Check for archived MILESTONE files (`{base}/MILESTONE-*.done.md`) for implementation context — prefer them over re-deriving from the specs, but only where their sections are populated (a lightweight or design-free milestone archives `[Not populated — …]` placeholders; fall back to the specs there).
 >
 > Detect the project's package manager (check for `pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`/`bun.lock`, or `package-lock.json`; also check the `packageManager` field in `package.json`). Use the detected package manager to run build and test commands (e.g. `pnpm run build`, `yarn run build`, etc. — default to `npm` if unsure). Review code quality, pattern adherence, and PRD alignment.
 >

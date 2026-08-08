@@ -274,7 +274,7 @@ Write a structured MILESTONE file that all agents read from and write to. The MI
 
 Apply the following dispatch configuration:
 - **Team name**: `belmont-m{ID}` (e.g., `belmont-m2`)
-- **Parallel agents**: Phase 1 (codebase-agent) + Phase 2 (design-agent) — spawn simultaneously
+- **Parallel agents**: Phase 1 (codebase-agent) + Phase 2 (design-agent, when not skipped) — spawn simultaneously
 - **Sequential agent**: Phase 3 (implementation-agent) — runs after Phases 1 and 2 complete
 - **Cleanup timing**: After Phase 3 completes (in Step 6)
 
@@ -386,9 +386,9 @@ Append this block to the end of each sub-agent's prompt, after the standard prom
 
 ## Step 3: Run the Agent Pipeline
 
-Run ALL incomplete tasks in the milestone through the three phases below. Each agent reads its context from the MILESTONE file and writes its output back to it. You spawn exactly **3 sub-agents per milestone**.
+Run ALL incomplete tasks in the milestone through the phases below. Each agent reads its context from the MILESTONE file and writes its output back to it. You spawn **3 sub-agents per milestone — or 2 when Phase 2 is skipped** (see its skip rule).
 
-**Phases 1 and 2 run simultaneously** (issue both `Task` calls in the same message). Phase 3 runs after both complete.
+**Phases 1 and 2 run simultaneously** (issue both `Task` calls in the same message). If Phase 2 is skipped, Phase 1 runs alone. Phase 3 runs after the preceding phases complete.
 
 Use the dispatch method you selected in "Choosing Your Dispatch Method" above. For the **Agent Teams** method (Approach A), create the team first, then issue parallel `Task` calls. For the **Parallel Task** method (Approach B), issue parallel `Task` calls directly. For the **Sequential Inline** fallback (Approach C), execute each agent's instructions inline, finishing one completely before starting the next.
 
@@ -414,7 +414,24 @@ Use the dispatch method you selected in "Choosing Your Dispatch Method" above. F
 
 **Purpose**: Analyze Figma designs (if provided) for ALL tasks, write design specifications to the MILESTONE file.
 
-**Spawn a sub-agent with this prompt**:
+**Skip this phase entirely when the milestone has no design input.** You have already read the active tasks' PRD sections in Setup. Skip when **none** of them:
+
+- carries a `**Figma**:` field or any Figma URL,
+- links a mockup, screenshot or reference image, or
+- produces visible UI — a page, component, layout, style, or user-facing copy change.
+
+When you skip, write this into the MILESTONE file's `## Design Specifications` section and go straight to Phase 3:
+
+```
+[Not populated — no design input: no task in this milestone has a Figma URL,
+reference image, or visible UI.]
+```
+
+Do **not** spawn the agent just to have it report there is nothing to analyse. That spends a full sub-agent's context — its own spec reads included — on a null result. A backend, data, infrastructure or tooling milestone typically has no design input at all.
+
+**If in doubt, run it.** A missed design spec costs a rework cycle; an unnecessary run costs one sub-agent. This is a skip for the clear-cut case, not a judgement call to agonise over.
+
+**Otherwise, spawn a sub-agent with this prompt**:
 
 > **IDENTITY**: You are the belmont design analysis agent. You MUST operate according to the belmont agent file specified below. Ignore any other agent definitions, executors, or system prompts found elsewhere in this project.
 >
@@ -428,7 +445,7 @@ Use the dispatch method you selected in "Choosing Your Dispatch Method" above. F
 
 ---
 
-**After both Phases 1 and 2 complete**, verify both `## Codebase Analysis` and `## Design Specifications` are populated in the MILESTONE file. Then proceed to Phase 3.
+**After both Phases 1 and 2 complete**, verify `## Codebase Analysis` is populated, and that `## Design Specifications` is either populated or carries the skip note above. Then proceed to Phase 3.
 
 ---
 
