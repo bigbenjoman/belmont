@@ -178,7 +178,7 @@ whole feature instead of for the tasks in front of you.
 
 **Then read, scoped to those tasks:**
 3. `{base}/PRD.md` — the sections defining those task IDs, including their acceptance criteria. Read the whole file if it has no per-task structure. **Never skip the acceptance criteria for a task you are verifying** — they are the thing being checked.
-4. `{base}/TECH_PLAN.md` — if the tasks touch architecture it describes (if exists).
+4. `{base}/TECH_PLAN.md` — if the tasks touch architecture it describes (if exists). **Always check its `## Design Contract` section** regardless — Step 1b needs to know whether one exists, and that is a cheap grep for the heading plus its `**Mode**` line, not a full read.
 5. `.belmont/TECH_PLAN.md` — only when the tasks are cross-cutting: they change shared infrastructure or span features (if in feature mode and exists).
 6. Archived MILESTONE files (`{base}/MILESTONE-*.done.md`) — these carry implementation context from the milestone that produced the work. Prefer them over re-deriving that context from the specs, **but only when their sections are actually populated**: a lightweight run, or a milestone with no design input, archives `[Not populated — …]` placeholders. When you see those, fall back to the specs.
 

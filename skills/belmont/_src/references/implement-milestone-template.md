@@ -28,8 +28,8 @@ Fill in the `## Orchestrator Context` section using information from PROGRESS.md
 
 ### File Paths
 - **PRD**: {base}/PRD.md — authoritative task definitions, acceptance criteria, Figma URLs
-- **TECH_PLAN**: {base}/TECH_PLAN.md — technical specs (if present). Read when your task touches architecture it describes; skip for self-contained tasks.
-- **Master TECH_PLAN**: .belmont/TECH_PLAN.md — cross-cutting architecture (if present). Read only for cross-cutting work: shared infrastructure, or changes spanning features.
+- **TECH_PLAN**: {base}/TECH_PLAN.md — technical specs (if present). Read when your task touches architecture it describes; skip for self-contained tasks. **The design-agent always reads its `## Design Contract` section**, self-contained or not — that section is its design authority when no Figma exists, and skipping it would leave the task with none.
+- **Master TECH_PLAN**: .belmont/TECH_PLAN.md — cross-cutting architecture (if present). Read only for cross-cutting work: shared infrastructure, or changes spanning features — **or when the design-agent is in contract mode**, since cross-cutting styling decisions and any master-level `## Design Contract` are routed here.
 - **PROGRESS**: {base}/PROGRESS.md
 - **Feature Notes**: {base}/NOTES.md
 - **Global Notes**: .belmont/NOTES.md
