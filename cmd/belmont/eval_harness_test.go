@@ -172,6 +172,21 @@ func evalFixtures() []evalFixture {
 			// module that does not meet its own PRD.
 			LiveExpect: map[string][]taskStatus{"P1-M1-1": {taskDone}},
 		},
+		{
+			// Two independent milestones. Used by the manual /belmont:loop
+			// before/after comparison, because the loop must advance from one
+			// milestone to the next rather than running a single phase.
+			// Deliberately design-free — no Figma, no UI — so it exercises the
+			// design-agent skip.
+			Name:       "loop-two-milestones",
+			Milestones: 2,
+			TaskStates: map[string]taskStatus{
+				"P1-M1-1": taskTodo, "P1-M2-1": taskTodo,
+			},
+			DecidesTo:   actionImplementMilestone,
+			DecidesOnMS: "M1",
+			Waves:       [][]string{{"M1", "M2"}},
+		},
 	}
 }
 
