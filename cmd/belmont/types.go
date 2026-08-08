@@ -64,6 +64,7 @@ type featureSummary struct {
 	TasksInProgress int         `json:"tasks_in_progress"`
 	TasksBlocked    int         `json:"tasks_blocked"`
 	TasksTotal      int         `json:"tasks_total"`
+	TasksOrphaned   int         `json:"tasks_orphaned,omitempty"`
 	MilestonesDone  int         `json:"milestones_done"`
 	MilestonesTotal int         `json:"milestones_total"`
 	Milestones      []milestone `json:"milestones"`

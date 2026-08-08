@@ -47,9 +47,11 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 
 		// Read all state from PROGRESS.md
 		var milestones []milestone
+		var orphaned int
 		progressPath := filepath.Join(featurePath, "PROGRESS.md")
 		if progressContent, err := os.ReadFile(progressPath); err == nil {
 			milestones = parseMilestones(string(progressContent))
+			orphaned = len(orphanedTaskLines(string(progressContent)))
 		}
 
 		tasks := flattenTasks(milestones, maxName)
@@ -100,6 +102,7 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 			TasksBlocked:    tasksBlocked,
 			TasksTotal:      tasksTotal,
 			MilestonesDone:  milestonesDone,
+			TasksOrphaned:   orphaned,
 			MilestonesTotal: len(milestones),
 			Milestones:      milestones,
 			NextMilestone:   featureNextMilestone,
