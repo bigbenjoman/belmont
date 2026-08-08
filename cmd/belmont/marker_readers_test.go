@@ -100,11 +100,20 @@ func TestEveryVerifiedMarkerIsVisibleToEvidenceGuard(t *testing.T) {
 // A rewriter that recognises fewer spellings than the parser silently no-ops:
 // the milestone is selected for reset and then nothing is reset.
 func TestReverifyResetsEveryVerifiedMarker(t *testing.T) {
+	// Guard against a vacuous pass: if canonicalMarker ever stopped calling
+	// anything verified, the loop below would run zero times and report success.
+	ran := 0
+	defer func() {
+		if ran == 0 {
+			t.Error("no marker maps to taskVerified — this test asserted nothing")
+		}
+	}()
 	for c := 32; c < 127; c++ {
 		m := string(rune(c))
 		if st, ok := canonicalMarker(m); !ok || st != taskVerified {
 			continue
 		}
+		ran++
 		body := "# Progress\n\n## Milestones\n\n### M1: M\n- [" + m + "] P1-M1-1: alpha\n"
 
 		// This is how runReverifyCmd builds resetIDs: from parsed status.
