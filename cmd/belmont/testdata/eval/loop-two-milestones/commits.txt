@@ -1,0 +1,9 @@
+# Baseline only. /belmont:loop must drive BOTH milestones to completion,
+# which is what distinguishes this fixture from the single-phase ones: it
+# exercises the loop's advance-to-next-milestone step, not just one action.
+== file: calc.js
+function add(a, b) { return a + b }
+module.exports = { add }
+== file: package.json
+{ "name": "eval-fixture", "version": "1.0.0", "main": "calc.js" }
+== commit: initial
