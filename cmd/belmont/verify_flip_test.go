@@ -152,3 +152,35 @@ func TestListingWarnsOnDoneNotVerified(t *testing.T) {
 		t.Errorf("listing mode false-positives on a fully verified feature:\n%s", out)
 	}
 }
+
+// Listing mode is what status.md's fast path runs (no --feature), so every
+// "this file is not what it looks like" signal must appear there too. The
+// unknown-marker and orphan warnings originally shipped detail-view only.
+func TestListingSurfacesAllDiagnostics(t *testing.T) {
+	ms := parseMilestones("# P\n\n## Milestones\n\n### M1: M\n- [x] P1-M1-1: a\n- [?] P1-M1-2: b\n")
+	report := statusReport{
+		Feature: "Demo Product", OverallStatus: "In Progress", TaskCounts: map[string]int{},
+		Features: []featureSummary{{
+			Name: "Demo", Slug: "demo", Status: "In Progress",
+			TasksDone: 1, TasksTotal: 2, Milestones: ms, TasksOrphaned: 3,
+		}},
+	}
+	out := renderStatus(report, false, false)
+	if !strings.Contains(out, "unrecognised task marker") {
+		t.Errorf("listing mode hides unrecognised markers (#27):\n%s", out)
+	}
+	if !strings.Contains(out, "outside any milestone") {
+		t.Errorf("listing mode hides orphaned task lines (#31):\n%s", out)
+	}
+	if !strings.Contains(out, "--feature demo") {
+		t.Errorf("listing warnings must point at the detail view:\n%s", out)
+	}
+
+	// Control: a clean feature stays silent.
+	clean := parseMilestones("# P\n\n## Milestones\n\n### M1: M\n- [x] P1-M1-1: a\n")
+	report.Features[0].Milestones = clean
+	report.Features[0].TasksOrphaned = 0
+	if out := renderStatus(report, false, false); strings.Contains(out, "⚠") {
+		t.Errorf("false positive on a clean feature:\n%s", out)
+	}
+}

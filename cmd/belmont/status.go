@@ -450,8 +450,17 @@ func renderFeatureListing(report statusReport, color bool, showArchived bool) st
 			sb.WriteString("\n")
 
 			// Listing mode is what `status.md`'s fast path actually runs (no
-			// --feature), so this is the half that reaches an interactive
-			// agent deciding whether the loop is finished. See issue #30.
+			// --feature), so it is the half that reaches an interactive agent —
+			// every "this file is not what it looks like" signal has to appear
+			// here too, not just in the detail view. Issues #27, #30, #31.
+			if unknown := unknownMarkerTasks(f.Milestones); len(unknown) > 0 {
+				sb.WriteString(fmt.Sprintf("%s  ⚠ %d unrecognised task marker(s) — excluded from counts, never scheduled; run: belmont status --feature %s%s\n",
+					warnPrefix(color), len(unknown), f.Slug, warnSuffix(color)))
+			}
+			if f.TasksOrphaned > 0 {
+				sb.WriteString(fmt.Sprintf("%s  ⚠ %d task line(s) outside any milestone — not counted, never scheduled; run: belmont status --feature %s%s\n",
+					warnPrefix(color), f.TasksOrphaned, f.Slug, warnSuffix(color)))
+			}
 			if f.Status == "Complete" && f.TasksVerified < f.TasksTotal {
 				sb.WriteString(fmt.Sprintf("%s  ⚠ %d task(s) implemented but never verified — belmont reverify --feature %s%s\n",
 					warnPrefix(color), f.TasksTotal-f.TasksVerified, f.Slug, warnSuffix(color)))
