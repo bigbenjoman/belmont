@@ -126,6 +126,7 @@ func buildStatus(root string, maxName int, feature string) (statusReport, error)
 		report.Feature = extractFeatureName(string(prdContent))
 		report.FeatureSlug = feature
 		report.Milestones = parseMilestones(string(progressContent))
+		report.Orphans = orphanedTaskLines(string(progressContent))
 
 		// Single-feature parallel mode: overlay each active worktree's view
 		// of its own milestone on top of master's baseline. Only the
@@ -309,6 +310,22 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 		}
 		sb.WriteString("  Expected one of [ ] [>] [x] [v] [!]. Fix the marker, or delete the line if the work no longer exists.\n")
 		sb.WriteString("\n")
+	}
+
+	// Task lines outside any milestone are invisible to every count above, so
+	// the numbers just printed are wrong by exactly this many. Say so before
+	// anything that might be wrong because of it. See issue #31.
+	if len(report.Orphans) > 0 {
+		sb.WriteString(fmt.Sprintf("%s%d task line(s) outside any milestone — not counted, never scheduled:%s\n",
+			warnPrefix(color), len(report.Orphans), warnSuffix(color)))
+		for _, t := range report.Orphans {
+			label := t.ID
+			if label == "" {
+				label = t.Name
+			}
+			sb.WriteString(fmt.Sprintf("  [%s] PROGRESS.md:%d — %s\n", t.Marker, t.Line, label))
+		}
+		sb.WriteString("  A `## ` heading at column zero ends the milestones region. Move these under their `### M<n>:` heading, or indent the heading above them.\n\n")
 	}
 
 	// A feature reading "Complete" with unverified tasks is the terminal state

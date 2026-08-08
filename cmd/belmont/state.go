@@ -228,6 +228,88 @@ func markerIsVerified(marker string) bool {
 	return ok && st == taskVerified
 }
 
+// isSectionBreak reports whether a line ends the milestones region.
+//
+// A section break is a level-2 ATX heading **at column zero**. Indentation is
+// load-bearing and must not be trimmed away: a `##` indented under a list item
+// is that item's continuation body in Markdown, not a heading. Trimming first
+// meant a task whose write-up quoted a heading silently ended task collection
+// for the rest of the file — on the reporting project, 85 of 541 tasks became
+// invisible, including outstanding `[ ]` and `[!]` work, with no warning and
+// `belmont validate` exiting 0. See issue #31.
+//
+// `###` and deeper are never section breaks: `### M1:` is a milestone header
+// and `#### …` inside a milestone is ordinary prose.
+//
+// Every reader that needs to know where the milestones region ends must route
+// through this. Five call sites used to inline the trimmed check and all five
+// were wrong the same way.
+func isSectionBreak(line string) bool {
+	if !strings.HasPrefix(line, "##") {
+		return false
+	}
+	rest := line[2:]
+	if rest == "" {
+		return true // a bare `##`
+	}
+	if strings.HasPrefix(rest, "#") {
+		return false // ### or deeper
+	}
+	return rest[0] == ' ' || rest[0] == '\t'
+}
+
+// orphanedTaskLines returns task-shaped lines that sit outside any milestone —
+// before the first `### M<n>:` header, or after a `## ` section break closed
+// the region. They are counted by nothing, rendered nowhere, and never
+// scheduled.
+//
+// This exists because silently dropping them is the same failure as issue #27:
+// information lost without telling anyone. A legitimate PROGRESS.md does have
+// content after the milestones region (`## Session History`, `## Decisions
+// Log`), so a task line there is not automatically a mistake — but it is
+// always worth saying out loud. See issue #31.
+func orphanedTaskLines(progress string) []task {
+	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+(.+)$`)
+	idRe := regexp.MustCompile(`^(P\d+-[\w][\w-]*):\s*(.+)$`)
+
+	var out []task
+	inMilestone := false
+	for i, line := range strings.Split(progress, "\n") {
+		if msHeaderRe.MatchString(line) {
+			inMilestone = true
+			continue
+		}
+		if isSectionBreak(line) {
+			inMilestone = false
+			continue
+		}
+		if inMilestone {
+			continue
+		}
+		m := taskRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		text := strings.TrimSpace(m[2])
+		t := task{Name: text, Marker: m[1], Line: i + 1}
+		if idm := idRe.FindStringSubmatch(text); len(idm) >= 3 {
+			t.ID = idm[1]
+			t.Name = strings.TrimSpace(idm[2])
+		}
+		if st, ok := canonicalMarker(m[1]); ok {
+			t.Status = st
+		} else {
+			t.Status = taskUnknown
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// msHeaderRe matches a milestone header. Shared so orphan detection and
+// parseMilestones cannot disagree about what starts a milestone.
+var msHeaderRe = regexp.MustCompile(`^###\s+M(\d+):\s*(.+)$`)
+
 func parseMilestones(progress string) []milestone {
 	// Match milestone headers: ### M1: Name
 	msRe := regexp.MustCompile(`(?m)^###\s+M(\d+):\s*(.+)$`)
@@ -263,8 +345,9 @@ func parseMilestones(progress string) []milestone {
 			continue
 		}
 
-		// Check for next section (## header) — stops current milestone
-		if strings.HasPrefix(strings.TrimSpace(line), "## ") {
+		// Check for next section (## header) — stops current milestone.
+		// Column-zero only: see isSectionBreak / issue #31.
+		if isSectionBreak(line) {
 			if currentMS != nil {
 				milestones = append(milestones, *currentMS)
 				currentMS = nil
@@ -643,7 +726,7 @@ func skipMilestoneInProgress(root, feature, milestoneID string) error {
 			inTarget = ("M" + m[1]) == milestoneID
 			continue
 		}
-		if strings.HasPrefix(strings.TrimSpace(line), "## ") {
+		if isSectionBreak(line) {
 			inTarget = false
 			continue
 		}

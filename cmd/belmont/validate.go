@@ -171,5 +171,6 @@ func validateFeature(root, slug string) ([]validationViolation, error) {
 		return nil, fmt.Errorf("read %s: %w", progressPath, err)
 	}
 	milestones := parseMilestones(string(data))
-	return detectViolations(slug, milestones), nil
+	v := detectViolations(slug, milestones)
+	return append(v, detectOrphanViolations(slug, string(data))...), nil
 }

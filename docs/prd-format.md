@@ -89,6 +89,12 @@ Markdown "done" convention and is what GitHub renders as checked.
 it, and accepting it would let a verified flip slip past the commit-evidence
 guard. A capital `V` is treated as unrecognised.
 
+**Headings inside a milestone.** A `## ` heading at column zero ends the milestones
+region — that is how `## Session History` works. Inside a task's write-up, indent any
+quoted `##` by two spaces so it reads as part of that task's body; `###` and deeper are
+always safe. A task line that ends up outside every milestone is counted by nothing, so
+`belmont status` and `belmont validate` both report it rather than dropping it silently.
+
 **Any other marker is an error, not a state.** Belmont does not guess: an
 unrecognised marker is excluded from the counts, rendered `[?]`, never offered
 as the next task, prevents its milestone reading as complete, and makes

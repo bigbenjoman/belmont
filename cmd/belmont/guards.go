@@ -240,6 +240,41 @@ func runEvidenceCheck(cfg loopConfig, action loopAction, pre *progressSnapshot) 
 	injectEvidenceSteering(cfg, action, missing)
 }
 
+// detectOrphanViolations flags task-shaped lines that sit outside any
+// milestone, so they cannot be lost in silence.
+//
+// A `## ` heading at column zero legitimately ends the milestones region, and a
+// normal PROGRESS.md has `## Session History` and `## Decisions Log` after it —
+// so a task line down there is not automatically wrong. But it is invisible to
+// every count, never rendered, and never scheduled, and issue #31 is what that
+// costs: 85 of 541 tasks vanished on a real project, including outstanding
+// `[ ]` and `[!]` work, with `belmont validate` exiting 0.
+//
+// Takes raw content rather than parsed milestones for the obvious reason: by
+// the time parseMilestones has run, these lines are already gone.
+func detectOrphanViolations(slug, progress string) []validationViolation {
+	orphans := orphanedTaskLines(progress)
+	if len(orphans) == 0 {
+		return nil
+	}
+	var out []validationViolation
+	for _, t := range orphans {
+		label := t.ID
+		if label == "" {
+			label = t.Name
+		}
+		out = append(out, validationViolation{
+			Feature: slug,
+			TaskID:  t.ID,
+			Rule:    "task_outside_milestone",
+			Message: fmt.Sprintf(
+				"task line at PROGRESS.md:%d (%s) sits outside any milestone, so it is counted by nothing and never scheduled. A `## ` heading at column zero ends the milestones region — if this task is real, move it under its `### M<n>:` heading, or indent the heading above it so it reads as part of the preceding task's body.",
+				t.Line, label),
+		})
+	}
+	return out
+}
+
 // detectViolations is the pure rule engine — no IO. Takes parsed milestones,
 // returns a list of findings. Safe for test coverage.
 func detectViolations(slug string, milestones []milestone) []validationViolation {
@@ -340,8 +375,7 @@ func parseProgressSnapshot(path, content string) *progressSnapshot {
 			continue
 		}
 		// A non-milestone level-2 heading closes the current block.
-		trim := strings.TrimSpace(line)
-		if strings.HasPrefix(trim, "## ") && !strings.HasPrefix(trim, "### ") {
+		if isSectionBreak(line) {
 			flush()
 			continue
 		}
@@ -383,8 +417,7 @@ func revertEvidenceMissing(post, pre *progressSnapshot, missing []evidenceMissin
 		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 3 {
 			currentMS = "M" + m[1]
 		} else {
-			trim := strings.TrimSpace(line)
-			if strings.HasPrefix(trim, "## ") && !strings.HasPrefix(trim, "### ") {
+			if isSectionBreak(line) {
 				currentMS = ""
 			}
 		}
@@ -454,10 +487,18 @@ func renderValidationReport(w io.Writer, violations []validationViolation) {
 	for _, feat := range featOrder {
 		fmt.Fprintf(w, "  \033[1m%s\033[0m\n", feat)
 		for _, v := range byFeat[feat] {
-			if v.TaskID != "" {
+			// A violation can have neither a milestone nor a task ID — an
+			// orphaned task line belongs to no milestone by definition. Emit no
+			// bracket at all rather than an empty one.
+			switch {
+			case v.Milestone != "" && v.TaskID != "":
 				fmt.Fprintf(w, "    • [%s/%s] %s — %s\n", v.Milestone, v.TaskID, v.Rule, v.Message)
-			} else {
+			case v.Milestone != "":
 				fmt.Fprintf(w, "    • [%s] %s — %s\n", v.Milestone, v.Rule, v.Message)
+			case v.TaskID != "":
+				fmt.Fprintf(w, "    • [%s] %s — %s\n", v.TaskID, v.Rule, v.Message)
+			default:
+				fmt.Fprintf(w, "    • %s — %s\n", v.Rule, v.Message)
 			}
 		}
 		fmt.Fprintln(w)
