@@ -302,3 +302,55 @@ func TestResumeReArmsUntracking(t *testing.T) {
 		t.Fatalf("worktree PROGRESS.md missing: %v", err)
 	}
 }
+
+// mergeProgressState was the one reader that did not honour isSectionBreak
+// after #31, so it attributed a task past a `## ` break to the last milestone
+// header it had seen and spliced master-only orphans into that milestone.
+func TestSyncRespectsSectionBreaks(t *testing.T) {
+	master := `### M1: Work
+- [x] P1-M1-1: a
+
+## Session History
+
+- [ ] P1-M9-1: orphan on main, belongs to no milestone
+`
+	wt := `### M1: Work
+- [ ] P1-M1-1: a
+
+## Session History
+
+- [ ] P1-M9-2: orphan here
+`
+	got, _ := mergeProgressState(master, wt)
+
+	// The in-milestone task still merges normally.
+	if !strings.Contains(got, "- [x] P1-M1-1") {
+		t.Errorf("in-milestone state was not merged:\n%s", got)
+	}
+	// Master's orphan must NOT be adopted into M1.
+	if strings.Contains(got, "P1-M9-1") {
+		t.Errorf("an orphan past a section break was spliced into a milestone:\n%s", got)
+	}
+	// The worktree's own orphan is left exactly as written.
+	if !strings.Contains(got, "- [ ] P1-M9-2: orphan here") {
+		t.Errorf("the worktree's orphan was altered:\n%s", got)
+	}
+	// And the merged document must still agree with the parser about structure.
+	ms := parseMilestones("# P\n\n## Milestones\n\n" + got)
+	if len(ms) != 1 || len(ms[0].Tasks) != 1 {
+		t.Errorf("merged output no longer parses to 1 milestone with 1 task: %+v", ms)
+	}
+}
+
+// An indented heading inside a task body must not split the milestone here
+// either — the merge has to see the same region the parser sees.
+func TestSyncIndentedHeadingDoesNotSplitMilestone(t *testing.T) {
+	master := "### M1: Work\n- [x] P1-M1-1: a\n\n  ## quoted in the body\n\n- [x] P1-M1-2: b\n"
+	wt := "### M1: Work\n- [ ] P1-M1-1: a\n\n  ## quoted in the body\n\n- [ ] P1-M1-2: b\n"
+	got, _ := mergeProgressState(master, wt)
+	for _, want := range []string{"- [x] P1-M1-1", "- [x] P1-M1-2"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q — a task after an indented heading was not merged:\n%s", want, got)
+		}
+	}
+}
