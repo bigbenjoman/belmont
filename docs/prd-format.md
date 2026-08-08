@@ -80,15 +80,30 @@ Tasks may additionally use `[WEB]` / `[API]` prefixes (e.g. `[WEB] Render the ne
 | `[v]`    | Verified    | Task finished and verified                             |
 | `[!]`    | Blocked     | Cannot proceed (missing info, Figma unavailable, etc.) |
 
-`[x]`/`[X]` and `[v]`/`[V]` are accepted in either case — a capital `[X]` is a
-standard Markdown "done" convention and is what GitHub renders as checked.
+`[x]` and `[X]` are both accepted as done — a capital `[X]` is a standard
+Markdown "done" convention and is what GitHub renders as checked.
+
+`[v]` is verified. **`[V]` is not** — unlike `[X]` it has no convention behind
+it, and accepting it would let a verified flip slip past the commit-evidence
+guard. A capital `V` is treated as unrecognised.
 
 **Any other marker is an error, not a state.** Belmont does not guess: an
 unrecognised marker is excluded from the counts, rendered `[?]`, never offered
-as the next task, and reported as a hard violation by `belmont validate` — which
-means `belmont auto` refuses to start until it is fixed. Earlier versions
-silently treated it as `[ ]` todo, so cancelled or relocated work was counted as
-outstanding and handed to an agent to build.
+as the next task, prevents its milestone reading as complete, and makes
+`belmont validate` exit 1. Merge auto-resolution also refuses to touch a file
+containing one. Earlier versions silently treated it as `[ ]` todo, so cancelled
+or relocated work was counted as outstanding and handed to an agent to build.
+
+Fix it by hand — edit the marker, or delete the line if the work no longer
+exists. There is no in-tool override: skipping the milestone will not clear it.
+
+> **Upgrading?** If a PROGRESS.md already contains a stray marker, this is a
+> behaviour change. `belmont validate` will now exit 1 on it, and
+> `belmont auto` (single feature, non-interactive) will refuse to start where it
+> previously ran and quietly treated the entry as outstanding work. Run
+> `belmont status` to see every offending line with its line number. Note the
+> lint does **not** run for `belmont auto --features` / `--all`, and on a TTY it
+> asks before aborting.
 
 ### Example
 

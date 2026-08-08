@@ -140,13 +140,32 @@ All task and milestone state lives in PROGRESS.md. PRD.md is a pure specificatio
 | `[v]` | verified | Implemented and passed verification |
 | `[!]` | blocked | Cannot proceed |
 
-`x`/`v` are matched case-insensitively (`[X]` is a standard Markdown done
-convention). **Every other marker parses to `taskUnknown`** — never `taskTodo`.
-An unknown task is excluded from the counts, rendered `[?]`, never returned by
-`nextTask`, prevents its milestone reading as complete, and is a hard
-`belmont validate` violation so `belmont auto` will not start. `nextTask`'s
-positive-match condition is what enforces the scheduling half — do not rewrite
-it as a negative. See issue #27.
+**`canonicalMarker` (state.go) is the single source of truth for what a marker
+means.** Every reader that interprets a raw marker must route through it — the
+commit-evidence guard, the merge-conflict resolver and `reverify` each used to
+compare raw bytes and disagreed with the parser, silently. `[X]` is accepted as
+done (GitHub renders a capital X as checked); **`[V]` is deliberately not
+accepted** — it has no external convention, nothing in this repo emits it, and
+accepting it made a `[V]` flip count as verified everywhere while being
+invisible to `runEvidenceCheck`.
+
+**Every other marker parses to `taskUnknown`** — never `taskTodo`. An unknown
+task is excluded from the counts, rendered `[?]`, never returned by `nextTask`,
+prevents its milestone reading as complete, and makes `belmont validate` exit 1.
+`nextTask`'s positive-match condition is what enforces the scheduling half — do
+not rewrite it as a negative. `resolveProgressConflict` refuses to auto-resolve
+a PROGRESS.md containing one, so the conflict escalates to the reconciliation
+agent instead of being normalised away. See issue #27.
+
+**What the validate gate actually covers.** Do not overstate it: `belmont auto`
+runs `detectViolations` only on the **single-feature** path (`autocmd.go`), and
+only aborts outright when stdin is not a TTY — interactively it prompts
+`Proceed anyway? [y/N]`. `belmont auto --features` / `--all` return to
+`runAutoMultiFeature` before the lint and never run it. A milestone holding an
+unknown marker can never read as complete and cannot be cleared by
+`skipMilestoneInProgress` (its regex is `[ >!]`), so on the ungated paths the
+loop alternates phases until `--max-iterations`. Fixing the file by hand is the
+only route.
 
 ### Milestone status: always computed from tasks
 - All `[v]` → verified

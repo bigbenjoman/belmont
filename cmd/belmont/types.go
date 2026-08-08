@@ -20,9 +20,14 @@ const (
 	// read was being scheduled for implementation. See issue #27.
 	//
 	// An unknown task is never offered as next work, never counted as todo,
-	// and never lets a milestone read as complete. `belmont validate` treats
-	// it as a hard violation, which is what stops `belmont auto` starting
-	// against a file it cannot parse.
+	// and never lets a milestone read as complete. `belmont validate` exits 1
+	// on it, and `resolveProgressConflict` refuses to auto-resolve a file
+	// containing one so the conflict escalates rather than being normalised.
+	//
+	// The validate gate is narrower than it looks and must not be described as
+	// an unconditional stop: `belmont auto` lints only on the single-feature
+	// path, and only aborts when stdin is not a TTY — interactively it offers
+	// "Proceed anyway? [y/N]". `--features`/`--all` skip the lint entirely.
 	taskUnknown taskStatus = "unknown"
 )
 

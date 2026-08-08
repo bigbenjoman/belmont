@@ -112,8 +112,26 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		return false
 	}
 
-	// State priority: higher = more advanced
-	statePriority := map[string]int{" ": 0, ">": 1, "x": 2, "v": 3, "!": -1}
+	// State priority: higher = more advanced. Keyed by canonical taskStatus,
+	// not by raw marker — a raw-marker map silently ranked every spelling it
+	// lacked a key for at Go's zero value (0, tied with todo and BELOW
+	// in-progress), so `[X]` (done) lost to `[>]` and an unrecognised marker
+	// was overwritten and committed.
+	statePriority := map[taskStatus]int{
+		taskTodo:       0,
+		taskInProgress: 1,
+		taskDone:       2,
+		taskVerified:   3,
+		taskBlocked:    -1,
+	}
+	rank := func(marker string) (int, bool) {
+		st, ok := canonicalMarker(marker)
+		if !ok {
+			return 0, false
+		}
+		p, known := statePriority[st]
+		return p, known
+	}
 
 	// Parse task states from "theirs"
 	theirsStates := make(map[string]string) // task ID → checkbox marker
@@ -122,6 +140,35 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	for _, line := range theirsLines {
 		if m := taskRe.FindStringSubmatch(line); m != nil {
 			theirsStates[m[2]] = m[1]
+		}
+	}
+
+	// Refuse to auto-resolve a file containing a marker we cannot read.
+	//
+	// This resolver rewrites checkbox lines in place. Applied to an
+	// unrecognised marker it would normalise it away and commit the result
+	// under a green "conflicts auto-resolved" — destroying the exact signal
+	// that `[?]` rendering, the status warning and the `unrecognised_task_marker`
+	// violation exist to raise, before any of them can fire. Bail out instead
+	// so the conflict escalates to the reconciliation agent. Deliberately
+	// broader than taskRe: it matches ID-less task lines too, which taskRe
+	// skips. See issue #27.
+	anyTaskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s`)
+	for _, side := range []struct {
+		name  string
+		lines []string
+	}{{"ours", strings.Split(string(oursOut), "\n")}, {"theirs", theirsLines}} {
+		for _, line := range side.lines {
+			m := anyTaskRe.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			if _, ok := canonicalMarker(m[1]); !ok {
+				fmt.Fprintf(os.Stderr,
+					"  \033[33m⚠ %s: unrecognised task marker [%s] on the %s side — not auto-resolving; escalating to the reconciliation agent\033[0m\n",
+					relPath, m[1], side.name)
+				return false
+			}
 		}
 	}
 
@@ -153,10 +200,15 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 			oursMarker := m[1]
 			taskID := m[2]
 			if theirsMarker, ok := theirsStates[taskID]; ok {
-				// Take the more-advanced state (but preserve [!] blocked)
+				oursRank, oursKnown := rank(oursMarker)
+				theirsRank, theirsKnown := rank(theirsMarker)
+				// Take the more-advanced state (but preserve [!] blocked).
+				// Both sides are known here — the scan above already bailed on
+				// anything unrecognised — but stay defensive rather than let a
+				// future edit reintroduce a zero-value rank.
 				if oursMarker == "!" || theirsMarker == "!" {
 					// Keep blocked as-is from ours
-				} else if statePriority[theirsMarker] > statePriority[oursMarker] {
+				} else if oursKnown && theirsKnown && theirsRank > oursRank {
 					line = strings.Replace(line, "["+oursMarker+"]", "["+theirsMarker+"]", 1)
 				}
 			}
