@@ -150,6 +150,11 @@ func buildStatus(root string, maxName int, feature string) (statusReport, error)
 				report.TaskCounts["in_progress"]++
 			case taskTodo:
 				report.TaskCounts["todo"]++
+			case taskUnknown:
+				// Counted separately, never folded into todo. The whole point
+				// of issue #27 is that an unreadable entry must not be given a
+				// state it did not ask for.
+				report.TaskCounts["unknown"]++
 			}
 		}
 
@@ -288,6 +293,22 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 		}
 	}
 	sb.WriteString("\n")
+
+	// Unrecognised markers are surfaced loudly and before anything else that
+	// might be wrong because of them. Silence here is the whole of issue #27.
+	if unknown := unknownMarkerTasks(report.Milestones); len(unknown) > 0 {
+		sb.WriteString(fmt.Sprintf("%sUnrecognised task markers (%d) — excluded from counts, never scheduled:%s\n",
+			warnPrefix(color), len(unknown), warnSuffix(color)))
+		for _, t := range unknown {
+			label := t.ID
+			if label == "" {
+				label = t.Name
+			}
+			sb.WriteString(fmt.Sprintf("  [%s] PROGRESS.md:%d — %s\n", t.Marker, t.Line, label))
+		}
+		sb.WriteString("  Expected one of [ ] [>] [x] [v] [!]. Fix the marker, or delete the line if the work no longer exists.\n")
+		sb.WriteString("\n")
+	}
 
 	blocked := blockedTaskNames(report.Milestones)
 	if len(blocked) > 0 {

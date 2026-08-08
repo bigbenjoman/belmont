@@ -140,6 +140,14 @@ All task and milestone state lives in PROGRESS.md. PRD.md is a pure specificatio
 | `[v]` | verified | Implemented and passed verification |
 | `[!]` | blocked | Cannot proceed |
 
+`x`/`v` are matched case-insensitively (`[X]` is a standard Markdown done
+convention). **Every other marker parses to `taskUnknown`** — never `taskTodo`.
+An unknown task is excluded from the counts, rendered `[?]`, never returned by
+`nextTask`, prevents its milestone reading as complete, and is a hard
+`belmont validate` violation so `belmont auto` will not start. `nextTask`'s
+positive-match condition is what enforces the scheduling half — do not rewrite
+it as a negative. See issue #27.
+
 ### Milestone status: always computed from tasks
 - All `[v]` → verified
 - All `[x]` or `[v]` → done (needs verification)

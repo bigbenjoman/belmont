@@ -80,6 +80,16 @@ Tasks may additionally use `[WEB]` / `[API]` prefixes (e.g. `[WEB] Render the ne
 | `[v]`    | Verified    | Task finished and verified                             |
 | `[!]`    | Blocked     | Cannot proceed (missing info, Figma unavailable, etc.) |
 
+`[x]`/`[X]` and `[v]`/`[V]` are accepted in either case — a capital `[X]` is a
+standard Markdown "done" convention and is what GitHub renders as checked.
+
+**Any other marker is an error, not a state.** Belmont does not guess: an
+unrecognised marker is excluded from the counts, rendered `[?]`, never offered
+as the next task, and reported as a hard violation by `belmont validate` — which
+means `belmont auto` refuses to start until it is fixed. Earlier versions
+silently treated it as `[ ]` todo, so cancelled or relocated work was counted as
+outstanding and handed to an agent to build.
+
 ### Example
 
 ```markdown

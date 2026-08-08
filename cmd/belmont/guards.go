@@ -257,7 +257,30 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 					m.ID, m.Name),
 			})
 		}
-		// Rule 2: task IDs reference a milestone other than the one they live in.
+		// Rule 2: an unrecognised checkbox marker. Hard violation, because
+		// `belmont auto` lints at startup — this is what stops the loop running
+		// against a PROGRESS.md it cannot read. See issue #27.
+		for _, t := range m.Tasks {
+			if t.Status != taskUnknown {
+				continue
+			}
+			label := t.ID
+			if label == "" {
+				label = t.Name
+			}
+			out = append(out, validationViolation{
+				Feature:       slug,
+				Milestone:     m.ID,
+				MilestoneName: m.Name,
+				TaskID:        t.ID,
+				Rule:          "unrecognised_task_marker",
+				Message: fmt.Sprintf(
+					"unrecognised task marker %q at PROGRESS.md:%d (%s) — expected one of [ ] [>] [x] [v] [!]. Belmont will not guess a state for it: it is excluded from the counts and never offered as the next task. Fix the marker, or delete the line if the work no longer exists.",
+					"["+t.Marker+"]", t.Line, label),
+			})
+		}
+
+		// Rule 3: task IDs reference a milestone other than the one they live in.
 		currentNum := milestoneNumber(m.ID)
 		for _, t := range m.Tasks {
 			match := taskIDMilestoneRefRe.FindStringSubmatch(t.ID)
