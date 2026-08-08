@@ -80,7 +80,11 @@ type statusReport struct {
 	// is the human-readable name from PRD.md. Kept so diagnostics can print a
 	// command the user can actually paste — `belmont reverify --feature` takes
 	// the slug. Empty in listing mode, where featureSummary carries its own.
-	FeatureSlug      string `json:",omitempty"`
+	FeatureSlug string `json:",omitempty"`
+	// Orphans are task-shaped lines outside any milestone — invisible to every
+	// count. Carried on the report because renderStatus has no raw content and
+	// by the time parseMilestones has run they are already gone. See issue #31.
+	Orphans          []task `json:",omitempty"`
 	TechPlanReady    bool
 	PRFAQReady       bool
 	OverallStatus    string

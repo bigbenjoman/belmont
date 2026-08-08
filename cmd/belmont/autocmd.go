@@ -171,7 +171,9 @@ func runAutoCmd(args []string) error {
 	// conflicts (per skills/belmont/_partials/milestone-immutability.md).
 	// Prompt the user to continue or abort; non-interactive runs abort on
 	// violations to avoid silent damage.
-	if violations := detectViolations(cfg.Feature, milestones); len(violations) > 0 {
+	violations := detectViolations(cfg.Feature, milestones)
+	violations = append(violations, detectOrphanViolations(cfg.Feature, string(progressContent))...)
+	if len(violations) > 0 {
 		fmt.Fprintf(os.Stderr, "\033[31m✗ Milestone-structure violation(s) detected:\033[0m\n\n")
 		renderValidationReport(os.Stderr, violations)
 		if !isTerminal(os.Stdin) {

@@ -142,6 +142,8 @@ All task and milestone state lives in PROGRESS.md. PRD.md is a pure specificatio
 | `[v]` | verified | Implemented and passed verification |
 | `[!]` | blocked | Cannot proceed |
 
+**One definition per structural concept — see [`knowledge/cross-cutting/progress-md-parsing.md`](knowledge/cross-cutting/progress-md-parsing.md).** PROGRESS.md is read by ~8 independent code paths. Two shipped bugs (#27, #31) came from each path inlining its own answer to "what does this marker mean?" and "where does the milestones region end?", and in both cases every copy was wrong identically. Marker semantics live in `canonicalMarker`; the region boundary lives in `isSectionBreak`, which matches a level-2 heading **at column zero only** — never trim before testing, because `  ## Foo` indented under a list item is that item's body. Anything unplaceable is surfaced, never dropped: unreadable markers become `taskUnknown`, and task lines outside every milestone are reported by `orphanedTaskLines`.
+
 **`canonicalMarker` (state.go) is the single source of truth for what a marker
 means.** Every reader that interprets a raw marker must route through it — the
 commit-evidence guard, the merge-conflict resolver and `reverify` each used to
