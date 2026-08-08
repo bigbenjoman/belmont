@@ -451,11 +451,31 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	// line. Count occurrences on both sides and refuse to merge any ID that is
 	// not unique — same policy as an unrecognised marker. Belmont does not
 	// guess, and it says so.
+	//
+	// The count must be scoped to the milestones region, because the two walks
+	// below are. A task-shaped line under `## Session History` — a sibling
+	// logging "- [x] P1-M1-1: done, commit abc123" — belongs to no milestone
+	// and is never merged, so counting it made the real in-region task look
+	// ambiguous: the refusal then dropped master's recorded completion and the
+	// warning told the user to de-duplicate an ID that appears once. Same
+	// one-definition-per-concept rule as everywhere else; see isSectionBreak.
 	var warnings []string
 	dupIDs := map[string]bool{}
 	countIDs := func(content string) map[string]int {
 		n := map[string]int{}
+		currentMS := ""
 		for _, line := range strings.Split(content, "\n") {
+			if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 2 {
+				currentMS = "M" + m[1]
+				continue
+			}
+			if isSectionBreak(line) {
+				currentMS = ""
+				continue
+			}
+			if currentMS == "" {
+				continue
+			}
 			if tm := taskRe.FindStringSubmatch(line); len(tm) >= 6 {
 				n[tm[4]]++
 			}
@@ -471,6 +491,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	}
 
 	masterTasks := map[string]masterTask{}
+	var masterOrder []string // document order, so the carry-over splice is deterministic
 	currentMS := ""
 	for _, line := range strings.Split(masterContent, "\n") {
 		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 2 {
@@ -490,6 +511,9 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			if dupIDs[tm[4]] || currentMS == "" {
 				continue // orphans belong to no milestone; never carry them into one
 			}
+			if _, dup := masterTasks[tm[4]]; !dup {
+				masterOrder = append(masterOrder, tm[4])
+			}
 			masterTasks[tm[4]] = masterTask{marker: tm[2], line: line, milestone: currentMS}
 		}
 	}
@@ -503,14 +527,22 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		return worktreeContent, warnings
 	}
 
-	seen := map[string]bool{}
-	lastTaskIdx := map[string]int{} // milestone -> index of its final task line
+	// wtHasID records every task ID the worktree document holds ANYWHERE,
+	// in-region or orphaned past a section break. The carry-over pass keys off
+	// it rather than off the in-region matches alone: an ID the worktree only
+	// holds as an orphan is still an ID the worktree holds, and splicing
+	// master's in-region copy in beside it produced a duplicate that the very
+	// next sibling merge then refused, deleting the completed line outright.
+	wtHasID := map[string]bool{}
+	lastTaskIdx := map[string]int{}   // milestone -> index of its final task line
+	lastHeaderIdx := map[string]int{} // milestone -> index of its header line
 	out := strings.Split(worktreeContent, "\n")
 
 	currentMS = ""
 	for i, line := range out {
 		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 2 {
 			currentMS = "M" + m[1]
+			lastHeaderIdx[currentMS] = i
 			continue
 		}
 		if isSectionBreak(line) {
@@ -518,7 +550,11 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			continue
 		}
 		tm := taskRe.FindStringSubmatch(line)
-		if len(tm) < 6 || currentMS == "" {
+		if len(tm) < 6 {
+			continue
+		}
+		wtHasID[tm[4]] = true
+		if currentMS == "" {
 			continue // outside every milestone: leave exactly as written
 		}
 		id := tm[4]
@@ -527,7 +563,6 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		if !ok {
 			continue
 		}
-		seen[id] = true
 
 		wtMarker := tm[2]
 
@@ -569,17 +604,24 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	// splice in one pass: computing indices as we mutate would mis-place
 	// insertions whenever the two documents order milestones differently.
 	pending := map[int][]string{}
-	for _, line := range strings.Split(masterContent, "\n") {
-		tm := taskRe.FindStringSubmatch(line)
-		if len(tm) < 6 || seen[tm[4]] {
-			continue
+	for _, id := range masterOrder {
+		if wtHasID[id] {
+			continue // already present on this side — reconciled above, or an
+			// orphan we leave exactly as written rather than duplicate
 		}
-		mt := masterTasks[tm[4]]
+		mt := masterTasks[id]
+		// Anchor after the milestone's last task line, or after its header when
+		// the milestone exists here but holds no tasks yet — otherwise the first
+		// task a sibling adds to an empty milestone has nowhere to land and is
+		// dropped from the only copy that exists.
 		at, ok := lastTaskIdx[mt.milestone]
+		if !ok {
+			at, ok = lastHeaderIdx[mt.milestone]
+		}
 		if !ok {
 			warnings = append(warnings, fmt.Sprintf(
 				"task %s exists on main under %s, which this worktree's PROGRESS.md does not contain — not merged",
-				tm[4], nonEmpty(mt.milestone, "an unknown milestone")))
+				id, nonEmpty(mt.milestone, "an unknown milestone")))
 			continue
 		}
 		pending[at] = append(pending[at], mt.line)

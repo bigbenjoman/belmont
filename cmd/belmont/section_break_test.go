@@ -80,6 +80,10 @@ func TestIsSectionBreak(t *testing.T) {
 // A column-zero `## ` legitimately ends the region — that part must not change,
 // or `## Session History` would be swallowed into the last milestone.
 func TestColumnZeroHeadingStillEndsMilestone(t *testing.T) {
+	// The post-break content must be TASK-SHAPED. With a markdown table here
+	// the assertions held whether or not the break was honoured, so this test
+	// passed even against an isSectionBreak that never broke — vacuous for the
+	// regression it names.
 	body := `# Progress: Demo
 
 ## Milestones
@@ -89,12 +93,18 @@ func TestColumnZeroHeadingStillEndsMilestone(t *testing.T) {
 
 ## Session History
 
-| Session | Date |
-|---------|------|
+- [x] P1-M1-1: a (logged again in the history)
 `
 	ms := parseMilestones(body)
-	if len(ms) != 1 || len(ms[0].Tasks) != 1 {
-		t.Fatalf("want 1 milestone with 1 task, got %d milestones", len(ms))
+	if len(ms) != 1 {
+		t.Fatalf("milestones = %d, want 1", len(ms))
+	}
+	if got := len(ms[0].Tasks); got != 1 {
+		t.Fatalf("tasks in M1 = %d, want 1 — a column-zero `## ` must end the region, so the history line is not M1's", got)
+	}
+	orphans := orphanedTaskLines(body)
+	if len(orphans) != 1 {
+		t.Fatalf("orphans = %d, want 1 — the history line belongs to no milestone", len(orphans))
 	}
 }
 
@@ -184,5 +194,114 @@ func TestSnapshotAgreesWithParserOnIndentedHeading(t *testing.T) {
 	if len(snap.Blocks[0].TaskStates) != 2 {
 		t.Errorf("snapshot sees %d tasks, parser sees 2 — the guard would revert the wrong lines: %v",
 			len(snap.Blocks[0].TaskStates), snap.Blocks[0].TaskStates)
+	}
+}
+
+// …and the rebuilder must agree with the snapshot, for the same reason. The
+// snapshot decides where pre's block ENDS; the rebuilder decides which post
+// lines that block REPLACES. When only one of them was converted to
+// isSectionBreak the two ran off different boundaries, and the mismatch is not
+// a lost revert but active corruption: the pre block is emitted whole, then
+// post's leftover tail is re-emitted verbatim below it.
+const scopeSeamPre = `# Progress: Demo
+
+### M1: Target
+- [ ] P1-M1-1: alpha
+
+### M2: Out of scope
+- [ ] P1-M2-1: beta
+
+  ## A heading quoted in beta's body
+
+- [ ] P1-M2-2: gamma
+
+## Session History
+- row one
+`
+
+func TestRebuildAgreesWithSnapshotOnBlockBoundary(t *testing.T) {
+	// The agent flipped an out-of-scope task while the action targeted M1.
+	post := strings.Replace(scopeSeamPre, "- [ ] P1-M2-2: gamma", "- [x] P1-M2-2: gamma", 1)
+
+	pre := parseProgressSnapshot("P", scopeSeamPre)
+	got, err := rebuildAfterScopeGuard(pre, parseProgressSnapshot("P", post), "M1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// M1 is untouched and M2 reverts to pre, so the whole file must equal pre.
+	if got != scopeSeamPre {
+		t.Errorf("rebuild did not restore pre exactly.\n--- got ---\n%s\n--- want ---\n%s", got, scopeSeamPre)
+	}
+	for _, s := range []string{"P1-M2-2: gamma", "A heading quoted in beta's body"} {
+		if n := strings.Count(got, s); n != 1 {
+			t.Errorf("%q appears %d times, want 1 — post's tail was re-emitted below the pre block", s, n)
+		}
+	}
+	if strings.Contains(got, "- [x] P1-M2-2") {
+		t.Error("the out-of-scope flip survived the revert that the guard reported as applied")
+	}
+	// Idempotent: reverting an already-clean file changes nothing.
+	again, err := rebuildAfterScopeGuard(pre, parseProgressSnapshot("P", got), "M1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != got {
+		t.Error("rebuild is not idempotent — re-applying it grows the duplicates")
+	}
+}
+
+func TestRebuildRemovesNewMilestoneWholeBlock(t *testing.T) {
+	pre := `### M1: Target
+- [ ] P1-M1-1: alpha
+
+## Session History
+`
+	post := `### M1: Target
+- [x] P1-M1-1: alpha
+
+### M9: Milestone the agent invented
+- [ ] P1-M9-1: smuggled
+
+  ## rationale quoted from the spec
+
+- [ ] P1-M9-2: also smuggled
+
+## Session History
+`
+	got, err := rebuildAfterScopeGuard(parseProgressSnapshot("P", pre), parseProgressSnapshot("P", post), "M1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"P1-M9-1", "P1-M9-2", "rationale quoted from the spec"} {
+		if strings.Contains(got, s) {
+			t.Errorf("%q survived removal of the invented milestone M9:\n%s", s, got)
+		}
+	}
+	// The fragment used to land headerless under M1 and be adopted by it.
+	snap := parseProgressSnapshot("P", got)
+	if idx, ok := snap.ByID["M1"]; ok {
+		if n := len(snap.Blocks[idx].TaskStates); n != 1 {
+			t.Errorf("M1 holds %d tasks after the rebuild, want 1 — M9's tail leaked into the target milestone: %v",
+				n, snap.Blocks[idx].TaskStates)
+		}
+	}
+}
+
+// The disagreement also runs the other way: isSectionBreak accepts `##` + TAB
+// and a bare `##`, which the trimmed `"## "` test did not. There the block scan
+// ran PAST the real region end and the replacement deleted everything after it.
+func TestRebuildKeepsContentAfterTabbedSectionHeading(t *testing.T) {
+	pre := "### M1: Target\n- [ ] P1-M1-1: alpha\n\n### M2: Out of scope\n- [ ] P1-M2-1: beta\n\n##\tSession History\n- row one\n- row two\n"
+	post := strings.Replace(pre, "- [ ] P1-M2-1: beta", "- [x] P1-M2-1: beta", 1)
+
+	got, err := rebuildAfterScopeGuard(parseProgressSnapshot("P", pre), parseProgressSnapshot("P", post), "M1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"##\tSession History", "- row one", "- row two"} {
+		if !strings.Contains(got, s) {
+			t.Errorf("%q was deleted by an out-of-scope replacement:\n%s", s, got)
+		}
 	}
 }

@@ -32,6 +32,13 @@ func resetVerifiedTasks(content string, resetIDs map[string]bool) (string, bool)
 	for i, line := range lines {
 		if hm := msHeaderRe.FindStringSubmatch(line); len(hm) >= 2 {
 			currentMSID = "M" + hm[1]
+		} else if isSectionBreak(line) {
+			// This is a WRITER that attributes lines to a milestone, so it needs
+			// the same region boundary every reader uses. Without it currentMSID
+			// survived past a column-zero `## `, and `belmont reverify` rewrote
+			// `[v]`-shaped lines under `## Session History` — historical log
+			// entries silently mutated. See isSectionBreak and issue #31.
+			currentMSID = ""
 		}
 		if !resetIDs[currentMSID] {
 			continue
