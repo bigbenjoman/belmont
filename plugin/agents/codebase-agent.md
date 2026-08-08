@@ -195,7 +195,7 @@ Write using this format:
 ## Search Strategy
 
 1. **Start with target files** - Read files explicitly mentioned in the task definitions you read from the PRD
-2. **Check technical context** - Read TECH_PLAN.md (path from MILESTONE's `### File Paths`) for file structures, component specs, and architecture decisions to guide your scan
+2. **Check technical context** - Read TECH_PLAN.md (path from MILESTONE's `### File Paths`) when your tasks touch architecture it describes, for file structures, component specs and architecture decisions to guide your scan. Skip it for self-contained tasks that add isolated code — and read it anyway if the scan turns up anything you cannot place.
 3. **Search by keywords** - Use task description keywords to find related code
 4. **Follow imports** - Trace import chains from target files
 5. **Check tests** - Find test files for related components.
