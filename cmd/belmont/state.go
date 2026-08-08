@@ -133,7 +133,7 @@ func flattenTasks(milestones []milestone, maxName int) []task {
 			if maxName > 0 && len([]rune(name)) > maxName {
 				name = string([]rune(name)[:maxName-1]) + "…"
 			}
-			tasks = append(tasks, task{ID: t.ID, Name: name, Status: t.Status, MilestoneID: t.MilestoneID})
+			tasks = append(tasks, task{ID: t.ID, Name: name, Status: t.Status, MilestoneID: t.MilestoneID, Marker: t.Marker, Line: t.Line})
 		}
 	}
 
@@ -160,7 +160,7 @@ func parseMilestones(progress string) []milestone {
 	var milestones []milestone
 	var currentMS *milestone
 
-	for _, line := range lines {
+	for lineIdx, line := range lines {
 		// Check for milestone header
 		if msMatch := msRe.FindStringSubmatch(line); len(msMatch) >= 3 {
 			// Save previous milestone
@@ -199,20 +199,29 @@ func parseMilestones(progress string) []milestone {
 				marker := taskMatch[1]
 				taskText := strings.TrimSpace(taskMatch[2])
 
+				// Marker -> state. `x`/`v` are matched case-insensitively:
+				// a capital [X] is a universal Markdown "done" convention and
+				// is what GitHub itself renders as checked, so reading it as
+				// anything else silently resurrects finished work.
+				//
+				// Everything else becomes taskUnknown rather than taskTodo.
+				// Defaulting an unreadable marker to todo is what caused
+				// issue #27 — cancelled and relocated work was counted as
+				// outstanding and offered as the next task to implement.
 				var status taskStatus
 				switch marker {
 				case " ":
 					status = taskTodo
 				case ">":
 					status = taskInProgress
-				case "x":
+				case "x", "X":
 					status = taskDone
-				case "v":
+				case "v", "V":
 					status = taskVerified
 				case "!":
 					status = taskBlocked
 				default:
-					status = taskTodo
+					status = taskUnknown
 				}
 
 				// Extract task ID if present (e.g., "P0-1: Task Name")
@@ -229,6 +238,8 @@ func parseMilestones(progress string) []milestone {
 					Name:        taskName,
 					Status:      status,
 					MilestoneID: currentMS.ID,
+					Marker:      marker,
+					Line:        lineIdx + 1,
 				})
 			}
 		}
@@ -308,6 +319,16 @@ func nextMilestone(milestones []milestone) *milestone {
 	return nil
 }
 
+// nextTask returns the first task available to work on.
+//
+// The condition is a POSITIVE match on the two workable states, and that is
+// load-bearing: it is what keeps taskUnknown out. Issue #27 was an entry whose
+// marker Belmont could not read being handed to an agent as the next thing to
+// build — withdrawn work, and one feature cancelled by a product decision.
+//
+// Do not rewrite this as a negative ("anything not done or verified"). That
+// reads as equivalent and silently re-admits taskUnknown, plus any state added
+// later. TestUnknownMarkerIsNeverScheduled fails if you do.
 func nextTask(tasks []task) *task {
 	for _, t := range tasks {
 		if t.Status == taskInProgress || t.Status == taskTodo {
@@ -316,6 +337,20 @@ func nextTask(tasks []task) *task {
 		}
 	}
 	return nil
+}
+
+// unknownMarkerTasks returns every task whose checkbox marker Belmont could not
+// recognise, across all milestones, in document order.
+func unknownMarkerTasks(milestones []milestone) []task {
+	var out []task
+	for _, m := range milestones {
+		for _, t := range m.Tasks {
+			if t.Status == taskUnknown {
+				out = append(out, t)
+			}
+		}
+	}
+	return out
 }
 
 // blockedTaskCount returns the number of tasks with [!] status across all milestones.

@@ -10,6 +10,20 @@ const (
 	taskDone       taskStatus = "done"
 	taskVerified   taskStatus = "verified"
 	taskBlocked    taskStatus = "blocked"
+
+	// taskUnknown is a checkbox whose marker Belmont does not recognise.
+	//
+	// It exists because the alternative — silently defaulting to taskTodo — is
+	// the one outcome that loses information without telling anyone. An
+	// unparsed entry was being counted in the totals, rendered as `[ ]`, and
+	// handed to an agent as "Next Individual Task": work the tool could not
+	// read was being scheduled for implementation. See issue #27.
+	//
+	// An unknown task is never offered as next work, never counted as todo,
+	// and never lets a milestone read as complete. `belmont validate` treats
+	// it as a hard violation, which is what stops `belmont auto` starting
+	// against a file it cannot parse.
+	taskUnknown taskStatus = "unknown"
 )
 
 type task struct {
@@ -17,6 +31,16 @@ type task struct {
 	Name        string
 	Status      taskStatus
 	MilestoneID string // which milestone this task belongs to (from PROGRESS.md)
+
+	// Marker is the raw character between the brackets and Line is its 1-based
+	// line number, kept so diagnostics can quote what was actually written and
+	// point at it. Both are excluded from JSON: they are populated for every
+	// task, and `status --format json` is read by agents on every loop
+	// iteration, so serialising them would add per-task noise to a payload
+	// PR #26 exists to shrink. The `unknown` entry in TaskCounts is the JSON
+	// signal; the detail lives in the text output and in `belmont validate`.
+	Marker string `json:"-"`
+	Line   int    `json:"-"`
 }
 
 type milestone struct {

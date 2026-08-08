@@ -151,6 +151,14 @@ func taskStatusIcon(status taskStatus, color bool) string {
 			return ansiRed + "[!]" + ansiReset
 		}
 		return "[!]"
+	case taskUnknown:
+		// Render as `[?]` rather than `[ ]`. Showing an unparsed entry as todo
+		// is how issue #27 stayed invisible: the output looked like ordinary
+		// outstanding work.
+		if color {
+			return ansiRed + "[?]" + ansiReset
+		}
+		return "[?]"
 	default:
 		if color {
 			return ansiDim + "[ ]" + ansiReset
@@ -277,4 +285,19 @@ func truncateTail(s string, maxLen int) string {
 		return s
 	}
 	return s[len(s)-maxLen:]
+}
+
+// warnPrefix / warnSuffix wrap a warning line in yellow when colour is on.
+func warnPrefix(color bool) string {
+	if color {
+		return ansiYellow
+	}
+	return ""
+}
+
+func warnSuffix(color bool) string {
+	if color {
+		return ansiReset
+	}
+	return ""
 }
