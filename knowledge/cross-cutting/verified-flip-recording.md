@@ -1,0 +1,54 @@
+# Recording the `[x]` → `[v]` Flip
+
+**Domains:** skills, cli, state, auto-mode
+
+**Why this matters.** Verification is the only state transition in Belmont that no Go code can perform. `runEvidenceCheck` can *demote* a `[v]`; nothing anywhere *promotes* one. The flip is written by the verify orchestrator editing markdown, and if that write is skipped there is no second writer, no reconciliation pass, and no guard that notices — because every stop condition in the product treats `[x]` as finished. The run ends reporting success on work it never verified. See issue #30.
+
+This is the mirror of [`auto-mode/verify-evidence.md`](../auto-mode/verify-evidence.md), which covers the opposite direction (a `[v]` written *without* justification). Both halves are needed: that entry stops an unearned flip, this one stops a missing earned flip.
+
+## Invariant
+
+- **The flip is recorded before the report is written**, on every outcome — including a clean ALL PASSED run with no follow-ups.
+- **The report states what was written, re-read from disk.** Not what the status implies.
+- **`Complete` is never treated as finished.** Only `Verified` is. `computeOverallStatus` returns `"Complete"` when every task is `[x]` **or** `[v]`, so the two are indistinguishable to any consumer that only reads the status string.
+- **`belmont status` says so out loud** when a feature reads Complete with unverified tasks, and names `belmont reverify` — the only recovery, which appears in no skill or partial.
+
+## How it's enforced
+
+Mechanically (cannot be dropped by an agent):
+
+- `doneNotVerifiedTasks(milestones)` in `state.go` — mirror of `unknownMarkerTasks`.
+- `renderStatus` warns in **both** views, gated on the feature reading `Complete`: the detail view naming each task, and the listing view (`f.Status == "Complete" && f.TasksVerified < f.TasksTotal`). The listing half is the one that matters most — `status.md`'s fast path runs `belmont status` with no `--feature`.
+- `statusReport.FeatureSlug` exists so the message can print a pasteable `belmont reverify --feature <slug>`; `Feature` is the human-readable PRD name and is wrong for that.
+- Tests in `cmd/belmont/verify_flip_test.go`, each with a control.
+
+By prose (reduces the chance of the drop, cannot prevent it):
+
+- `verify.md` — the flip lives in its own `### Mark Verified Tasks` section **above** `### Create Follow-up Tasks`, and ends with an explicit re-read-and-confirm step.
+- `references/verify-report-format.md` — required `## Tasks Marked Verified` field, with a *re-read PROGRESS.md to populate this* clause and a STOP instruction if ALL PASSED yields an empty list.
+- `loop.md` — stop condition requires **verified**, bounded so a legitimately-`[x]` failed task cannot churn forever.
+- `status.md` — instructs reproducing the CLI warning verbatim rather than summarising it.
+
+## Failure mode if you break it
+
+- **Warn on any `[x]`, not just when the feature reads Complete.** Fires mid-run on every project — `[x]` between implement and verify is the normal state. The warning gets ignored, and with it the real one.
+- **Change `computeOverallStatus` to stop returning `"Complete"` for all-`[x]`.** `isFeatureTerminal` switches on the literal string and `auto --all` wave planning depends on it. Silent blast radius. The warning must be rendered text only.
+- **Rely on the prose fix alone.** It is unfalsifiable without live evals: Tier-1 tests never read a `SKILL.md`. The Go warning is the only part testable in CI, which is why it is primary.
+- **Assume this is interactive-only.** `auto_loop.go` sends the bare `/belmont:verify --feature <slug>`, which resolves to the same generated `SKILL.md` the REPL loads. Serial auto completes on all-`[x]` via `decideLoopActionSmart`; parallel auto's `computeWaves` skips `milestoneAllDone` milestones entirely. A fix in `loop.md` alone would miss both.
+
+## Don't re-do
+
+- **Have Belmont auto-flip `[x]` → `[v]` in Go.** Forges precisely the evidence `verify-evidence.md` exists to protect. Rejected outright.
+- **Make `nextMilestone` treat an all-`[x]` milestone as pending.** Tempting — it would make `loop.md`'s original stop condition correct for free. But `auto_decide.go` calls `milestoneAllDone` independently at ~11 sites, so auto would keep terminating while `next` re-offered work. That is divergence between the two invocation paths, not a fix.
+- **A post-verify flip-completeness guard in `guards.go`.** The infrastructure exists (pre/post snapshots, `injectEvidenceSteering`). Deferred: its discriminator — "verify succeeded, zero `[x]`→`[v]` flips, no new `[ ]` tasks" — has a real false-positive path, and it only covers auto mode, not where the symptom was reported.
+- **Copy `implement.md:136`'s "the sub-agent should have marked it; if missed, do it now" backstop.** Structurally unavailable here: `agents/belmont/verification-agent.md` says "You do NOT update state files yourself — only report results." The verify orchestrator is the sole writer, so there is nothing to double-check.
+
+## Evidence
+
+- Measured on the real binary: an all-`[x]` feature reports `Status: Complete`, `Tasks: 0 verified, N done`, `Next Milestone: None`, `Next Individual Task: None`. Every stop condition is satisfied.
+- Only the **final** milestone's drop sticks. A mid-run drop self-corrects, because a later milestone is still pending and `verify.md` Step 1 rescans the whole feature for `[x]` on the next iteration.
+- **Not observed in a transcript.** That an orchestrator actually skips the section is inference from the instruction surface, not a recorded run. What is established is that nothing would catch it. Frequency is unmeasured; the fingerprint to look for in a real project is a feature containing **both** all-`[v]` and all-`[x]` milestones — verify demonstrably ran and flipped there, yet other implemented milestones never got their flip.
+
+## Revisions
+
+- 2026-08-08 — initial. Records the missing-flip half of the `[v]` contract, the Go-side status warning as the primary defence, the prose complements, and the rejected alternatives (auto-flip, `nextMilestone` change, guards-side check, sibling backstop pattern).

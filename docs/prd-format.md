@@ -83,6 +83,8 @@ Tasks may additionally use `[WEB]` / `[API]` prefixes (e.g. `[WEB] Render the ne
 `[x]` and `[X]` are both accepted as done — a capital `[X]` is a standard
 Markdown "done" convention and is what GitHub renders as checked.
 
+**`[x]` is not the finish line.** A feature whose tasks are all `[x]` reports `Complete`, not `Verified`, and `belmont status` warns that verification never recorded a result — recover with `belmont reverify --feature <slug>`. Only `[v]` means verified.
+
 `[v]` is verified. **`[V]` is not** — unlike `[X]` it has no convention behind
 it, and accepting it would let a verified flip slip past the commit-evidence
 guard. A capital `V` is treated as unrecognised.

@@ -75,7 +75,12 @@ type featureSummary struct {
 }
 
 type statusReport struct {
-	Feature          string
+	Feature string
+	// FeatureSlug is the on-disk directory name, as opposed to Feature which
+	// is the human-readable name from PRD.md. Kept so diagnostics can print a
+	// command the user can actually paste — `belmont reverify --feature` takes
+	// the slug. Empty in listing mode, where featureSummary carries its own.
+	FeatureSlug      string `json:",omitempty"`
 	TechPlanReady    bool
 	PRFAQReady       bool
 	OverallStatus    string

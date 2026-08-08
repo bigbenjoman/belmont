@@ -409,6 +409,30 @@ func unknownMarkerTasks(milestones []milestone) []task {
 	return out
 }
 
+// doneNotVerifiedTasks returns every task sitting at `[x]` — implemented but
+// never verified — across all milestones, in document order.
+//
+// This is the mirror of unknownMarkerTasks, and it exists for the same reason:
+// a state that looks like success but is not. `computeOverallStatus` returns
+// "Complete" when every task is `[x]` OR `[v]`, and every stop condition in the
+// product keys off that — loop.md's "no pending milestones", decideLoopActionSmart's
+// actionComplete rules, computeWaves skipping milestoneAllDone milestones. So a
+// verify pass that never wrote its `[v]` flips terminates the run reporting
+// success, and nothing repairs it: nextTask positively matches only
+// todo/in-progress, and the guards are subtractive — no Go code anywhere
+// promotes a task to verified. See issue #30.
+func doneNotVerifiedTasks(milestones []milestone) []task {
+	var out []task
+	for _, m := range milestones {
+		for _, t := range m.Tasks {
+			if t.Status == taskDone {
+				out = append(out, t)
+			}
+		}
+	}
+	return out
+}
+
 // blockedTaskCount returns the number of tasks with [!] status across all milestones.
 func blockedTaskCount(milestones []milestone) int {
 	count := 0

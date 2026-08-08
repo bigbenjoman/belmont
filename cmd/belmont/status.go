@@ -124,6 +124,7 @@ func buildStatus(root string, maxName int, feature string) (statusReport, error)
 		}
 
 		report.Feature = extractFeatureName(string(prdContent))
+		report.FeatureSlug = feature
 		report.Milestones = parseMilestones(string(progressContent))
 
 		// Single-feature parallel mode: overlay each active worktree's view
@@ -310,6 +311,29 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 		sb.WriteString("\n")
 	}
 
+	// A feature reading "Complete" with unverified tasks is the terminal state
+	// of a dropped `[v]` flip: verification ran, the report said so, and the
+	// write never happened. Every stop condition in the product treats done as
+	// finished, so without this line the run ends reporting success. Naming
+	// `belmont reverify` matters — it is the only recovery, and it appears in
+	// no skill or partial. See issue #30.
+	if report.OverallStatus == "Complete" {
+		if dnv := doneNotVerifiedTasks(report.Milestones); len(dnv) > 0 {
+			sb.WriteString(fmt.Sprintf("%s%d task(s) implemented but never verified — this feature reads Complete, not Verified:%s\n",
+				warnPrefix(color), len(dnv), warnSuffix(color)))
+			for _, t := range dnv {
+				label := t.ID
+				if label == "" {
+					label = t.Name
+				}
+				sb.WriteString(fmt.Sprintf("  [x] %s\n", label))
+			}
+			sb.WriteString(fmt.Sprintf("  Verification may have run without recording its result. Recover with: belmont reverify --feature %s\n",
+				nonEmpty(report.FeatureSlug, "<slug>")))
+			sb.WriteString("\n")
+		}
+	}
+
 	blocked := blockedTaskNames(report.Milestones)
 	if len(blocked) > 0 {
 		sb.WriteString("Blocked Tasks:\n")
@@ -407,6 +431,14 @@ func renderFeatureListing(report statusReport, color bool, showArchived bool) st
 				sb.WriteString(fmt.Sprintf("  |  Milestones: %d/%d done", f.MilestonesDone, f.MilestonesTotal))
 			}
 			sb.WriteString("\n")
+
+			// Listing mode is what `status.md`'s fast path actually runs (no
+			// --feature), so this is the half that reaches an interactive
+			// agent deciding whether the loop is finished. See issue #30.
+			if f.Status == "Complete" && f.TasksVerified < f.TasksTotal {
+				sb.WriteString(fmt.Sprintf("%s  ⚠ %d task(s) implemented but never verified — belmont reverify --feature %s%s\n",
+					warnPrefix(color), f.TasksTotal-f.TasksVerified, f.Slug, warnSuffix(color)))
+			}
 
 			// Show milestone listing
 			if len(f.Milestones) > 0 {
