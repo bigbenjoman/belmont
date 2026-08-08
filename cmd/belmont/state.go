@@ -812,6 +812,14 @@ func pendingTasksInRange(root, feature, from, to string) bool {
 			inRange = (fromNum < 0 || num >= fromNum) && (toNum < 0 || num <= toNum)
 			continue
 		}
+		// Past a column-zero `## ` there is no milestone, so nothing is in
+		// range: a `- [ ]` bullet in a retro or session log is not pending work.
+		// Without this the loop reported outstanding tasks for a finished
+		// feature and `decideLoopActionSmart` never reached actionComplete.
+		if isSectionBreak(line) {
+			inRange = false
+			continue
+		}
 		if inRange && taskRe.MatchString(line) {
 			return true
 		}
@@ -845,6 +853,10 @@ func fwlupTasksInRange(root, feature string, report statusReport, from, to strin
 		if m := msRe.FindStringSubmatch(line); len(m) >= 2 {
 			num, _ := strconv.Atoi(m[1])
 			inRange = (fromNum < 0 || num >= fromNum) && (toNum < 0 || num <= toNum)
+			continue
+		}
+		if isSectionBreak(line) {
+			inRange = false
 			continue
 		}
 		if inRange && fwlupTaskRe.MatchString(line) {

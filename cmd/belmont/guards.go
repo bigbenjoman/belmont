@@ -163,8 +163,14 @@ func rebuildAfterScopeGuard(pre, post *progressSnapshot, targetMS string) (strin
 				if msHeaderRe.MatchString(nxt) {
 					break
 				}
-				trim := strings.TrimSpace(nxt)
-				if strings.HasPrefix(trim, "## ") && !strings.HasPrefix(trim, "### ") {
+				// Must be the SAME boundary parseProgressSnapshot used to build
+				// pre.Blocks — this loop bounds the post block that gets replaced
+				// by (or skipped in favour of) that pre block. When the two
+				// disagree, the replacement is misaligned: the pre block is
+				// emitted in full and post's leftover tail is then re-emitted
+				// verbatim, so the tail is duplicated and the very flip this
+				// guard detected survives on disk. See isSectionBreak / issue #31.
+				if isSectionBreak(nxt) {
 					break
 				}
 				j++

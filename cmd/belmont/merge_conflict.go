@@ -119,11 +119,33 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// unrecognised marker was overwritten and committed.
 	rank := markerRank
 
-	// Parse task states from "theirs"
-	theirsStates := make(map[string]string) // task ID → checkbox marker
+	// Parse task states from "theirs".
+	//
+	// Scoped to the milestones region, because this map is last-occurrence-wins
+	// and a task-shaped line under `## Session History` is not a task. Walking
+	// every line let a history entry shadow the real one in both directions: a
+	// `[v]` quoted in a session log MINTED a verified flip on the in-region task
+	// — with no commit evidence, and `runEvidenceCheck` never sees a post-merge
+	// file — while a stale `[ ]` quote hid theirs' genuine `[x]` and the
+	// completion was dropped under a green "conflicts auto-resolved". Same
+	// boundary every other reader uses; see isSectionBreak and issue #31.
+	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
 	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+(P\d+-[\w][\w-]*)`)
+	theirsStates := make(map[string]string) // task ID → checkbox marker
 	theirsLines := strings.Split(string(theirsOut), "\n")
+	inRegion := false
 	for _, line := range theirsLines {
+		if msHeaderRe.MatchString(line) {
+			inRegion = true
+			continue
+		}
+		if isSectionBreak(line) {
+			inRegion = false
+			continue
+		}
+		if !inRegion {
+			continue
+		}
 		if m := taskRe.FindStringSubmatch(line); m != nil {
 			theirsStates[m[2]] = m[1]
 		}
@@ -180,9 +202,17 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	inActivitySection := false
 	activityInserted := make(map[string]bool)
 
+	// Same region gate on the write side: a `[x]` quoted in ours' session log
+	// must not be rewritten to theirs' state either.
+	oursInRegion := false
 	for _, line := range oursLines {
+		if msHeaderRe.MatchString(line) {
+			oursInRegion = true
+		} else if isSectionBreak(line) {
+			oursInRegion = false
+		}
 		// Upgrade task checkboxes to the more-advanced state
-		if m := taskRe.FindStringSubmatch(line); m != nil {
+		if m := taskRe.FindStringSubmatch(line); oursInRegion && m != nil {
 			oursMarker := m[1]
 			taskID := m[2]
 			if theirsMarker, ok := theirsStates[taskID]; ok {
