@@ -417,8 +417,6 @@ See [Supported Tools](docs/supported-tools.md) for detailed per-tool setup instr
 Belmont includes a built-in auto orchestrator (`belmont auto`) that takes a planned feature (with PRD + TECH_PLAN) and executes it end-to-end: implementing milestones, verifying, fixing follow-up issues, and continuing until the feature is complete. Independent milestones can run in parallel via git worktrees, and multiple features can execute in parallel across worktrees. Pure Go, no Node.js required.
 
 > **Alias**: `belmont loop` still works as an alias for `belmont auto`.
->
-> **Not to be confused with `/belmont:loop`**, which is a different thing with a confusingly similar name. `belmont loop` / `belmont auto` is the **Go CLI** orchestrator — headless agents, git worktrees, parallel waves, milestone dependencies. `/belmont:loop` is a **Claude-Code-only skill** you type in the REPL that delegates to Claude Code's built-in `/loop`; it needs no CLI and runs serially in your working tree. Use the skill for the lightest path to end-to-end automation on one feature; use the CLI when you want parallelism and isolation.
 
 ```bash
 # Run auto for a feature
