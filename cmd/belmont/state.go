@@ -149,6 +149,56 @@ func flattenTasks(milestones []milestone, maxName int) []task {
 	return tasks
 }
 
+// canonicalMarker maps a raw checkbox marker to its task state. It is the
+// SINGLE source of truth for what a marker means — every reader that needs to
+// interpret one must route through it rather than comparing raw bytes.
+//
+// The second return value reports whether the marker was recognised. An
+// unrecognised marker yields (taskUnknown, false): Belmont does not guess a
+// state for a checkbox it cannot read. See issue #27.
+//
+// Case handling is deliberately asymmetric:
+//
+//   - `[X]` is accepted as done. A capital X is a universal Markdown
+//     convention and is what GitHub itself renders as checked, so reading it
+//     as anything else silently resurrects finished work.
+//   - `[V]` is NOT accepted as verified. Unlike X it has no external
+//     convention behind it — `[v]` is Belmont's own invention, nothing else
+//     emits it, and no skill, agent, prompt or template in this repo writes a
+//     capital one. Accepting it bought nothing and cost enforcement: the
+//     commit-evidence guard compares the raw marker, so a `[V]` flip counted
+//     as verified everywhere while being invisible to `runEvidenceCheck` —
+//     a silent bypass of the invariant in knowledge/auto-mode/verify-evidence.md.
+//     A capital V now parses to taskUnknown and fails loudly instead.
+//
+// If you add a state here, every caller of canonicalMarker picks it up. That
+// is the point: the previous design spread marker literals across four files
+// that disagreed with each other.
+func canonicalMarker(marker string) (taskStatus, bool) {
+	switch marker {
+	case " ":
+		return taskTodo, true
+	case ">":
+		return taskInProgress, true
+	case "x", "X":
+		return taskDone, true
+	case "v":
+		return taskVerified, true
+	case "!":
+		return taskBlocked, true
+	default:
+		return taskUnknown, false
+	}
+}
+
+// markerIsVerified reports whether a raw marker means "verified". Used by the
+// evidence guard, which works on raw markers read out of PROGRESS.md rather
+// than on parsed tasks.
+func markerIsVerified(marker string) bool {
+	st, ok := canonicalMarker(marker)
+	return ok && st == taskVerified
+}
+
 func parseMilestones(progress string) []milestone {
 	// Match milestone headers: ### M1: Name
 	msRe := regexp.MustCompile(`(?m)^###\s+M(\d+):\s*(.+)$`)
@@ -199,30 +249,7 @@ func parseMilestones(progress string) []milestone {
 				marker := taskMatch[1]
 				taskText := strings.TrimSpace(taskMatch[2])
 
-				// Marker -> state. `x`/`v` are matched case-insensitively:
-				// a capital [X] is a universal Markdown "done" convention and
-				// is what GitHub itself renders as checked, so reading it as
-				// anything else silently resurrects finished work.
-				//
-				// Everything else becomes taskUnknown rather than taskTodo.
-				// Defaulting an unreadable marker to todo is what caused
-				// issue #27 — cancelled and relocated work was counted as
-				// outstanding and offered as the next task to implement.
-				var status taskStatus
-				switch marker {
-				case " ":
-					status = taskTodo
-				case ">":
-					status = taskInProgress
-				case "x", "X":
-					status = taskDone
-				case "v", "V":
-					status = taskVerified
-				case "!":
-					status = taskBlocked
-				default:
-					status = taskUnknown
-				}
+				status, _ := canonicalMarker(marker)
 
 				// Extract task ID if present (e.g., "P0-1: Task Name")
 				taskID := ""

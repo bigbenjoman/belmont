@@ -12,6 +12,38 @@ import (
 	"time"
 )
 
+// resetVerifiedTasks rewrites verified task markers back to `[x]` within the
+// milestones named in resetIDs, so the verification agent picks them up again.
+// Returns the new content and whether anything changed.
+//
+// Extracted from runReverifyCmd so it can be tested directly. The marker is
+// captured and classified via canonicalMarker rather than matched as a literal
+// `\[v\]`: resetIDs is built from PARSED task states, so a rewriter that
+// recognises fewer spellings than the parser silently no-ops — the milestone
+// is selected for reset and then nothing is reset, and `belmont reverify`
+// reports "nothing to re-verify" on a file full of verified tasks.
+func resetVerifiedTasks(content string, resetIDs map[string]bool) (string, bool) {
+	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):\s*`)
+	taskRe := regexp.MustCompile(`^(\s*-\s+)\[(.)\](\s+.*)$`)
+
+	lines := strings.Split(content, "\n")
+	currentMSID := ""
+	changed := false
+	for i, line := range lines {
+		if hm := msHeaderRe.FindStringSubmatch(line); len(hm) >= 2 {
+			currentMSID = "M" + hm[1]
+		}
+		if !resetIDs[currentMSID] {
+			continue
+		}
+		if vm := taskRe.FindStringSubmatch(line); len(vm) >= 4 && markerIsVerified(vm[2]) {
+			lines[i] = vm[1] + "[x]" + vm[3]
+			changed = true
+		}
+	}
+	return strings.Join(lines, "\n"), changed
+}
+
 // runReverifyCmd handles the "belmont reverify" command.
 // Walks through completed milestones and runs verification on each sequentially.
 // Reports which milestones passed and which had follow-up tasks created.
@@ -85,25 +117,8 @@ func runReverifyCmd(args []string) error {
 	}
 
 	if len(resetIDs) > 0 {
-		// Line-by-line replacement scoped to target milestones.
-		msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):\s*`)
-		verifiedTaskRe := regexp.MustCompile(`^(\s*-\s+)\[v\](\s+.*)$`)
-		lines := strings.Split(string(progressContent), "\n")
-		currentMSID := ""
-		changed := false
-		for i, line := range lines {
-			if hm := msHeaderRe.FindStringSubmatch(line); len(hm) >= 2 {
-				currentMSID = "M" + hm[1]
-			}
-			if resetIDs[currentMSID] {
-				if vm := verifiedTaskRe.FindStringSubmatch(line); len(vm) >= 3 {
-					lines[i] = vm[1] + "[x]" + vm[2]
-					changed = true
-				}
-			}
-		}
+		newContent, changed := resetVerifiedTasks(string(progressContent), resetIDs)
 		if changed {
-			newContent := strings.Join(lines, "\n")
 			if err := os.WriteFile(progressPath, []byte(newContent), 0644); err != nil {
 				return fmt.Errorf("reverify: failed to reset verified tasks: %w", err)
 			}

@@ -21,6 +21,7 @@ In `cmd/belmont/guards.go`, called after `runScopeGuard`:
 - **No evidence check**: verify agent marks task `[v]`, no implementing commit exists, follow-up phases assume the task is done, downstream milestones build on a stub. Final feature ships incomplete but reports 100% verified. (This is the `about-2-dynamic-mode` failure mode — see [meta/validated-runs.md](../meta/validated-runs.md).)
 - **Check too strict** (e.g., missing the word-boundary regex): P1-1 gets credited by commits for P1-12 or P1-100. False-positive evidence; silent pass-through of bad `[v]`s.
 - **Check too lax** (e.g., `fails open` fires on every run because merge-base lookup fails): the guard is there but does nothing. Would manifest as verify-guard stream lines never appearing during real runs.
+- **Guard classifies markers differently from the parser.** `findEvidenceMissingFlips` and `revertEvidenceMissing` work on the *raw* marker byte read out of PROGRESS.md, not on a parsed `taskStatus`. If the parser learns a spelling of "verified" that the guard does not, every flip written that way counts as verified across the whole state model while being invisible here — and nothing prints, so it looks exactly like a clean run. This shipped for real in PR #28: `[V]` was added to the parser as verified while both guard sites still compared against a literal lowercase `"v"`. Both now route through `markerIsVerified` / `canonicalMarker`, and `TestEveryVerifiedMarkerIsVisibleToEvidenceGuard` enumerates every marker the parser calls verified and asserts the guard both flags it and actually rewrites the line.
 - **Evidence sourced from master log instead of branch log**: picks up task IDs from prior features or unrelated work. Merge-base scoping is what makes the check specific to this branch's work.
 
 ## Don't re-do
@@ -46,3 +47,4 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestFindEvidenceMissingFli
 - 2026-04-21 — initial: commit-log evidence check, word-boundary regex, fail-open on git errors.
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
+- 2026-08-08 — added the "guard classifies markers differently from the parser" failure mode after PR #28 review found `[V]` bypassing the check entirely. Both guard sites now route through `canonicalMarker`; `[V]` dropped from the parser.

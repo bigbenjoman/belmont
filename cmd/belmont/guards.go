@@ -392,7 +392,7 @@ func revertEvidenceMissing(post, pre *progressSnapshot, missing []evidenceMissin
 			if overrides, ok := byMS[currentMS]; ok {
 				if tm := taskRe.FindStringSubmatch(line); len(tm) >= 6 {
 					taskID := tm[4]
-					if from, hit := overrides[taskID]; hit && tm[2] == "v" {
+					if from, hit := overrides[taskID]; hit && markerIsVerified(tm[2]) {
 						line = tm[1] + from + "]" + tm[3] + tm[4] + tm[5]
 					}
 				}
@@ -553,7 +553,12 @@ func findEvidenceMissingFlips(root string, pre, post *progressSnapshot, targetMS
 		}
 		preIdx, existedPre := pre.ByID[pb.ID]
 		for taskID, postState := range pb.TaskStates {
-			if postState != "v" {
+			// Route through canonicalMarker rather than comparing the raw
+			// byte. A literal `postState != "v"` here meant any other spelling
+			// of verified was invisible to this guard while still counting as
+			// verified everywhere else — a silent bypass of the whole
+			// evidence contract.
+			if !markerIsVerified(postState) {
 				continue
 			}
 			var preState string
