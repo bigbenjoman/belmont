@@ -15,17 +15,27 @@ You are the implementation orchestrator. Your job is to implement the next pendi
 
 ## Setup
 
-Read these files first:
-- `{base}/PRD.md` - The product requirements
-- `{base}/PROGRESS.md` - Current progress and milestones
-- `{base}/TECH_PLAN.md` - Technical implementation plan (if exists)
-- `.belmont/TECH_PLAN.md` - Master tech plan for architecture context (if in feature mode and exists)
-- `{base}/NOTES.md` - Feature-level learnings from previous sessions (if exists)
-- `.belmont/NOTES.md` - Global learnings from previous sessions (if exists)
-- `{base}/models.yaml` - Per-feature model tiers (if exists — see "Model Tiers" below)
+Read in this order. You do not know which milestone you are working on until
+you have read PROGRESS.md, so reading the specs first means reading them for
+every milestone instead of for yours.
+
+**Always read:**
+1. `{base}/PROGRESS.md` — first. Select the milestone before reading anything else.
+2. `{base}/models.yaml` — small, and needed up front to resolve tiers (if exists — see "Model Tiers" below).
+3. `{base}/NOTES.md` and `.belmont/NOTES.md` — feature-level and global learnings (if they exist). These stay eager on purpose: they are small, and Step 2 requires copying them into the MILESTONE file's `### Learnings from Previous Sessions`.
+
+**Then read, scoped to the milestone you selected:**
+4. `{base}/PRD.md` — the sections covering that milestone's task IDs. Read the whole file if it has no per-task structure, or if the sections you find do not fully explain the work.
+5. `{base}/TECH_PLAN.md` — if the milestone touches architecture it describes (if exists). Skip when the milestone is self-contained.
+6. `.belmont/TECH_PLAN.md` — only when the milestone is cross-cutting: it changes shared infrastructure or spans features (if in feature mode and exists).
+
+This is guidance for the common case, not a prohibition. If a file you skipped
+turns out to matter — the task is ambiguous, the design is unclear, an
+acceptance criterion refers to something you have not read — read it. A wrong
+implementation costs far more than a file read.
 
 Optional helper:
-- If the CLI is available, `belmont status --format json` can provide a quick summary of milestones/tasks. Still read the files above for full context.
+- If the CLI is available, `belmont status --format json` can provide a quick summary of milestones/tasks.
 
 ## Model Tiers
 
