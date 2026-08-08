@@ -52,14 +52,17 @@ This is not a refinement — it is load-bearing. The function runs **once per si
 - The **worktree's document is the base**, so structure and ordering match what a plain copy produced. Master contributes states and lines, never structure.
 - **Most-advanced state wins**, ranked by `markerRank` (canonical `taskStatus`, not raw marker).
 - **`[!]` on either side wins, both directions.** Rank alone would clear it — `taskBlocked` sorts below todo, so anything outranks it. The failure modes are asymmetric: a stale `[!]` costs someone a look and auto pauses loudly on blocked tasks; a dropped live one means work is silently treated as fine.
-- **Unrecognised markers are never ranked** — left exactly as written and reported as a warning. See `cross-cutting/` marker rules and issue #27.
+- **Unrecognised markers are never ranked** — left exactly as written and reported as a warning. This check runs **before** the `[!]` rule, not after: a blocked-wins rule that fired first would happily overwrite a `[?]` the user wrote deliberately. See [`cross-cutting/progress-md-parsing.md`](../cross-cutting/progress-md-parsing.md) and issue #27.
+- **A duplicated task ID is not merged at all.** Matching is by ID, so a repeated ID makes the match ambiguous and a plain map would silently collapse the entries and merge the wrong line. Both sides are counted first; any non-unique ID is skipped and warned about.
 - **Task lines only master has are carried over** into their milestone (a follow-up a sibling added after this worktree forked). If the milestone is absent from the worktree's copy the task is skipped with a warning, never silently dropped.
 
 ## Worktree seeding is skipped on resume
 
 `createWorktreeIfNeeded(root, wtPath, branch, slug, resumed)` is the single entry point for creating a worktree and seeding its state, and it is a **no-op when `resumed` is true**. Seeding calls `copyBelmontStateToWorktree`, a destructive replace of the feature dir — run against a preserved worktree it overwrites the live `PROGRESS.md` with master's fork-time snapshot, and those flips are in no commit. `resume-rebase.md` rejects exactly this under *Don't re-do*.
 
-This lived inline in two callers that drifted: `runFeatureInWorktree` guarded it, `runMilestoneInWorktree` did not (issue #29). Both now route through the helper so they cannot diverge again. `STEERING.md` preservation inside `copyBelmontStateToWorktree` remains — it protects the fresh-seed path, not this one.
+This lived inline in two callers that drifted: `runFeatureInWorktree` guarded it, `runMilestoneInWorktree` did not (issue #29). Both now route through the helper so they cannot diverge again.
+
+**The resume path still re-arms `untrackBelmontInWorktree`.** Skipping the copy must not skip the untracking: `--assume-unchanged` is index state, and `handleStaleWorktree` can reattach a worktree whose directory was removed by running `git worktree add` again, which builds a fresh index with the bits cleared. Seeding used to re-arm them as a side effect, so guarding the copy removed the only re-arming — and without it the worktree's `.belmont/` edits become committable and merge back over sibling state, the exact failure this entry exists to prevent. It is idempotent and cheap, so `createWorktreeIfNeeded` always calls it. Pinned by `TestResumeReArmsUntracking`. `STEERING.md` preservation inside `copyBelmontStateToWorktree` remains — it protects the fresh-seed path, not this one.
 
 ## Known open gap
 
@@ -79,3 +82,4 @@ What still needs a decision is **every other file** in the feature dir — `MILE
 - 2026-08-07 — initial. Records the asymmetric isolation (tracked held back, new files committable), the removal of `writeWorktreeGitExcludes`, the two rejected repairs, and the `recoverMerge` gap.
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
 - 2026-08-08 — `syncFeatureStateAfterMerge` now merges `PROGRESS.md` instead of replacing it (`mergeProgressState`), fixing the last-writer-wins wave bug (#24); worktree seeding extracted to `createWorktreeIfNeeded` with the resume guard in one place (#29). `recoverMerge` gap re-scoped: task state is now safe, non-PROGRESS files are still a wholesale replace.
+- 2026-08-08 — red-team follow-ups: recognition check moved ahead of the `[!]` rule, duplicate task IDs declined rather than collapsed, and the resume path re-arms `untrackBelmontInWorktree` (skipping the copy had removed the only re-arming).
