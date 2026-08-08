@@ -13,29 +13,9 @@ import (
 
 // runFeatureInWorktree creates a worktree for a feature, installs belmont, and runs the full loop.
 func runFeatureInWorktree(cfg loopConfig, slug, branch, wtPath string, tracker *worktreeTracker, resumed bool) error {
-	if !resumed {
-		// Create worktree directory
-		wtDir := filepath.Dir(wtPath)
-		if err := os.MkdirAll(wtDir, 0755); err != nil {
-			return fmt.Errorf("create worktree dir: %w", err)
-		}
-
-		// Create git worktree
-		cmd := exec.Command("git", "worktree", "add", "-b", branch, wtPath, "HEAD")
-		cmd.Dir = cfg.Root
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("git worktree add: %w (%s)", err, strings.TrimSpace(string(out)))
-		}
-
-		// Copy .belmont state into worktree (isolated copy, not symlink)
-		if err := copyBelmontStateToWorktree(cfg.Root, wtPath, slug); err != nil {
-			return fmt.Errorf("copy .belmont state to worktree: %w", err)
-		}
-
-		// Commit the initial feature state so the AI agent starts from a clean git state
-		commitWorktreeFeatureState(wtPath, slug)
+	if err := createWorktreeIfNeeded(cfg.Root, wtPath, branch, slug, resumed); err != nil {
+		return err
 	}
-
 	// Resolve monorepo workspaces (auto-detect, or honor worktree.json overrides)
 	hooks := loadWorktreeHooks(cfg.Root)
 	workspaces, primary, mType := resolveWorkspaces(cfg.Root, hooks)
@@ -431,29 +411,9 @@ func runWaveParallel(cfg loopConfig, w wave, tracker *worktreeTracker) error {
 
 // runMilestoneInWorktree creates a worktree, installs belmont, copies state, and runs the loop.
 func runMilestoneInWorktree(cfg loopConfig, ms milestone, branch, wtPath string, tracker *worktreeTracker, resumed bool) error {
-	if !resumed {
-		// Create worktree directory
-		wtDir := filepath.Dir(wtPath)
-		if err := os.MkdirAll(wtDir, 0755); err != nil {
-			return fmt.Errorf("create worktree dir: %w", err)
-		}
-
-		// Create git worktree
-		cmd := exec.Command("git", "worktree", "add", "-b", branch, wtPath, "HEAD")
-		cmd.Dir = cfg.Root
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("git worktree add: %w (%s)", err, strings.TrimSpace(string(out)))
-		}
+	if err := createWorktreeIfNeeded(cfg.Root, wtPath, branch, cfg.Feature, resumed); err != nil {
+		return err
 	}
-
-	// Copy .belmont state into worktree (isolated copy, not symlink)
-	if err := copyBelmontStateToWorktree(cfg.Root, wtPath, cfg.Feature); err != nil {
-		return fmt.Errorf("copy .belmont state to worktree: %w", err)
-	}
-
-	// Commit the initial feature state so the AI agent starts from a clean git state
-	commitWorktreeFeatureState(wtPath, cfg.Feature)
-
 	// Resolve monorepo workspaces (auto-detect, or honor worktree.json overrides)
 	hooks := loadWorktreeHooks(cfg.Root)
 	workspaces, primary, mType := resolveWorkspaces(cfg.Root, hooks)

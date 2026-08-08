@@ -112,26 +112,12 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		return false
 	}
 
-	// State priority: higher = more advanced. Keyed by canonical taskStatus,
-	// not by raw marker — a raw-marker map silently ranked every spelling it
-	// lacked a key for at Go's zero value (0, tied with todo and BELOW
-	// in-progress), so `[X]` (done) lost to `[>]` and an unrecognised marker
-	// was overwritten and committed.
-	statePriority := map[taskStatus]int{
-		taskTodo:       0,
-		taskInProgress: 1,
-		taskDone:       2,
-		taskVerified:   3,
-		taskBlocked:    -1,
-	}
-	rank := func(marker string) (int, bool) {
-		st, ok := canonicalMarker(marker)
-		if !ok {
-			return 0, false
-		}
-		p, known := statePriority[st]
-		return p, known
-	}
+	// State priority comes from markerRank (state.go), keyed by canonical
+	// taskStatus rather than raw marker — a raw-marker map silently ranked
+	// every spelling it lacked a key for at Go's zero value (0, tied with todo
+	// and BELOW in-progress), so `[X]` (done) lost to `[>]` and an
+	// unrecognised marker was overwritten and committed.
+	rank := markerRank
 
 	// Parse task states from "theirs"
 	theirsStates := make(map[string]string) // task ID → checkbox marker

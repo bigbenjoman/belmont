@@ -15,12 +15,18 @@ In `cmd/belmont/worktree.go`:
 
 - `untrackBelmontInWorktree(wtPath, slug)` — iterates `git ls-files .belmont/` and runs `git update-index --assume-unchanged` per path, best-effort. Called at the end of `copyBelmontStateToWorktree`.
 - `commitWorktreeChanges(wtPath, label)` — `git add -A` plus commit, so untracked `.belmont/` files are staged.
-- `syncFeatureStateAfterMerge(mainRoot, wtPath, slug)` — filesystem copy worktree → master. Two call sites; `recoverMerge` is **not** one of them.
+- `syncFeatureStateAfterMerge(mainRoot, wtPath, slug)` — filesystem copy worktree → master, **except `PROGRESS.md`, which is merged via `mergeProgressState`** (see below). Two call sites; `recoverMerge` is **not** one of them.
+- `createWorktreeIfNeeded(root, wtPath, branch, slug, resumed)` — the only place a worktree is created and seeded. Returns early when `resumed`. Both `runFeatureInWorktree` and `runMilestoneInWorktree` call it.
 - Merge conflicts involving `.belmont/` files are not special-cased. They hit the generic detection (`strings.Contains(output, "CONFLICT")`, `mergeFailureKind`) and route to the reconciliation agent like any other conflict.
 
 Test coverage in `cmd/belmont/worktree_state_test.go`:
 - `TestWorktreeTrackedBelmontEditsAreNotCommittable` — pins the first half.
 - `TestWorktreeNewBelmontFilesAreCommittable` — pins the second, and fails with a message pointing at the recover path if an effective per-worktree exclude is reintroduced.
+
+In `cmd/belmont/worktree_sync_test.go`:
+- `TestSyncPreservesSiblingCompletions` — the #24 regression: two sibling worktrees merging in sequence, both milestones' work must survive.
+- `TestSyncNeverRegressesAState`, `TestSyncPreservesBlockedMarkers`, `TestSyncLeavesUnrecognisedMarkersAlone`, `TestSyncCarriesOverMasterOnlyTasks` — the merge rules.
+- `TestCreateWorktreeIfNeededResumeIsNoOp` — the #29 guard, with `TestCreateWorktreeIfNeededSeedsFreshWorktree` as its control proving the hazard is real.
 
 ## Failure mode if you break it
 
@@ -35,15 +41,33 @@ Test coverage in `cmd/belmont/worktree_state_test.go`:
 - **Make the exclusion effective per-worktree via `extensions.worktreeConfig` + a per-worktree `core.excludesFile`.** This does work — tested. Do not do it. Turning it on makes new `.belmont/` files uncommittable, which strands worktree state on the recover path. The no-op has been load-bearing.
 - **Assume `--assume-unchanged` covers new files.** It only applies to paths already in the index. This has been misread at least once in a proposal review.
 
+## PROGRESS.md is merged on sync, never replaced
+
+`syncFeatureStateAfterMerge` reads master's `PROGRESS.md` **before** the wipe and merges it back afterwards via `mergeProgressState`. Every other file in the feature dir still takes the worktree's version wholesale.
+
+This is not a refinement — it is load-bearing. The function runs **once per sibling merge** inside `runWaveParallel`'s merge loop, and sibling worktrees each hold a full copy of the same feature dir from fork time. A destructive replace was therefore last-writer-wins across the wave: M2 merged and master recorded its tasks done, then M3 merged and reverted them to their fork-time state. Because `.belmont/` is `--assume-unchanged`, this copy is the *only* transport, so the flips existed in no commit and were unrecoverable. `resolveProgressConflict` — the union merge built for exactly this shape — never fired, because assume-unchanged means git never registers a conflict on the file. Issue #24.
+
+`mergeProgressState` rules, in order:
+
+- The **worktree's document is the base**, so structure and ordering match what a plain copy produced. Master contributes states and lines, never structure.
+- **Most-advanced state wins**, ranked by `markerRank` (canonical `taskStatus`, not raw marker).
+- **`[!]` on either side wins, both directions.** Rank alone would clear it — `taskBlocked` sorts below todo, so anything outranks it. The failure modes are asymmetric: a stale `[!]` costs someone a look and auto pauses loudly on blocked tasks; a dropped live one means work is silently treated as fine.
+- **Unrecognised markers are never ranked** — left exactly as written and reported as a warning. See `cross-cutting/` marker rules and issue #27.
+- **Task lines only master has are carried over** into their milestone (a follow-up a sibling added after this worktree forked). If the milestone is absent from the worktree's copy the task is skipped with a warning, never silently dropped.
+
+## Worktree seeding is skipped on resume
+
+`createWorktreeIfNeeded(root, wtPath, branch, slug, resumed)` is the single entry point for creating a worktree and seeding its state, and it is a **no-op when `resumed` is true**. Seeding calls `copyBelmontStateToWorktree`, a destructive replace of the feature dir — run against a preserved worktree it overwrites the live `PROGRESS.md` with master's fork-time snapshot, and those flips are in no commit. `resume-rebase.md` rejects exactly this under *Don't re-do*.
+
+This lived inline in two callers that drifted: `runFeatureInWorktree` guarded it, `runMilestoneInWorktree` did not (issue #29). Both now route through the helper so they cannot diverge again. `STEERING.md` preservation inside `copyBelmontStateToWorktree` remains — it protects the fresh-seed path, not this one.
+
 ## Known open gap
 
 `recoverMerge` does not call `syncFeatureStateAfterMerge`. Worktree edits to **tracked** feature state are therefore lost on the recover path — they are held back by `--assume-unchanged`, and nothing copies them home afterwards. Only *new* files survive, via git.
 
-**The obvious one-line fix is unsafe.** `syncFeatureStateAfterMerge` is not additive — it does `os.RemoveAll(dstFeature)` and then `copyDir(src, dst)`, destructively replacing master's feature state with the worktree's. Its two existing call sites fire moments after a merge in the same run, where the worktree is by construction the freshest copy.
+**The objection to the one-line fix is now weaker, but not gone.** It used to be that dropping `syncFeatureStateAfterMerge` into `recoverMerge` would `RemoveAll` master's feature dir and replace it with a copy preserved from a *failed* merge, possibly hours or days stale — trading a defect that loses worktree edits for one that loses main's. With `PROGRESS.md` now merged rather than replaced, a stale worktree can no longer drag task state backwards: the most-advanced state wins regardless of which side is older.
 
-A recovered worktree is not. It was preserved from a *failed* merge and may predate other features' merges by hours or days. Dropping `syncFeatureStateAfterMerge` into `recoverMerge` would `RemoveAll` master's feature dir and replace it with that stale copy — trading a defect that loses worktree edits for one that loses main's.
-
-So the fix needs a decision first, not a call: replace unconditionally, merge the two states, copy only files newer than their master counterpart, or prompt. Whichever is chosen, the copy must happen **before** `removeWorktree`, which currently runs immediately after the merge in `recoverMerge`.
+What still needs a decision is **every other file** in the feature dir — `MILESTONE.md`, `NOTES.md`, archived `MILESTONE-*.done.md` — which is still a wholesale replace and would still let a stale recovered worktree clobber newer master copies. Scope any fix to that question. Whichever is chosen, the copy must happen **before** `removeWorktree`, which currently runs immediately after the merge in `recoverMerge`.
 
 ## Evidence
 
@@ -54,3 +78,4 @@ So the fix needs a decision first, not a call: replace unconditionally, merge th
 
 - 2026-08-07 — initial. Records the asymmetric isolation (tracked held back, new files committable), the removal of `writeWorktreeGitExcludes`, the two rejected repairs, and the `recoverMerge` gap.
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
+- 2026-08-08 — `syncFeatureStateAfterMerge` now merges `PROGRESS.md` instead of replacing it (`mergeProgressState`), fixing the last-writer-wins wave bug (#24); worktree seeding extracted to `createWorktreeIfNeeded` with the resume guard in one place (#29). `recoverMerge` gap re-scoped: task state is now safe, non-PROGRESS files are still a wholesale replace.
