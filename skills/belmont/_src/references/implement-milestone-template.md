@@ -24,12 +24,12 @@ Fill in the `## Orchestrator Context` section using information from PROGRESS.md
 [Milestone ID and name, with the full list of incomplete tasks in this milestone]
 
 ### Active Task IDs
-[Comma-separated list of the incomplete task IDs in this milestone, e.g. `P0-1, P0-2, P1-3`. Sub-agents look up each task's full definition (description, solution, acceptance criteria, Figma URLs, notes) in {base}/PRD.md.]
+[Comma-separated list of the incomplete task IDs in this milestone, e.g. `P0-1, P0-2, P1-3`. Sub-agents look up each task's full definition (description, solution, acceptance criteria, Figma URLs, notes) in **the {base}/PRD.md sections for these task IDs** — not the whole file. Read the whole file only if it has no per-task structure, or if those sections do not explain the work.]
 
 ### File Paths
 - **PRD**: {base}/PRD.md — authoritative task definitions, acceptance criteria, Figma URLs
-- **TECH_PLAN**: {base}/TECH_PLAN.md — technical specs (if present)
-- **Master TECH_PLAN**: .belmont/TECH_PLAN.md — cross-cutting architecture (if present)
+- **TECH_PLAN**: {base}/TECH_PLAN.md — technical specs (if present). Read when your task touches architecture it describes; skip for self-contained tasks.
+- **Master TECH_PLAN**: .belmont/TECH_PLAN.md — cross-cutting architecture (if present). Read only for cross-cutting work: shared infrastructure, or changes spanning features.
 - **PROGRESS**: {base}/PROGRESS.md
 - **Feature Notes**: {base}/NOTES.md
 - **Global Notes**: .belmont/NOTES.md

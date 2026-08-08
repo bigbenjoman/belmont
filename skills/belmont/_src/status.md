@@ -41,16 +41,24 @@ If the user ran the CLI fast path above, the `--show-archived` flag controls thi
 If a specific feature is requested (user says "show status for auth" or similar):
 
 1. Set base path to `.belmont/features/<slug>/`
-2. Read `{base}/PRD.md`, `{base}/PROGRESS.md`, check `{base}/TECH_PLAN.md`, check `{base}/NOTES.md` and `.belmont/NOTES.md`
-3. Produce the standard status report (see format below)
+2. Read `{base}/PROGRESS.md` — every task state, milestone and count in the report comes from here.
+3. Read `{base}/PRD.md` only for the feature's **name and one-line description**. If the report does not need more than that, read the header rather than the whole file.
+4. For `{base}/TECH_PLAN.md`, `{base}/NOTES.md` and `.belmont/NOTES.md`, the report states only whether they exist and are non-empty — **check existence, do not read their contents.**
+5. Produce the standard status report (see format below)
 
 ## Files to Read
 
-1. `{base}/PRD.md` - Task definitions and completion status
-2. `{base}/PROGRESS.md` - Milestones and session history
-3. `{base}/TECH_PLAN.md` - Check if it exists and has content
-4. `{base}/NOTES.md` - Check if feature-level notes exist
-5. `.belmont/NOTES.md` - Check if global notes exist
+Status is a **read-only report**, so read the least that produces it. Only the
+first entry is read in full.
+
+1. `{base}/PROGRESS.md` — **read fully.** Milestones, task states, session history. Everything the report counts comes from here.
+2. `{base}/PRD.md` — **header only**, for the feature name and description. Task definitions are not needed: PROGRESS.md is the single source of truth for task state.
+3. `{base}/TECH_PLAN.md` — **existence and non-emptiness only.** Do not read the contents.
+4. `{base}/NOTES.md` — existence only.
+5. `.belmont/NOTES.md` — existence only.
+
+If the user asks a question the report does not answer, read what you need — this
+is the default path, not a restriction.
 
 If `.belmont/` directory doesn't exist, tell the user to run `belmont install` first.
 
