@@ -46,6 +46,18 @@ func runScopeGuard(cfg loopConfig, action loopAction, pre *progressSnapshot) {
 	if post == nil {
 		return
 	}
+	// A repeated `### M<n>:` heading — a duplicate milestone, or a session note
+	// written in milestone-header shape — makes every ByID lookup ambiguous.
+	// Guarding anyway rewrote the real block with the shadow block's bytes,
+	// deleting live task lines from a document the agent had not even changed.
+	// Refuse and say why, rather than guess which one was meant.
+	if dup := append(append([]string{}, pre.DupIDs...), post.DupIDs...); len(dup) > 0 {
+		fmt.Fprintf(os.Stderr,
+			"\033[33m⚠ scope guard skipped: PROGRESS.md has more than one `### %s:` heading, so milestone blocks are ambiguous. "+
+				"De-duplicate the heading (a session note must not be written in milestone-header shape) and re-run.\033[0m\n",
+			dup[0])
+		return
+	}
 	violations := diffScopeViolations(pre, post, action.MilestoneID)
 	if len(violations) == 0 {
 		return
@@ -227,6 +239,14 @@ func runEvidenceCheck(cfg loopConfig, action loopAction, pre *progressSnapshot) 
 	if post == nil {
 		return
 	}
+	// Same ambiguity as the scope guard: with a repeated `### M<n>:` heading,
+	// pre.ByID resolves to one block arbitrarily, so an already-verified task
+	// can read as a fresh un-evidenced flip and get reverted. Refuse instead.
+	if len(pre.DupIDs) > 0 || len(post.DupIDs) > 0 {
+		fmt.Fprintf(os.Stderr,
+			"\033[33m⚠ evidence check skipped: PROGRESS.md has a repeated `### M<n>:` heading, so milestone blocks are ambiguous.\033[0m\n")
+		return
+	}
 	missing := findEvidenceMissingFlips(cfg.Root, pre, post, action.MilestoneID)
 	if len(missing) == 0 {
 		return
@@ -285,6 +305,30 @@ func detectOrphanViolations(slug, progress string) []validationViolation {
 // returns a list of findings. Safe for test coverage.
 func detectViolations(slug string, milestones []milestone) []validationViolation {
 	var out []validationViolation
+
+	// Rule 0: two milestones sharing an ID. Every structure that keys milestones
+	// by ID — the scope guard's ByID, the evidence guard, the merge's
+	// lastTaskIdx — can only name one of them, so a collision silently resolves
+	// to whichever the reader saw last. Both guards now refuse to run on such a
+	// file, which makes this the only thing that gets it fixed.
+	seenMS := map[string]bool{}
+	reportedMS := map[string]bool{}
+	for _, m := range milestones {
+		if seenMS[m.ID] && !reportedMS[m.ID] {
+			reportedMS[m.ID] = true
+			out = append(out, validationViolation{
+				Feature:       slug,
+				Milestone:     m.ID,
+				MilestoneName: m.Name,
+				Rule:          "duplicate_milestone_id",
+				Message: fmt.Sprintf(
+					"milestone %s appears more than once. Milestones are keyed by ID throughout, so a duplicate makes every lookup ambiguous — the scope guard and the evidence guard both refuse to run against it. Renumber one of them, or, if this is a session note, stop writing it in `### M<n>:` heading shape.",
+					m.ID),
+			})
+		}
+		seenMS[m.ID] = true
+	}
+
 	for _, m := range milestones {
 		// Rule 1: milestone name matches a polish/follow-up pattern.
 		if polishMilestoneNameRe.MatchString(m.Name) {
@@ -365,7 +409,11 @@ func parseProgressSnapshot(path, content string) *progressSnapshot {
 	var current *milestoneBlockText
 	flush := func() {
 		if current != nil {
-			snap.ByID[current.ID] = len(snap.Blocks)
+			if _, seen := snap.ByID[current.ID]; seen {
+				snap.DupIDs = append(snap.DupIDs, current.ID)
+			} else {
+				snap.ByID[current.ID] = len(snap.Blocks)
+			}
 			snap.Blocks = append(snap.Blocks, *current)
 			current = nil
 		}
@@ -529,6 +577,11 @@ type progressSnapshot struct {
 	Raw    string
 	Blocks []milestoneBlockText
 	ByID   map[string]int // milestone ID -> index in Blocks
+	// DupIDs lists milestone IDs that appear more than once. ByID can only
+	// name one block per ID, so with a collision every lookup resolves to the
+	// wrong half of the document and the guard rewrites the wrong lines. The
+	// guard refuses to run rather than guess which block was meant.
+	DupIDs []string
 }
 
 // scopeViolation is one finding from the post-phase guard.

@@ -11,6 +11,7 @@ The failure signature is always the same: information disappears and nothing err
 - **`canonicalMarker(marker) (taskStatus, bool)`** is the only definition of what a checkbox marker means. Derived helpers — `markerRank`, `markerIsVerified` — route through it. Nothing compares a raw marker byte.
 - **`isSectionBreak(line) bool`** is the only definition of where the milestones region ends. It matches a level-2 ATX heading **at column zero only**; indentation is never trimmed first.
 - **Nothing is dropped in silence.** An entry Belmont cannot place is surfaced, not discarded: an unreadable marker becomes `taskUnknown` (counted separately, rendered `[?]`, `belmont validate` exit 1), and a task line outside every milestone is reported by `orphanedTaskLines` → `detectOrphanViolations`.
+- **Ambiguous structure is refused, not guessed.** A repeated `### M<n>:` heading makes every milestone-keyed lookup resolve arbitrarily. `parseProgressSnapshot` records it in `DupIDs`; `runScopeGuard` and `runEvidenceCheck` both decline to run and say why; `detectViolations` raises `duplicate_milestone_id`. Same policy as a duplicated task ID in `mergeProgressState`.
 
 ## How it's enforced
 
@@ -38,6 +39,7 @@ Tests: `cmd/belmont/marker_readers_test.go`, `cmd/belmont/section_break_test.go`
 
 - **Make `isSectionBreak` accept indented headings "for robustness".** It is the bug. A column-zero `## ` genuinely ends the region — `## Session History` and `## Decisions Log` follow the milestones in every real file — so the boundary must stay, only the trimming goes.
 - **Count orphaned tasks into their preceding milestone.** Considered for #31 and rejected: past a real column-zero break they are genuinely outside the region, and silently adopting them would make `## Session History` entries into tasks. Report them instead.
+- **Suppress a merge carry-over because the other side "already has" the ID somewhere.** Tried and reverted within one commit. Keying `mergeProgressState`'s carry-over off every occurrence — in-region *and* orphaned — looks like duplicate-prevention and is state loss: when a worktree holds an ID only as an orphan (a fork-stale line stranded behind a heading its agent wrote, or a sibling's completion quoted into a log), master's in-region copy is the only counted one, and skipping it deletes the task from the only document that carries it. Carry it in and warn. Splicing is safe precisely *because* `countIDs` is region-scoped — an in-region line plus an orphan sharing its ID is not a duplicate, so the next sibling merge will not refuse it. The carry-over gate must be the in-region set alone.
 - **Use a Markdown library.** Belmont's CLI is deliberately stdlib-only (`AGENTS.md`), and the file is a fixed, small dialect. A parser dependency buys correctness on constructs Belmont does not use and costs the zero-dependency property.
 
 ## Evidence
@@ -45,8 +47,14 @@ Tests: `cmd/belmont/marker_readers_test.go`, `cmd/belmont/section_break_test.go`
 - Issue #27 — `[X]`/`[V]`/`[-]` all parsed as `todo`; a completed task was offered as *Next Individual Task*. Reproduced before/after with the harness: before offers `P1-M1-2 - capital X` and `validate` exits 0; after offers `None` and exits 1.
 - Issue #31 — the reporter's exact fixture yields 2 of 4 tasks before, 4 of 4 after; `Status: Complete` → `In Progress`, with the `[!]` blocker surfaced.
 - Both were found by a user on a real project, not by any check in this repo. The class is invisible to tests that only exercise well-formed fixtures — every fixture in the suite before #31 used column-zero headings.
+- The controls only count if they can fail. Before the caller list was completed, six mutations passed the whole suite — including severing orphan detection from `belmont validate` and from `belmont status`, i.e. reproducing #31's exact "validate exits 0" symptom. Two tests were vacuous for the regression they named: one used a markdown table where the fixture needed a task-shaped line, and a resolver test's two sides stopped colliding, so git merged them cleanly and the resolver under test was never called. **A conflict fixture must be asserted to have conflicted** — never `t.Skip` when the resolver declines, or the test passes forever without running anything.
+
+## Verification
+
+Every rule above is mutation-tested. Reintroducing any region-blind walk, severing any wire from orphan detection to a user-visible surface, or reverting the carry-over gate fails at least one named test. Re-run that check after touching this area: back up `cmd/belmont/`, apply each mutation, `go test ./cmd/belmont`, restore. A mutation that survives is a missing control, not a passing suite.
 
 ## Revisions
 
 - 2026-08-08 — initial. Records the shared root cause of #27 and #31, the two canonical helpers, the never-drop-in-silence rule, and the rejected alternatives.
 - 2026-08-08 — corrected the `isSectionBreak` caller list, which claimed `rebuildAfterScopeGuard` had been converted when it had not. Six more readers converted (`rebuildAfterScopeGuard`, `mergeProgressState`'s duplicate counter, `resolveProgressConflict` ×2, `resetVerifiedTasks`, `pendingTasksInRange`/`fwlupTasksInRange`). Added the half-conversion, region-scoped-writes and mismatched-counter failure modes, and the rule that the caller list is verified by grep rather than by commit message.
+- 2026-08-08 — added the refuse-ambiguous-structure invariant (duplicate `### M<n>:` headings), the rejected carry-over suppression that cost state, the vacuous-control evidence, and the Verification section recording that the whole entry is mutation-tested.

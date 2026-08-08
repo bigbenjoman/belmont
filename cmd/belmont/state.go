@@ -805,7 +805,13 @@ func pendingTasksInRange(root, feature, from, to string) bool {
 	// Match any incomplete task: [ ], [>], [!]
 	taskRe := regexp.MustCompile(`^\s*-\s+\[[ >!]\]`)
 
-	inRange := fromNum < 0 && toNum < 0 // if no range, all milestones are in range
+	// Starts false even with no range: "all milestones" still means milestones.
+	// A bullet in the preamble, before the first `### M<n>:`, is outside the
+	// region exactly as one past a `## ` break is — orphanedTaskLines reports
+	// both — and counting it as outstanding work blocked actionComplete on a
+	// finished feature. fwlupTasksInRange has always started false; this is the
+	// same rule at the region's leading edge.
+	inRange := false
 	for _, line := range lines {
 		if m := msRe.FindStringSubmatch(line); len(m) >= 2 {
 			num, _ := strconv.Atoi(m[1])

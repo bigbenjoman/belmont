@@ -100,13 +100,37 @@ func TestResolverIgnoresTaskLinesOutsideTheRegion(t *testing.T) {
 		}
 	})
 
+	t.Run("a quote on OUR side must not be rewritten to theirs' state", func(t *testing.T) {
+		// Exercises the write-side gate. Without it the resolver rewrites ours'
+		// history quote and commits the mutated log line as auto-resolved.
+		//
+		// Both sides must touch the SAME line or git merges them cleanly and
+		// the resolver is never called — which is how this gate went uncovered.
+		ours := "# Progress\n\n### M1: Only\n- [>] P1-M1-1: real task\n\n## Session History\n- [ ] P1-M1-1: quoted while it was still open\n"
+		theirs := "# Progress\n\n### M1: Only\n- [x] P1-M1-1: real task\n\n## Session History\n- base note\n"
+
+		resolved, got := resolveDocConflict(t, base, ours, theirs)
+		if !resolved {
+			t.Fatalf("resolver declined a fixture of known markers, so the write-side gate is untested:\n%s", got)
+		}
+		if !strings.Contains(got, "- [ ] P1-M1-1: quoted while it was still open") {
+			t.Errorf("ours' history quote was rewritten to theirs' state:\n%s", got)
+		}
+		if m := inRegionMarker(t, got); m != "x" {
+			t.Errorf("in-region task should have taken theirs' [x], got [%s]:\n%s", m, got)
+		}
+	})
+
 	t.Run("a stale quote must not shadow theirs' real completion", func(t *testing.T) {
 		ours := "# Progress\n\n### M1: Only\n- [ ] P1-M1-1: real task\n\n## Session History\n- note from ours\n"
 		theirs := "# Progress\n\n### M1: Only\n- [x] P1-M1-1: real task\n\n## Session History\n- [ ] P1-M1-1: recorded copy of the task line\n"
 
 		resolved, got := resolveDocConflict(t, base, ours, theirs)
 		if !resolved {
-			t.Skip("resolver declined this fixture; the shadowing case needs a resolved merge")
+			// Never Skip here: a fixture that stops conflicting makes the test
+			// vacuous without failing, which is how the write-side gate above
+			// went uncovered.
+			t.Fatalf("resolver declined a fixture of known markers:\n%s", got)
 		}
 		if m := inRegionMarker(t, got); m != "x" {
 			t.Errorf("theirs' completed [x] was lost to its own history quote (marker = %q):\n%s", m, got)
@@ -133,14 +157,62 @@ func TestReverifyLeavesLinesPastASectionBreakAlone(t *testing.T) {
 
 // ---------------------------------------------------------------- scheduling
 
-func TestPendingTasksIgnoresBulletsPastASectionBreak(t *testing.T) {
+func TestPendingTasksIgnoresBulletsOutsideTheRegion(t *testing.T) {
+	for name, doc := range map[string]string{
+		"past a section break": "# Progress\n\n### M1: Only\n- [x] P1-M1-1: done\n\n## Session History\n- [ ] retro: write this up next week\n",
+		"before the first header": "# Progress\n- [ ] stray preamble bullet\n\n## Milestones\n\n" +
+			"### M1: Only\n- [x] P1-M1-1: done\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			writeFeature(t, root, "demo", doc)
+			if pendingTasksInRange(root, "demo", "", "") {
+				t.Error("a `- [ ]` bullet outside every milestone was counted as pending work — " +
+					"the feature is finished, so the loop can never reach actionComplete")
+			}
+		})
+	}
+
+	// …and real outstanding work must still register.
+	root := t.TempDir()
+	writeFeature(t, root, "demo", "# Progress\n\n## Milestones\n\n### M1: Only\n- [x] P1-M1-1: done\n- [ ] P1-M1-2: outstanding\n\n## Session History\n")
+	if !pendingTasksInRange(root, "demo", "", "") {
+		t.Error("a genuine in-region [ ] task was not reported as pending")
+	}
+}
+
+func TestFwlupTasksIgnoreBulletsPastASectionBreak(t *testing.T) {
 	root := t.TempDir()
 	writeFeature(t, root, "demo",
-		"# Progress\n\n### M1: Only\n- [x] P1-M1-1: done\n\n## Session History\n- [ ] retro: write this up next week\n")
+		"# Progress\n\n### M1: Only\n- [v] P1-M1-1: done\n\n## Session History\n- [ ] FWLUP: retro bullet, not work\n")
 
-	if pendingTasksInRange(root, "demo", "", "") {
-		t.Error("a `- [ ]` bullet under ## Session History was counted as pending work — " +
-			"the feature is finished, so the loop can never reach actionComplete")
+	if fwlupTasksInRange(root, "demo", statusReport{}, "M1", "M1") {
+		t.Error("a FWLUP-shaped bullet under ## Session History was counted as outstanding follow-up work")
+	}
+}
+
+// A repeated `### M<n>:` heading makes every milestone-keyed lookup ambiguous.
+// Both guards refuse rather than rewrite the wrong block; `belmont validate` is
+// what tells the user to fix it.
+func TestDuplicateMilestoneIDIsRefusedAndReported(t *testing.T) {
+	doc := "### M1: A\n- [ ] P1-M1-1: a\n\n### M2: B\n- [x] P1-M2-1: b\n\n" +
+		"## Session History\n\n### M2: retry notes for milestone two\n- attempt log line\n"
+
+	snap := parseProgressSnapshot("P", doc)
+	if len(snap.DupIDs) == 0 {
+		t.Fatal("parseProgressSnapshot did not flag the repeated M2 heading, so ByID silently names one of them")
+	}
+
+	// The rebuild path is what deleted live task lines when it guessed.
+	v := detectViolations("demo", parseMilestones(doc))
+	var reported bool
+	for _, x := range v {
+		if x.Rule == "duplicate_milestone_id" {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Errorf("belmont validate does not report the duplicate milestone ID; violations=%+v", v)
 	}
 }
 
@@ -163,19 +235,49 @@ func TestMergeDuplicateCountIsRegionScoped(t *testing.T) {
 	}
 }
 
-func TestMergeDoesNotDuplicateAWorktreeOrphan(t *testing.T) {
-	// The worktree's only copy of P1-M1-2 sits past a break. Splicing master's
-	// in-region copy in beside it created a duplicate ID, which the NEXT sibling
-	// merge then refused — deleting the completed line outright.
-	master := "### M1: One\n- [ ] P1-M1-1: a\n- [ ] P1-M1-2: b\n\n## Session History\n"
-	wt := "### M1: One\n- [x] P1-M1-1: a\n\n## What I learned\n- [x] P1-M1-2: b\n\n## Session History\n"
+// An ID the worktree holds ONLY as an orphan — a fork-stale line an agent
+// stranded behind a new `## ` heading, or a sibling's completion quoted into a
+// log — must not suppress the carry-over. Master's in-region copy is the only
+// counted one, and `.belmont/` moves only by this copy, so skipping it deletes
+// the task irrecoverably. Carry it and say so.
+func TestMergeCarriesOverWhenWorktreeHoldsTheIDOnlyAsAnOrphan(t *testing.T) {
+	// Sibling A completed P1-M1-2 and merged. Sibling B stranded its fork-time
+	// copy behind a heading its agent wrote.
+	master := "### M1: One\n- [x] P1-M1-1: a\n- [x] P1-M1-2: b\n\n## Session History\n"
+	wt := "### M1: One\n- [x] P1-M1-1: a\n\n## What I learned\n- [ ] P1-M1-2: b\n\n## Session History\n"
 
-	got, _ := mergeProgressState(master, wt)
-	if n := strings.Count(got, "P1-M1-2"); n != 1 {
-		t.Errorf("P1-M1-2 appears %d times, want 1 — the carry-over duplicated a line the worktree already holds:\n%s", n, got)
+	got, warnings := mergeProgressState(master, wt)
+
+	var inRegion *task
+	for _, m := range parseMilestones(got) {
+		for i, task := range m.Tasks {
+			if task.ID == "P1-M1-2" {
+				inRegion = &m.Tasks[i]
+			}
+		}
 	}
-	if strings.Contains(got, "- [ ] P1-M1-2") {
-		t.Errorf("the worktree's completed [x] was shadowed by master's stale [ ]:\n%s", got)
+	if inRegion == nil {
+		t.Fatalf("sibling A's completion was deleted — it exists in no commit, so this is unrecoverable:\n%s", got)
+	}
+	if inRegion.Marker != "x" {
+		t.Errorf("in-region P1-M1-2 reads [%s], want [x]", inRegion.Marker)
+	}
+	// The stray copy is left exactly as written, and reported.
+	if !strings.Contains(got, "- [ ] P1-M1-2: b") {
+		t.Errorf("the orphan line was rewritten instead of left alone:\n%s", got)
+	}
+	var warned bool
+	for _, w := range warnings {
+		if strings.Contains(w, "P1-M1-2") && strings.Contains(w, "outside every milestone") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Errorf("carrying a line whose ID is also stranded outside the region must be reported; warnings=%v", warnings)
+	}
+	// And the result must not be refused by the next sibling merge.
+	if _, next := mergeProgressState(got, got); len(next) != 0 {
+		t.Errorf("merging the result against itself warns, so a later sibling would refuse it: %v", next)
 	}
 }
 
@@ -202,15 +304,55 @@ func TestMergeCarriesOverIntoAnEmptyMilestone(t *testing.T) {
 }
 
 func TestMergeDoesNotWarnAboutMasterOrphans(t *testing.T) {
-	// A legitimate history line on master is not an unmerged task.
-	master := "### M1: One\n- [x] P1-M1-1: a\n\n## Session History\n- [x] P9-LOG-1: logged by a sibling\n"
-	wt := "### M1: One\n- [ ] P1-M1-1: a\n\n## Session History\n- [x] P9-LOG-1: logged by a sibling\n"
+	// A legitimate history line on master is not an unmerged task. The orphan
+	// must exist on the MASTER side only: with the same line on both sides the
+	// worktree's copy masks the carry-over pass, and the test passes whether or
+	// not that pass iterates master's tasks or rescans master's raw lines.
+	master := "### M1: One\n- [x] P1-M1-1: a\n\n## Session History\n- [x] P9-LOG-9: logged by a sibling\n"
+	wt := "### M1: One\n- [ ] P1-M1-1: a\n\n## Session History\n"
 
-	_, warnings := mergeProgressState(master, wt)
+	got, warnings := mergeProgressState(master, wt)
 	for _, w := range warnings {
-		if strings.Contains(w, "P9-LOG-1") {
+		if strings.Contains(w, "P9-LOG-9") {
 			t.Errorf("false alarm about a line that was never dropped: %s", w)
 		}
+	}
+	if strings.Count(got, "P9-LOG-9") > 0 {
+		t.Errorf("master's history line was spliced into a milestone; orphans belong to none:\n%s", got)
+	}
+}
+
+// Several master-only tasks carrying into one anchor must land in master's
+// document order. Iterating the masterTasks map instead is nondeterministic, so
+// repeated merges would rewrite PROGRESS.md with the lines shuffled.
+func TestMergeCarryOverOrderIsDeterministic(t *testing.T) {
+	master := "### M1: One\n- [ ] P1-M1-1: a\n- [ ] P1-M1-2: b\n- [ ] P1-M1-3: c\n- [ ] P1-M1-4: d\n"
+	wt := "### M1: One\n"
+
+	want := []string{"P1-M1-1", "P1-M1-2", "P1-M1-3", "P1-M1-4"}
+	for i := 0; i < 20; i++ {
+		got, _ := mergeProgressState(master, wt)
+		var order []string
+		for _, m := range parseMilestones(got) {
+			for _, task := range m.Tasks {
+				order = append(order, task.ID)
+			}
+		}
+		if strings.Join(order, ",") != strings.Join(want, ",") {
+			t.Fatalf("run %d: carried tasks out of document order: got %v, want %v", i, order, want)
+		}
+	}
+}
+
+// The worktree walk must leave orphan lines alone. Master's marker outranks the
+// orphan's here, so a missing region guard rewrites a historical log entry.
+func TestMergeLeavesWorktreeOrphanMarkerAlone(t *testing.T) {
+	master := "### M1: One\n- [x] P1-M1-1: a\n\n## Session History\n"
+	wt := "### M1: One\n- [x] P1-M1-1: a\n\n## Session History\n- [ ] P1-M1-1: quoted while it was still open\n"
+
+	got, _ := mergeProgressState(master, wt)
+	if !strings.Contains(got, "- [ ] P1-M1-1: quoted while it was still open") {
+		t.Errorf("a Session History quote was rewritten to master's in-region state:\n%s", got)
 	}
 }
 
