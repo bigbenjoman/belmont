@@ -22,7 +22,7 @@ Resolve the argument to a single feature slug before starting the loop. The loop
 ## Preflight (run once, before looping)
 
 1. Resolve the feature slug from `$ARGUMENTS` as described above. Call it `<feature>`.
-2. Run `/belmont:status <feature>` (or `belmont status --feature <feature>` if the CLI is installed) to confirm the feature exists and to see how many milestones are pending.
+2. Confirm the feature exists and see how many milestones are pending. Prefer `belmont status --feature <feature>` if the CLI is installed — the Go CLI parses PROGRESS.md itself, so this costs one command and no file reads. Fall back to `/belmont:status <feature>` only if the CLI is unavailable.
 3. If every milestone is already **verified**, report that the feature is complete and **stop** — do not start a loop.
    - If milestones read *done* but not verified (`[x]`, not `[v]`), that is not finished: `belmont status` flags it and names `belmont reverify`. Either run verification for them or start the loop; do not stop here. See issue #30.
 4. Otherwise, hand off to the loop driver below.
@@ -38,12 +38,20 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
   3. If verify reports follow-up tasks or failures: run /belmont:next <feature>
      and repeat /belmont:next <feature> until those follow-ups clear, then
      re-run /belmont:verify <feature>.
-  4. Run /belmont:status <feature>. STOP only when every milestone is
-     verified, or when status still reports tasks done-but-unverified after
-     a re-verify pass has already run this session (some tasks legitimately
-     stay [x] when verification found issues). A feature reading "Complete"
-     with unverified tasks is NOT finished — status warns about it and names
-     `belmont reverify`. Otherwise continue to the next milestone.
+  4. Check whether work remains: run `belmont status --feature <feature>`.
+     Do NOT use --format json here — it is ~3x larger and grows with task
+     count. Only fall back to /belmont:status <feature> if the CLI is
+     unavailable: that skill must load ~6KB of its own instructions before
+     it even shells out to the same command, and this step runs once per
+     milestone. STOP only when every milestone is verified — the "Next
+     Milestone" line reads None AND status prints no done-but-unverified
+     warning ("Next Milestone: None" alone is not enough, because [x]
+     counts as done) — or when status still reports tasks
+     done-but-unverified after a re-verify pass has already run this
+     session (some tasks legitimately stay [x] when verification found
+     issues). A feature reading "Complete" with unverified tasks is NOT
+     finished — status warns about it and names `belmont reverify`.
+     Otherwise continue to the next milestone.
   Do not start unrelated work; only progress this one feature.
 ```
 
@@ -55,8 +63,8 @@ When delegating, you are invoking the `/loop` skill — follow its self-pacing g
 
 Stop the loop — do not schedule another iteration — when any of these holds:
 
-- `/belmont:status <feature>` shows every milestone verified (the success case: feature complete).
-- `/belmont:status <feature>` still reports done-but-unverified tasks after a re-verify pass has already run this session — report which tasks and stop, rather than churning.
+- The status check in step 4 shows every milestone verified (the success case: feature complete).
+- The status check in step 4 still reports done-but-unverified tasks after a re-verify pass has already run this session — report which tasks and stop, rather than churning.
 - A milestone is blocked (`[!]` tasks) and cannot proceed after `/belmont:next` attempts; report the blocker and stop for user input.
 - `/belmont:verify` keeps failing on the same task across iterations with no new progress (avoid an infinite verify/next churn) — report the stuck task and stop.
 - The user steers you to stop, change features, or do other work.
