@@ -69,7 +69,7 @@ Fill in the `## Orchestrator Context` section using information from PROGRESS.md
 [Written by implementation-agent — per-task status, files changed, commits, issues]
 ```
 
-**IMPORTANT**: The `## Orchestrator Context` section is the **coordination hub** — it names the active tasks and points sub-agents at the PRD and TECH_PLAN. Sub-agents read the PRD and TECH_PLAN directly from the paths in `### File Paths` for full task definitions, acceptance criteria, Figma URLs, and technical specs. Do NOT copy PRD/TECH_PLAN content into this section.
+**IMPORTANT**: The `## Orchestrator Context` section is the **coordination hub** — it names the active tasks and points sub-agents at the PRD and TECH_PLAN. Sub-agents read those files directly from the paths in `### File Paths`, scoped as described there: the PRD sections for the listed task IDs, and the tech plans only when the task touches architecture they describe. Do NOT copy PRD/TECH_PLAN content into this section.
 
 **The three sub-agent-written sections (`## Codebase Analysis`, `## Design Specifications`, `## Implementation Log`) remain the source of truth for downstream agents** — those ARE written into MILESTONE and ARE read by Phase 3 (implementation-agent). Only the PRD/TECH_PLAN content is externalised; the sub-agent hand-off data stays inside MILESTONE.
 
