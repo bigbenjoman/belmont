@@ -477,9 +477,18 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			currentMS = "M" + m[1]
 			continue
 		}
+		// A `## ` at column zero ends the milestones region — same rule every
+		// other reader uses. Without this the merge is the one reader that
+		// disagrees, and a task line under `## Session History` would be
+		// attributed to the last milestone header seen and spliced into it.
+		// See isSectionBreak and issue #31.
+		if isSectionBreak(line) {
+			currentMS = ""
+			continue
+		}
 		if tm := taskRe.FindStringSubmatch(line); len(tm) >= 6 {
-			if dupIDs[tm[4]] {
-				continue
+			if dupIDs[tm[4]] || currentMS == "" {
+				continue // orphans belong to no milestone; never carry them into one
 			}
 			masterTasks[tm[4]] = masterTask{marker: tm[2], line: line, milestone: currentMS}
 		}
@@ -504,9 +513,13 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			currentMS = "M" + m[1]
 			continue
 		}
-		tm := taskRe.FindStringSubmatch(line)
-		if len(tm) < 6 {
+		if isSectionBreak(line) {
+			currentMS = ""
 			continue
+		}
+		tm := taskRe.FindStringSubmatch(line)
+		if len(tm) < 6 || currentMS == "" {
+			continue // outside every milestone: leave exactly as written
 		}
 		id := tm[4]
 		lastTaskIdx[currentMS] = i
