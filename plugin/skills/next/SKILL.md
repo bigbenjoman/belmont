@@ -101,16 +101,27 @@ This mode is used by the auto loop to fix all follow-up issues in a single invoc
 
 ## Setup
 
-Read these files first:
-- `{base}/PRD.md` - The product requirements and task definitions
-- `{base}/PROGRESS.md` - Current progress and milestones
-- `{base}/TECH_PLAN.md` - Technical implementation plan (if exists)
-- `.belmont/TECH_PLAN.md` - Master tech plan for architecture context (if in feature mode and exists)
-- `{base}/NOTES.md` - Feature-level learnings from previous sessions (if exists)
-- `.belmont/NOTES.md` - Global learnings from previous sessions (if exists)
+Read in this order. You do not know which task you are implementing until you
+have read PROGRESS.md, so reading the specs first means reading them for the
+whole feature instead of for one task — and this is the lightweight path, where
+that cost is least justified.
+
+**Always read:**
+1. `{base}/PROGRESS.md` — first. Select the task before reading anything else.
+2. `{base}/NOTES.md` and `.belmont/NOTES.md` — feature-level and global learnings (if they exist). Small, and they carry the anti-patterns this loop exists to stop repeating.
+
+**Then read, scoped to the task you selected:**
+3. `{base}/PRD.md` — the section defining that task ID. Read the whole file if it has no per-task structure, or if the section does not fully explain the work.
+4. `{base}/TECH_PLAN.md` — if the task touches architecture it describes (if exists). Skip when the task is self-contained.
+5. `.belmont/TECH_PLAN.md` — only when the task is cross-cutting: it changes shared infrastructure or spans features (if in feature mode and exists).
+
+This is guidance for the common case, not a prohibition. If a file you skipped
+turns out to matter — the task is ambiguous, or an acceptance criterion refers
+to something you have not read — read it. A wrong implementation costs far more
+than a file read.
 
 Optional helper:
-- If the CLI is available, `belmont status --format json` can provide a quick summary of the next pending milestone/task. Still read the files above for full context.
+- If the CLI is available, `belmont status --format json` can provide a quick summary of the next pending milestone/task.
 
 ## Step 1: Find the Next Task
 
