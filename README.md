@@ -233,13 +233,24 @@ From then on the contract is the standard: `design-agent` derives per-task specs
 
 **It is not retroactive.** Features planned before you upgrade keep their existing verification — applying a new quality bar to an already-approved plan would fail milestones on a standard nobody agreed to. Adopt it per feature by re-running `/belmont:tech-plan --feature <slug>`.
 
-### Optional: richer contracts on Claude Code
+### Optional: richer contracts with the Yummy Labs design skills
 
-Belmont's built-in baseline is the tested path and needs nothing installed. If you happen to have these **user-scope Claude Code skills** in `~/.claude/skills/`, Belmont will use each to enrich the matching contract section — `ui-designer` for tokens, `ux-designer` for strategy and component states, `ux-copywriter` for microcopy, `ux-motion` for motion and transitions.
+The curation behind the contract's sections — which rules matter for a *checkable* design standard, and how they compose into one — is drawn from the Claude design skills published by [**Yummy Labs**](https://www.yummy-labs.com/), an AI design accelerator for UX designers.
 
-They are not bundled with Belmont, none is required, and the contract has the same six sections whether or not any are present. See [design-authority-baseline.md](skills/belmont/_src/references/design-authority-baseline.md) for where to get them.
+Belmont's built-in baseline is the tested path and **needs nothing installed**. But if you have any of their skills in `~/.claude/skills/`, Belmont detects each by name and uses it to enrich the matching contract section:
 
-> **Credit**: the curation behind these sections — which rules matter for a checkable contract, and how they compose into one — is drawn from the [**Yummy Labs**](https://www.yummy-labs.com/) Claude design skills. Belmont ships none of their files; its baseline is original prose stating published standards (WCAG 2.1 SC 1.4.3 and 2.4.7 at Level AA, SC 2.5.5 and 2.3.3 at Level AAA, the 8pt grid, ratio-derived type scales, the 60-30-10 convention), adopted as Belmont's own floor. Thanks to them for the framing.
+| Skill | Enriches | Get it from |
+|---|---|---|
+| `ui-designer` | Token Contract — spacing, type, colour, radius, elevation | [Yummy Labs → UX/UI designer skills](https://www.yummy-labs.com/) |
+| `ux-designer` | UX Strategy, and the component-state half of State Inventory | [Yummy Labs → UX/UI designer skills](https://www.yummy-labs.com/) |
+| `ux-copywriter` | Microcopy Rules | [Claude UX Copywriter Skill](https://drive.google.com/drive/folders/1lSwUatVOzOX5TGWgBDjKA820RiUsVLNr) (`ux-copywriter.zip`) |
+| `ux-motion` | Motion Contract, and the transition half of State Inventory | [Claude UX Motion Skill by Yummy Labs](https://drive.google.com/drive/folders/1gYrK4aT4A-LYr4GbM88-PaKu0wYyY4C6) (`ux-motion.zip`) |
+
+Unzip each into its own directory under `~/.claude/skills/`. They are **user-scope Claude Code skills** — they do not exist on Belmont's seven other supported tools, and they cannot be installed into a project.
+
+**None is required, and the contract has the same six sections whether or not any are present** — a missing skill falls back to the baseline for *that section alone*, and the contract records which authority produced each section on an `**Authorities**` line. Full detail, including the derivation ladder, is in [design-authority-baseline.md](skills/belmont/_src/references/design-authority-baseline.md).
+
+> **Credit and licensing**: Belmont ships **none** of Yummy Labs' files — they are distributed as downloads with no LICENSE, no repository, and no redistribution grant. Belmont's baseline is original prose stating published standards (WCAG 2.1 SC 1.4.3 and SC 2.4.7 at **Level AA**; SC 2.5.5 and SC 2.3.3 at **Level AAA**; the 8pt grid, ratio-derived type scales, and the 60-30-10 convention), adopted as Belmont's own floor rather than presented as a WCAG requirement. Thanks to Yummy Labs for the framing — go and get their skills from <https://www.yummy-labs.com/>.
 
 ---
 
@@ -510,17 +521,7 @@ See [Feature Auto](docs/feature-auto.md) for full documentation.
 |                                                             | Name                                                                   | Contributions |
 |-------------------------------------------------------------|------------------------------------------------------------------------|---------------|
 | <img src="https://github.com/blake-simpson.png" width="50"> | **Blake Simpson** ([@blake-simpson](https://github.com/blake-simpson)) | Creator & maintainer |
-| <img src="https://github.com/bigbenjoman.png" width="50">   | **Ben Lavender** ([@bigbenjoman](https://github.com/bigbenjoman))      | PR/FAQ skill, product skill + PRD formats; opencode and Codex integrations; model tiers via `models.yaml`; `/belmont:loop`; design contracts; CI and maintenance |
-
-**Ben Lavender's merged contributions:**
-
-| Area | PRs |
-|---|---|
-| **Tool support** — opencode as a first-class tool, its `/belmont/<skill>` slash menu, and Codex skill grouping in the `$`-mention popup | [#14](https://github.com/blake-simpson/belmont/pull/14), [#15](https://github.com/blake-simpson/belmont/pull/15), [#16](https://github.com/blake-simpson/belmont/pull/16) |
-| **Model tiers** — stopped pinning models in agent frontmatter (it was never read at runtime) in favour of inheriting the session model with `models.yaml` as the single override; tuned Codex tiers | [#17](https://github.com/blake-simpson/belmont/pull/17), [#18](https://github.com/blake-simpson/belmont/pull/18) |
-| **Skills** — Claude-only `/belmont:loop`, and the Codex plan-mode handoff apply step | [#19](https://github.com/blake-simpson/belmont/pull/19), [#20](https://github.com/blake-simpson/belmont/pull/20) |
-| **Maintainability** — GitHub Actions CI, dead-code removal, and the `main.go` split into 22 files | [#23](https://github.com/blake-simpson/belmont/pull/23) |
-| **Fixes** — plugin generator emitting empty agent files; coloured status markers under `--color=always` | [#9](https://github.com/blake-simpson/belmont/pull/9), [#21](https://github.com/blake-simpson/belmont/pull/21) |
+| <img src="https://github.com/bigbenjoman.png" width="50">   | **Ben Lavender** ([@bigbenjoman](https://github.com/bigbenjoman))      | PR/FAQ skill, product skill + PRD formats; opencode & Codex tool support; model tiers via `models.yaml`; `/belmont:loop`; Design Contracts; CI & maintenance |
 
 ---
 
