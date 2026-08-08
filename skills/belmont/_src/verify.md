@@ -15,17 +15,26 @@ You are the verification orchestrator. Your job is to run comprehensive verifica
 
 ## Setup
 
-Read these files first:
-- `{base}/PRD.md` - The product requirements and task definitions
-- `{base}/PROGRESS.md` - Current progress tracking
-- `{base}/TECH_PLAN.md` - Technical implementation plan (if exists)
-- `.belmont/TECH_PLAN.md` - Master tech plan for architecture context (if in feature mode and exists)
-- `{base}/models.yaml` - Per-feature model tiers (if exists — see "Model Tiers" below)
+Read in this order. You do not know which tasks you are verifying until you
+have read PROGRESS.md, so reading the specs first means reading them for the
+whole feature instead of for the tasks in front of you.
 
-Also check for archived MILESTONE files (`{base}/MILESTONE-*.done.md`) — these contain the implementation context from the most recent milestone and can provide useful reference for verification.
+**Always read:**
+1. `{base}/PROGRESS.md` — first. Identify the `[x]` tasks to verify before reading anything else.
+2. `{base}/models.yaml` — small, and needed up front to resolve tiers (if exists — see "Model Tiers" below).
+
+**Then read, scoped to those tasks:**
+3. `{base}/PRD.md` — the sections defining those task IDs, including their acceptance criteria. Read the whole file if it has no per-task structure. **Never skip the acceptance criteria for a task you are verifying** — they are the thing being checked.
+4. `{base}/TECH_PLAN.md` — if the tasks touch architecture it describes (if exists).
+5. `.belmont/TECH_PLAN.md` — only when the tasks are cross-cutting: they change shared infrastructure or span features (if in feature mode and exists).
+6. Archived MILESTONE files (`{base}/MILESTONE-*.done.md`) — these carry implementation context from the milestone that produced the work. Prefer them over re-deriving that context from the specs, **but only when their sections are actually populated**: a milestone run via `/belmont:next` archives with `[Not populated — lightweight mode skips the …]` placeholders. When you see those, fall back to the specs.
+
+This is guidance for the common case, not a prohibition. If a file you skipped
+turns out to matter, read it. Verifying against an incomplete picture is worse
+than the tokens you saved.
 
 Optional helper:
-- If the CLI is available, `belmont status --format json` can provide a quick summary of completed tasks. Still read the files above for full context.
+- If the CLI is available, `belmont status --format json` can provide a quick summary of completed tasks.
 
 ## Model Tiers
 
@@ -66,6 +75,8 @@ Before spawning sub-agents, collect design references for the tasks being verifi
 1. Read archived MILESTONE files (`{base}/MILESTONE-*.done.md`) — look for:
    - `## Design Specifications` section with a Figma Sources table (has `fileKey`, `nodeId` columns)
    - Embedded or linked reference images, screenshots, or mockups
+
+   If that section reads `[Not populated — lightweight mode skips the design agent]`, the milestone ran via `/belmont:next` and holds no design references. Move on to step 2 rather than treating the placeholder as evidence there are none.
 2. Check `{base}/PRD.md` task definitions for `**Figma**:` fields or linked visual references
 3. Check `{base}/TECH_PLAN.md` and `{base}/NOTES.md` for any visual specifications
 
@@ -105,9 +116,9 @@ Spawn these two sub-agents **simultaneously** (or sequentially if using the Sequ
 > - P0-2: Database schema [x]]
 > ---
 >
-> Read `{base}/PRD.md` for acceptance criteria and task details.
-> Read `{base}/TECH_PLAN.md` for technical specifications (if it exists).
-> Check for archived MILESTONE files (`{base}/MILESTONE-*.done.md`) for implementation context.
+> Read the `{base}/PRD.md` sections defining the task IDs above — their acceptance criteria are what you are checking. Read the whole file if it has no per-task structure.
+> Read `{base}/TECH_PLAN.md` for technical specifications if these tasks touch architecture it describes (if it exists).
+> Check for archived MILESTONE files (`{base}/MILESTONE-*.done.md`) for implementation context — prefer them over re-deriving from the specs, but only where their sections are populated (a `/belmont:next` run archives `[Not populated — …]` placeholders; fall back to the specs there).
 >
 > Check acceptance criteria, visual design comparison, i18n keys, and functional testing.
 >
@@ -142,9 +153,9 @@ Spawn these two sub-agents **simultaneously** (or sequentially if using the Sequ
 > - P0-2: Database schema [x]]
 > ---
 >
-> Read `{base}/PRD.md` for task details and planned solution.
-> Read `{base}/TECH_PLAN.md` for technical specifications (if it exists).
-> Check for archived MILESTONE files (`{base}/MILESTONE-*.done.md`) for implementation context.
+> Read the `{base}/PRD.md` sections defining the task IDs above for task details and planned solution. Read the whole file if it has no per-task structure.
+> Read `{base}/TECH_PLAN.md` for technical specifications if these tasks touch architecture it describes (if it exists).
+> Check for archived MILESTONE files (`{base}/MILESTONE-*.done.md`) for implementation context — prefer them over re-deriving from the specs, but only where their sections are populated (a `/belmont:next` run archives `[Not populated — …]` placeholders; fall back to the specs there).
 >
 > Detect the project's package manager (check for `pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`/`bun.lock`, or `package-lock.json`; also check the `packageManager` field in `package.json`). Use the detected package manager to run build and test commands (e.g. `pnpm run build`, `yarn run build`, etc. — default to `npm` if unsure). Review code quality, pattern adherence, and PRD alignment.
 >

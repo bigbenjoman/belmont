@@ -47,6 +47,15 @@ Fill in the `## Orchestrator Context` section using information from PROGRESS.md
 [If `{base}/NOTES.md` exists, copy its contents here under "#### Feature Notes".]
 [If neither exists, write "No previous learnings found."]
 
+<!-- Both NOTES files are read eagerly in the Setup step precisely so this
+     section can be filled. Do not "optimise" that by deferring the reads:
+     leaving this section empty silently breaks the `/belmont:note` → implement
+     learning loop, and no PROGRESS-state check can detect it. The
+     implementation-agent re-reads NOTES itself in Step 0b, which narrows the
+     damage but does not remove it — the design agent and codebase agent read
+     this section, not the files. -->
+
+
 ### Additional User Instructions
 [If the user provided extra context or instructions when invoking this skill, copy it here verbatim. Otherwise write "None."]
 
