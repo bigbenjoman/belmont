@@ -152,7 +152,14 @@ If Figma URLs exist for this task, note them in the Design Specifications sectio
 >
 > The MILESTONE file is at `{base}/MILESTONE.md`. Read it, then follow your instructions. This is a single-task run — implement only the one task listed, then stop.
 >
-> **Note**: The Codebase Analysis and Design Specifications sections are not populated (lightweight mode). Explore the codebase as needed while implementing. Follow existing patterns and conventions. Check `CLAUDE.md` (if it exists) for project rules.
+> **Note**: [Match this note to what you actually wrote in Step 2 — do not send it unchanged.
+> For each of `## Codebase Analysis` and `## Design Specifications`: if you carried a populated
+> section forward from the archive, say so and tell the agent to follow it, calling out any
+> `**Contract Source**` line and its derived tokens and states as binding. Only describe a
+> section as "not populated (lightweight mode)" when it actually holds the placeholder.
+> If both are placeholders, the original note applies verbatim: "The Codebase Analysis and
+> Design Specifications sections are not populated (lightweight mode)."]
+> Explore the codebase as needed while implementing. Follow existing patterns and conventions. Check `CLAUDE.md` (if it exists) for project rules.
 
 **Wait for**: Sub-agent to complete.
 

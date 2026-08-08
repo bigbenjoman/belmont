@@ -83,6 +83,11 @@ Buttons: verb matching the outcome, never "Submit". Errors: what happened / why 
 blame or jokes. Empty states: what appears here, why it's empty, the action to fill it.
 Destructive confirmations: name what is destroyed. Possessive framing for user-owned objects.
 
+### Design Tokens (from Figma)
+[Only when **Mode** is `N/A — Figma present`. The exact values extracted from Figma in
+Phase 1 — colours, spacing, typography, radius, effects. Omit this subheading entirely in
+the other two modes.]
+
 ### Motion Contract
 **Applies**: [yes | N/A — no motion in this feature]
 Duration bands — instant feedback ≤ 100ms · state change 150–200ms · context shift 250–300ms ·

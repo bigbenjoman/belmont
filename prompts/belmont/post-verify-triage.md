@@ -50,7 +50,9 @@ If `{{.FeatureBase}}/TECH_PLAN.md` carries a `## Design Contract` whose `**Mode*
 - A missing State Inventory state (no error state, no loading state, no empty state)
 - `prefers-reduced-motion` not respected
 - Meaning conveyed by colour alone
-- A verification check recorded `UNVERIFIABLE` where the contract required it — that is an unmeasured gate, not a passed one
+- A verification check recorded `UNVERIFIABLE` where the contract required it **and a browser MCP was available** — that is an unmeasured gate, not a passed one
+
+**The exception**: when verification reports `Contract checks performed: NO — no browser MCP available (environment gap)`, that single Warning is **deferrable**. It is a missing tool on the user's machine, not a defect in the code, and no amount of fixing will clear it. Defer it to NOTES.md with the wording intact so the user can act on it, and do not let it hold the milestone or burn a fix round.
 
 The rest of a contract's findings — off-scale spacing, off-scale radius, elevation or easing inconsistency — follow the normal rules and may be deferred.
 

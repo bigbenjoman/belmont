@@ -51,6 +51,34 @@ the standard once, per feature, interactively, where a human is already reviewin
   all, it derives nothing.
 - **The gate is not retroactive.** A feature planned before contracts existed
   falls to the no-contract branch and keeps its existing verification.
+- **A contract is derived ONCE. Re-running `tech-plan` must not re-derive it.**
+  The gate has a third condition — no `derived` contract already present. This
+  skill is re-run routinely (add a milestone, reconcile drift, replan), and
+  without that condition every visit re-opens the approval interview, churns the
+  four judgement sections and restamps `**Approval**` — which can put already
+  verified milestones out of compliance with a standard that moved under them.
+  Filling in *absent* subsections is fine; re-deriving needs an explicit ask.
+- **Headless detection must be observable by the agent.** Belmont emits no
+  auto-mode marker and `buildLoopPrompt` produces a prompt byte-identical to what
+  a user types, so "under `belmont auto`" is not a condition an agent can check.
+  Use the idiom `debug-manual.md` already established: *bare programmatic syntax
+  with no human prose, or no structured question tool* ⇒ non-interactive. And say
+  explicitly that the general "degrade to plain-text questions" fallback in
+  `user-questions.md` does **not** apply — a contract is an approval artifact and
+  there is nobody to approve it headlessly.
+- **A Figma feature's extracted tokens live under `### Design Tokens (from Figma)`
+  inside the `## Design Contract` section.** Generalising the old
+  `## Design Tokens (from Figma)` heading removed their only home; the write
+  instruction must put them back or Figma features silently lose their exact
+  values from the plan. This is also the *stated rationale* for the
+  never-key-on-the-heading rule, so dropping them falsifies the change's own
+  justification.
+- **No browser MCP at all is an environment gap, not an implementation defect.**
+  Every row `UNVERIFIABLE`, Visual Verification INCOMPLETE, **one** Warning
+  naming the missing tool — never thirteen Criticals blaming the code — and that
+  Warning is the one deferrable contract finding. A browser MCP is recommended,
+  not required, so failing every contract milestone on a browser-less install
+  would make Belmont unusable for a supported configuration.
 - **A contract is never a fallback for a *failed* Figma load.** Mode is keyed on
   URL *presence*, never on load outcome. The NO FALLBACK rule stands untouched.
 
@@ -199,6 +227,15 @@ ever ran on.
 
 ## Revisions
 
+- 2026-08-08 — hardened after a 108-agent adversarial red-team (49 findings, 39
+  refuted, 10 survived, zero blockers) plus an independent Fable senior review.
+  Four majors fixed, all self-inflicted by the first draft: the gate re-derived an
+  existing contract on every `tech-plan` re-run; the headless clause's trigger was
+  not observable by the agent it instructs; the Phase 4 write instruction forbade
+  writing the Figma tokens Phase 3.5 requires *and* the template had lost their
+  slot, silently regressing the Figma path; and `next.md` carried a populated
+  design spec forward then told the sub-agent it was empty. Also resolved the
+  browser-less-install question four lenses raised independently.
 - 2026-08-08 — created when landing the Design Contract. Records the three design
   states and which was broken; the placement argument (derive once, interactively,
   in tech-plan) over the per-milestone sub-agent alternatives; `**Mode**` as the

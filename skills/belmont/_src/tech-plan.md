@@ -17,6 +17,7 @@ This session requires ultrathink-level reasoning — deeply analyze architecture
 4. **Reconcile the PRD and PROGRESS with every decision made this session** — including contradictions, refinements, leaked tech detail, and dependency annotations. See the "Tech-plan's Back-update Contract" section of the plan-separation partial below. This is not optional; skipping it is the #1 cause of implementation drift.
 5. Respect milestone sizing rules — see the plan-separation partial. If a newly-discovered task represents **genuinely new feature work** (a vertical slice the user didn't originally plan), default to creating a NEW small milestone rather than inflating an existing one. **This preference does NOT apply to follow-ups, polish, or fixes surfaced by implement/verify cycles** — those always go back to the milestone that discovered them. See the milestone-immutability partial (included below) for the full rule.
 6. The last mandatory phase is **Phase 4.6 (Model Tier Assignment)**. Only after Phase 3.5 (Design Contract, when it applies), Phase 4 (Write Plan), Phase 4.5 (PRD Reconciliation) and Phase 4.6 have all completed do you say "Tech plan complete." and STOP.
+   **Headless exception**: Phase 3.5's derivation and Phase 4.6's tier confirmation both require a structured question tool. When you are running non-interactively (see Phase 3.5's "How to tell you are headless"), skip Phase 4.6 and leave any existing `models.yaml` untouched, apply Phase 3.5's headless rules, and terminate normally after Phase 4.5. A headless run must still be able to finish.
 
 ## Codex Plan-Mode Preflight
 
@@ -225,13 +226,31 @@ back to acceptance criteria — a correctness check, not a design-quality one.
 This phase derives that authority **once per feature, here, where a human is
 already reviewing**, rather than per-milestone inside a sub-agent.
 
-**Gate — run this phase only when BOTH hold:**
+**Gate — derive a contract only when ALL THREE hold:**
 
 1. The feature has a **user interface** — a page, component, layout, style, or
    user-facing copy surface.
 2. **No task in `{base}/PRD.md` carries a Figma URL.** Check *every* task
    regardless of its `[ ]`/`[x]`/`[v]` state — this is a feature-level gate, and
    keying it on the incomplete subset would flip it as work progresses.
+3. **`{base}/TECH_PLAN.md` does not already carry a `## Design Contract` whose
+   `**Mode**` is `derived — UI, no Figma`.**
+
+**If a contract already exists, do NOT re-derive it.** This skill is re-run
+routinely — to add a milestone, to reconcile drift, to replan. A contract is
+approved **once**; re-deriving on every visit would re-open the approval
+interview, churn the four judgement sections (UX Strategy, State Inventory,
+Microcopy, Motion), and restamp `**Approval**` with a new date, which can put
+already-shipped and verified milestones out of compliance with a standard that
+moved under them. Instead:
+
+- Report to the user that a contract exists, naming its `**Approval**` date.
+- Offer to fill in any subsection that is **absent or empty**, leaving populated
+  ones untouched.
+- Re-derive from scratch **only if the user explicitly asks you to**, and say
+  plainly that doing so re-opens approval and may invalidate verified work.
+- Otherwise reproduce it **byte-for-byte** in Phase 4, `**Approval**` line
+  included.
 
 **Mixed Figma coverage**: a feature counts as a Figma feature if **any** task
 carries a Figma URL, even where other UI tasks carry none. A partially-covered
@@ -290,8 +309,20 @@ legitimately write elsewhere in `TECH_PLAN.md`. Nothing mechanical enforces it.
 
 #### Running headlessly (auto mode)
 
-Under `belmont auto`, `actionReplan` invokes this skill with no user and no
-structured question tool. In that case you MUST:
+**How to tell you are headless.** Belmont emits no auto-mode marker and the
+headless prompt is byte-identical to what a user types, so decide from what you
+can observe: **if your invocation prompt is bare programmatic syntax (just
+`/belmont:tech-plan --feature <slug>` with no human prose), or no structured
+question tool is available in this turn, treat this as a non-interactive call.**
+
+Do **not** fall back to asking plain-text questions here. The general
+"ask one clearly formatted plain-text question at a time" fallback in *Asking
+Questions* does not apply to Phase 3.5: a design contract is an approval
+artifact, and there is no one to approve it in a headless run. Apply the rules
+below instead.
+
+Under `belmont auto`, `actionReplan` invokes this skill this way. In that case
+you MUST:
 
 - **Never create a contract.** If `{base}/TECH_PLAN.md` has no `## Design
   Contract` section at all, derive nothing and leave the design surface
@@ -300,7 +331,10 @@ structured question tool. In that case you MUST:
   rule exists to prevent.
 - **Preserve an existing contract verbatim.** Derive only *subsections* that are
   absent from a contract that already exists. Never regenerate an approved one.
-- Set `**Approval**: unreviewed (headless replan <ISO date>)`.
+- **Only if you filled in a previously-absent subsection**, set `**Approval**:
+  unreviewed (headless replan <ISO date>)`. If you changed nothing, leave the
+  `**Approval**` line exactly as you found it — a headless run that touched
+  nothing must not downgrade a human approval.
 - Regenerate `design-preview.html` **only if a subsection changed**, stamping it
   `<!-- unreviewed: headless replan <ISO date> -->`.
 
@@ -339,8 +373,20 @@ Contract`. Before writing `{base}/TECH_PLAN.md`:
   not refresh the date.
 - If Phase 3.5 derived and the user approved a contract this session, write the
   approved version.
-- If Phase 3.5's gate did not fire, write the `**Mode**` line for the applicable
-  `N/A` value and nothing else under that heading.
+- If Phase 3.5's gate did not fire because the feature has **no UI**, write
+  `**Mode**: N/A — no UI` and nothing else under that heading.
+- If Phase 3.5's gate did not fire because the feature **has Figma URLs**, write
+  `**Mode**: N/A — Figma present`, then the design tokens you extracted from
+  Figma in Phase 1 under a `### Design Tokens (from Figma)` subheading. **Do not
+  drop them.** This section is where a Figma feature's exact values live — it
+  replaced the old `## Design Tokens (from Figma)` heading, and downstream
+  agents, `verify.md` and this skill's own rationale all assume they are here.
+- If Phase 3.5's gate *would* have fired but you are running headlessly and no
+  contract exists, write `**Mode**: N/A — no UI` only if the feature genuinely
+  has no UI; otherwise **omit the `## Design Contract` section entirely** rather
+  than inventing a mode. An absent section reads as "no contract" to every
+  consumer, which is the correct outcome — a contract may only be created
+  interactively.
 
 This is the same rule as Phase 3.5's headless clause, restated here because this
 is the instruction that actually touches the file.

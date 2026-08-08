@@ -152,6 +152,15 @@ Read the six contract sections from `{base}/TECH_PLAN.md` and check each row bel
 >
 > **A check whose mechanism is unavailable is recorded `UNVERIFIABLE`, never `PASS`** — and per the fourth enforcement rule, a required check recorded `UNVERIFIABLE` means Visual Verification is FAIL or INCOMPLETE, not PASS. An unmeasured gate is not a passed one.
 
+> **No browser MCP at all is an ENVIRONMENT GAP, not an implementation defect — grade it as one.** A browser MCP is recommended but not required to run Belmont, so a user can legitimately reach here with nothing matching `*browser_navigate`. In that case:
+>
+> - Record **every** contract row `UNVERIFIABLE`, and Visual Verification **INCOMPLETE** — never PASS, and never FAIL.
+> - Record `Contract checks performed: NO — no browser MCP available (environment gap)` in the attestation.
+> - Raise **exactly one Warning**: *"Design Contract could not be measured — install a browser MCP (e.g. playwright-mcp) to enable contract verification."* Do **not** emit one issue per unmeasured row, and do **not** grade any of them Critical. The implementation is not known to be wrong; it is unmeasured, and thirteen Critical findings blaming the code for a missing tool is worse than useless.
+> - Do not recommend the tasks be marked `[v]`. Unmeasured is not verified.
+>
+> This is deliberately different from a **partial** outage — a browser MCP that is present but lacks `browser_run_code_unsafe`, say. There, the rows you *could* run stand on their merits and only the rows you could not are `UNVERIFIABLE`.
+
 | Check | Mechanism |
 |---|---|
 | Spacing on the declared scale; internal ≤ external | `browser_evaluate` → `getComputedStyle` |
@@ -170,7 +179,9 @@ Read the six contract sections from `{base}/TECH_PLAN.md` and check each row bel
 
 **Microcopy Rules and UX Strategy** are checked by reading the rendered text: button labels name their outcome, error messages give what happened / why / what next, empty states name the action that fills them, destructive confirmations name what is destroyed.
 
-**Motion rows are conditional.** When the contract records `**Applies**: N/A — no motion in this feature`, record the last four rows as `N/A` and skip them. Do **not** record them `UNVERIFIABLE` — that value means "the mechanism was unavailable", and conflating the two makes a genuinely missing tool look like a design decision.
+**Motion rows are conditional.** When the contract records `**Applies**: N/A — no motion in this feature`, record the **last four rows** (durations, easing, animated properties, reduced motion) as `N/A` and skip them. Do **not** record them `UNVERIFIABLE` — that value means "the mechanism was unavailable", and conflating the two makes a genuinely missing tool look like a design decision.
+
+> The reduced-motion row is included in that skip deliberately. It is the one row needing a write-capable browser tool, so making it unconditional would fail every no-motion contract milestone on an install without one — and its assertion ("the element still reaches its end state") has nothing to assert when nothing moves. **The Accessibility Floor's `prefers-reduced-motion` requirement is separate and still applies**: a feature with no motion satisfies it trivially rather than being exempt from it, so record it as satisfied under the Accessibility Floor, not as a skipped Motion Contract row.
 
 **Severity for contract failures** — grade against the existing ladder, and note that **Warning blocks the milestone and generates follow-up tasks; only Polish does not**:
 
