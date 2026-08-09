@@ -81,13 +81,19 @@ type milestone struct {
 }
 
 type featureSummary struct {
-	Slug            string      `json:"slug"`
-	Name            string      `json:"name"`
-	TasksDone       int         `json:"tasks_done"`
-	TasksVerified   int         `json:"tasks_verified"`
-	TasksInProgress int         `json:"tasks_in_progress"`
-	TasksBlocked    int         `json:"tasks_blocked"`
-	TasksTotal      int         `json:"tasks_total"`
+	Slug            string `json:"slug"`
+	Name            string `json:"name"`
+	TasksDone       int    `json:"tasks_done"`
+	TasksVerified   int    `json:"tasks_verified"`
+	TasksInProgress int    `json:"tasks_in_progress"`
+	TasksBlocked    int    `json:"tasks_blocked"`
+	TasksTotal      int    `json:"tasks_total"`
+	// TasksWithdrawn counts `[-]` tasks, which ARE in TasksTotal. Listing mode
+	// is what an agent reads, and without this field the only way to compute
+	// outstanding work from the listing is TasksTotal - TasksDone — which
+	// counts deliberately dropped work as still to do. Omitted when zero so
+	// the common payload is unchanged.
+	TasksWithdrawn  int         `json:"tasks_withdrawn,omitempty"`
 	TasksOrphaned   int         `json:"tasks_orphaned,omitempty"`
 	MilestonesDone  int         `json:"milestones_done"`
 	MilestonesTotal int         `json:"milestones_total"`

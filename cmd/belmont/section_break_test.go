@@ -128,7 +128,7 @@ func TestOrphanedTasksAreReported(t *testing.T) {
 		t.Fatalf("orphanedTaskLines = %d, want 2: %+v", len(orphans), orphans)
 	}
 	if orphans[0].ID != "P1-M9-1" || orphans[0].Line != 10 {
-		t.Errorf("first orphan = %s at line %d, want P1-M9-1 at 11", orphans[0].ID, orphans[0].Line)
+		t.Errorf("first orphan = %s at line %d, want P1-M9-1 at 10", orphans[0].ID, orphans[0].Line)
 	}
 	if orphans[0].Status != taskTodo || orphans[1].Status != taskBlocked {
 		t.Errorf("orphan statuses = %v, %v — want todo, blocked", orphans[0].Status, orphans[1].Status)
@@ -278,13 +278,21 @@ func TestRebuildRemovesNewMilestoneWholeBlock(t *testing.T) {
 			t.Errorf("%q survived removal of the invented milestone M9:\n%s", s, got)
 		}
 	}
+	// Every assertion above is negative, so an empty document satisfies all of
+	// them — `rebuildAfterScopeGuard` returning "" passed this test. Assert
+	// positively that the target milestone and its in-scope flip survived.
+	if !strings.Contains(got, "- [x] P1-M1-1: alpha") {
+		t.Fatalf("the in-scope flip was destroyed along with M9:\n%s", got)
+	}
 	// The fragment used to land headerless under M1 and be adopted by it.
 	snap := parseProgressSnapshot("P", got)
-	if idx, ok := snap.ByID["M1"]; ok {
-		if n := len(snap.Blocks[idx].TaskStates); n != 1 {
-			t.Errorf("M1 holds %d tasks after the rebuild, want 1 — M9's tail leaked into the target milestone: %v",
-				n, snap.Blocks[idx].TaskStates)
-		}
+	idx, ok := snap.ByID["M1"]
+	if !ok {
+		t.Fatalf("M1 was removed by the rebuild:\n%s", got)
+	}
+	if n := len(snap.Blocks[idx].TaskStates); n != 1 {
+		t.Errorf("M1 holds %d tasks after the rebuild, want 1 — M9's tail leaked into the target milestone: %v",
+			n, snap.Blocks[idx].TaskStates)
 	}
 }
 
@@ -303,5 +311,10 @@ func TestRebuildKeepsContentAfterTabbedSectionHeading(t *testing.T) {
 		if !strings.Contains(got, s) {
 			t.Errorf("%q was deleted by an out-of-scope replacement:\n%s", s, got)
 		}
+	}
+	// All three strings above are present in `post` verbatim, so returning
+	// post.Raw unchanged passed this test. The revert itself has to be asserted.
+	if !strings.Contains(got, "- [ ] P1-M2-1: beta") {
+		t.Errorf("the out-of-scope flip was not reverted:\n%s", got)
 	}
 }

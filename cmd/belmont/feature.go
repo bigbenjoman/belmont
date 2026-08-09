@@ -60,6 +60,7 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 		tasksVerified := 0
 		tasksInProgress := 0
 		tasksBlocked := 0
+		tasksWithdrawn := 0
 		for _, t := range tasks {
 			switch t.Status {
 			case taskDone:
@@ -70,6 +71,8 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 				tasksInProgress++
 			case taskBlocked:
 				tasksBlocked++
+			case taskWithdrawn:
+				tasksWithdrawn++
 			}
 		}
 
@@ -101,6 +104,7 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 			TasksInProgress: tasksInProgress,
 			TasksBlocked:    tasksBlocked,
 			TasksTotal:      tasksTotal,
+			TasksWithdrawn:  tasksWithdrawn,
 			MilestonesDone:  milestonesDone,
 			TasksOrphaned:   orphaned,
 			MilestonesTotal: len(milestones),

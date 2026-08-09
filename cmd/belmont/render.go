@@ -36,6 +36,15 @@ func shouldColor(mode string, f *os.File) (bool, error) {
 }
 
 func milestoneStatusIcon(m milestone, color bool) string {
+	// Checked before everything else: an all-withdrawn milestone satisfies
+	// milestoneAllDone (nothing outstanding) and would otherwise render as
+	// done — a claim that work happened. It did not.
+	if milestoneAllWithdrawn(m) {
+		if color {
+			return ansiDim + "[-]" + ansiReset
+		}
+		return "[-]"
+	}
 	if milestoneAllVerified(m) {
 		if color {
 			return ansiGreen + "[v]" + ansiReset

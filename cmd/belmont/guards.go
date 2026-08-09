@@ -131,7 +131,7 @@ func diffScopeViolations(pre, post *progressSnapshot, targetMS string) []scopeVi
 					})
 					continue
 				}
-				if preState != postState {
+				if markersDiffer(preState, postState) {
 					out = append(out, scopeViolation{
 						Kind:          "out_of_scope_flip",
 						Milestone:     pb.ID,
@@ -251,7 +251,7 @@ func runEvidenceCheck(cfg loopConfig, action loopAction, pre *progressSnapshot) 
 	if len(missing) == 0 {
 		return
 	}
-	rebuilt := revertEvidenceMissing(post, pre, missing)
+	rebuilt := revertEvidenceMissing(post, missing)
 	if rebuilt == post.Raw {
 		return
 	}
@@ -455,9 +455,14 @@ func parseProgressSnapshot(path, content string) *progressSnapshot {
 }
 
 // revertEvidenceMissing rebuilds PROGRESS.md so that each entry in `missing`
-// reverts its task line from "[v]" back to the prior state captured in pre.
-// Uses a line-level replacement scoped to each task's milestone block.
-func revertEvidenceMissing(post, pre *progressSnapshot, missing []evidenceMissing) string {
+// reverts its task line from "[v]" back to its prior state. Uses a line-level
+// replacement scoped to each task's milestone block.
+//
+// The prior state travels on evidenceMissing.FromState, which is why there is
+// no `pre` snapshot parameter. There used to be one and it was never read —
+// harmless in itself, but it made two tests read as though they exercised a
+// pre/post relationship when both were passing the same snapshot twice.
+func revertEvidenceMissing(post *progressSnapshot, missing []evidenceMissing) string {
 	// Build a map: milestone -> taskID -> fromState, for O(1) lookup.
 	byMS := map[string]map[string]string{}
 	for _, m := range missing {

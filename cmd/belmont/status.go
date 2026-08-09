@@ -453,6 +453,13 @@ func renderFeatureListing(report statusReport, color bool, showArchived bool) st
 			if f.TasksVerified > 0 {
 				sb.WriteString(fmt.Sprintf(" (%d verified)", f.TasksVerified))
 			}
+			// Withdrawn work is inside that denominator and is never going to
+			// move, so a reader doing the obvious subtraction is wrong by
+			// exactly this many. Detail mode says so; listing mode is the half
+			// an agent actually reads.
+			if f.TasksWithdrawn > 0 {
+				sb.WriteString(fmt.Sprintf(", %d withdrawn", f.TasksWithdrawn))
+			}
 			if f.MilestonesTotal > 0 {
 				sb.WriteString(fmt.Sprintf("  |  Milestones: %d/%d done", f.MilestonesDone, f.MilestonesTotal))
 			}
@@ -470,9 +477,16 @@ func renderFeatureListing(report statusReport, color bool, showArchived bool) st
 				sb.WriteString(fmt.Sprintf("%s  ⚠ %d task line(s) outside any milestone — not counted, never scheduled; run: belmont status --feature %s%s\n",
 					warnPrefix(color), f.TasksOrphaned, f.Slug, warnSuffix(color)))
 			}
-			if f.Status == "Complete" && f.TasksVerified < f.TasksTotal {
+			// Withdrawn tasks are in TasksTotal but were never implemented, so
+			// they must not be counted as implementations awaiting
+			// verification. TasksDone is done-or-verified, so subtracting the
+			// verified ones leaves exactly the `[x]` count the detail view
+			// reports through doneNotVerifiedTasks — the two views have to
+			// agree, and `TasksTotal - TasksVerified` made them disagree the
+			// moment a feature held a `[-]`.
+			if f.Status == "Complete" && f.TasksDone > f.TasksVerified {
 				sb.WriteString(fmt.Sprintf("%s  ⚠ %d task(s) implemented but never verified — belmont reverify --feature %s%s\n",
-					warnPrefix(color), f.TasksTotal-f.TasksVerified, f.Slug, warnSuffix(color)))
+					warnPrefix(color), f.TasksDone-f.TasksVerified, f.Slug, warnSuffix(color)))
 			}
 
 			// Show milestone listing
