@@ -489,7 +489,12 @@ func injectScopeGuardSteering(cfg loopConfig, action loopAction, violations []sc
 	for _, v := range violations {
 		switch v.Kind {
 		case "new_milestone":
-			body.WriteString(fmt.Sprintf("- Do NOT create new milestones. The milestone %s %q was removed. Follow-ups belong inside the source milestone as new `[ ]` tasks. See `skills/belmont/_partials/milestone-immutability.md`.\n", v.Milestone, v.MilestoneName))
+			// No file reference here: `skills/belmont/_partials/` is a
+			// build-time source path that `belmont install` never writes, so in
+			// a consuming project it is a dangling pointer — and this text goes
+			// straight into the next phase's prompt as a correction the agent is
+			// told to follow. State the rule instead of citing a file.
+			body.WriteString(fmt.Sprintf("- Do NOT create new milestones. The milestone %s %q was removed. Follow-ups belong inside the source milestone as new `[ ]` tasks. Only `/belmont:tech-plan` may add, rename or remove a milestone.\n", v.Milestone, v.MilestoneName))
 		case "out_of_scope_flip":
 			body.WriteString(fmt.Sprintf("- Do NOT modify tasks outside your target milestone. Your edit to %s in %s (%s → %s) was reverted. Only touch tasks inside %s.\n", v.TaskID, v.Milestone, v.FromState, v.ToState, action.MilestoneID))
 		}

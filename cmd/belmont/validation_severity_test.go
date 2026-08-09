@@ -140,6 +140,86 @@ func TestAutoPreflightRefusesDuplicateMilestoneOnBothPaths(t *testing.T) {
 	}
 }
 
+// Every violation must say where its answer comes from, and the report must
+// show the shape rather than cite a file. `skills/belmont/_partials/` is a
+// build-time source path `belmont install` never writes, so the line that used
+// to promise "the canonical rule" was dangling in every consuming project.
+func TestReportTeachesConformance(t *testing.T) {
+	doc := "### M1: Polish and cleanup\n- [-] P1-M1-1: withdrawn\n- [ ] P2-M2-1: wrong milestone\n\n" +
+		"### M1: duplicate heading\n- [ ] P1-M1-9: x\n\n## Session History\n- [ ] a stray bullet\n"
+	v := append(detectViolations("demo", parseMilestones(doc)), detectOrphanViolations("demo", doc)...)
+
+	for _, x := range v {
+		if x.Remedy != remedyNeedsEvidence && x.Remedy != remedyTechPlan {
+			t.Errorf("rule %q has remedy %q — an agent cannot tell whether to investigate or route it",
+				x.Rule, x.Remedy)
+		}
+	}
+
+	// Assert against the help block itself. Checking the whole report lets a
+	// violation's own message satisfy the assertion — the marker set also
+	// appears in the unrecognised-marker text, so dropping it from the help
+	// block passed until this was split out.
+	for _, want := range []string{
+		"### M<n>: Name",         // the milestone header shape
+		"[ ] [>] [x] [v] [!]",    // the legal markers
+		"ENDS the",               // where the region stops
+		"Indentation is load-be", // why an indented heading is not a break
+		"git log",                // how to establish the answer from the repo
+		"/belmont:tech-plan",     // where structural fixes go
+	} {
+		if !strings.Contains(progressStructureHelp, want) {
+			t.Errorf("the structure block never shows %q, so an agent cannot conform the file from it", want)
+		}
+	}
+
+	var buf strings.Builder
+	renderValidationReport(&buf, v)
+	out := buf.String()
+
+	if strings.Contains(out, "_partials/") {
+		t.Error("report cites a build-time source path that no installed project contains")
+	}
+	if !strings.Contains(out, progressStructureHelp) {
+		t.Error("the structure block is not printed with the report")
+	}
+	// The remedy has to reach the reader, not just the struct.
+	for _, want := range []string{"[" + remedyNeedsEvidence + "]", "[" + remedyTechPlan + "]"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered report never shows %s, so the routing is invisible in text output", want)
+		}
+	}
+}
+
+// The scope guard's correction is written into STEERING.md and prepended to the
+// next phase's prompt. A file path in there is worse than one in a report: the
+// agent is told to follow it, and `skills/belmont/_partials/` does not exist in
+// any project Belmont installs into.
+func TestSteeringCorrectionsCiteNoBuildTimePaths(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".belmont", "features", "demo")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loopConfig{Root: root, Feature: "demo"}
+	action := loopAction{MilestoneID: "M1"}
+	injectScopeGuardSteering(cfg, action, []scopeViolation{
+		{Kind: "new_milestone", Milestone: "M9", MilestoneName: "Polish"},
+		{Kind: "out_of_scope_flip", Milestone: "M2", TaskID: "P1-M2-1", FromState: " ", ToState: "x"},
+	})
+
+	data, err := os.ReadFile(filepath.Join(dir, "STEERING.md"))
+	if err != nil {
+		t.Fatalf("no steering entry written: %v", err)
+	}
+	if strings.Contains(string(data), "_partials/") {
+		t.Errorf("steering tells the agent to read a path that does not exist in a project:\n%s", data)
+	}
+	if !strings.Contains(string(data), "/belmont:tech-plan") {
+		t.Error("steering does not name the skill that may change milestone structure")
+	}
+}
+
 func writeValidateFixture(t *testing.T, doc string) string {
 	t.Helper()
 	root := t.TempDir()

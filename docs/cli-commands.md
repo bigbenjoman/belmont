@@ -67,6 +67,13 @@ belmont validate --strict                   # Exit 1 on warnings too (for CI)
 belmont validate --format json              # Machine-readable output; each entry carries "severity"
 ```
 
+Every violation also carries a **remedy**, shown in the text output and in the JSON:
+
+- `needs_evidence` — the correct answer is a fact about the repository, not a question for someone's memory. Whether a commit carries the task ID, whether the code it describes exists, whether a test covers it. A project can accumulate dozens of these, and "was this withdrawn or did it ship?" is not something anyone recalls months later; guessing is what issue #27 was.
+- `tech_plan` — the fix changes milestone structure, which is immutable outside `/belmont:tech-plan` and enforced at runtime. An agent that edits it anyway has the change reverted by the scope guard.
+
+The report ends with the expected structure — header shape, task-line shape, the marker set, and where a `## ` heading ends the milestones region — so the output is enough on its own to conform a file.
+
 `belmont auto` runs this lint at startup on the single-feature path: interactive runs get a `[y/N]` override prompt on errors, non-interactive runs abort, and warnings print without stopping anything. Restructure via `/belmont:tech-plan` before rerunning.
 
 Duplicate milestone IDs are the exception — they are refused before the loop starts on **every** path, including `--features` / `--all`, and the refusal cannot be overridden. Proceeding would run the whole feature with both runtime guards absent.

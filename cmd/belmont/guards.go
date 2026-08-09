@@ -294,6 +294,7 @@ func detectOrphanViolations(slug, progress string) []validationViolation {
 			TaskID:   t.ID,
 			Rule:     "task_outside_milestone",
 			Severity: severityWarning,
+			Remedy:   remedyNeedsEvidence,
 			Message: fmt.Sprintf(
 				"task line at PROGRESS.md:%d (%s) sits outside any milestone, so it is counted by nothing and never scheduled. A `## ` heading at column zero ends the milestones region — if this task is real, move it under its `### M<n>:` heading, or indent the heading above it so it reads as part of the preceding task's body.",
 				t.Line, label),
@@ -323,6 +324,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 				MilestoneName: m.Name,
 				Rule:          "duplicate_milestone_id",
 				Severity:      severityError,
+				Remedy:        remedyNeedsEvidence,
 				Message: fmt.Sprintf(
 					"milestone %s appears more than once. Milestones are keyed by ID throughout, so a duplicate makes every lookup ambiguous — the scope guard and the evidence guard both refuse to run against it. Renumber one of them, or, if this is a session note, stop writing it in `### M<n>:` heading shape.",
 					m.ID),
@@ -340,6 +342,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 				MilestoneName: m.Name,
 				Rule:          "polish_milestone_name",
 				Severity:      severityError,
+				Remedy:        remedyTechPlan,
 				Message: fmt.Sprintf(
 					"milestone %s %q looks like a polish/follow-up catch-all. Follow-ups belong in their source milestone (the one that discovered them) as new `[ ]` tasks, not a dedicated milestone. Run `/belmont:tech-plan` to restructure.",
 					m.ID, m.Name),
@@ -363,6 +366,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 				TaskID:        t.ID,
 				Rule:          "unrecognised_task_marker",
 				Severity:      severityError,
+				Remedy:        remedyNeedsEvidence,
 				Message: fmt.Sprintf(
 					"unrecognised task marker %q at PROGRESS.md:%d (%s) — expected one of [ ] [>] [x] [v] [!]. Belmont will not guess a state for it: it is excluded from the counts and never offered as the next task. Fix the marker, or delete the line if the work no longer exists.",
 					"["+t.Marker+"]", t.Line, label),
@@ -388,6 +392,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 					TaskID:        t.ID,
 					Rule:          "cross_milestone_task_id",
 					Severity:      severityError,
+					Remedy:        remedyTechPlan,
 					Message: fmt.Sprintf(
 						"task %q in milestone %s names milestone M%d in its ID. It belongs under M%d. Move it there — keeping it here is the dependency-graph lie that causes parallel merge conflicts.",
 						t.ID, m.ID, refNum, refNum),
@@ -506,8 +511,55 @@ type validationViolation struct {
 	TaskID        string `json:"task_id,omitempty"`
 	Rule          string `json:"rule"`
 	Severity      string `json:"severity"`
+	Remedy        string `json:"remedy"`
 	Message       string `json:"message"`
 }
+
+// Remedies say where the answer comes from, which is not always "ask someone".
+//
+//   - remedyNeedsEvidence — the correct state is a fact about the repository:
+//     whether a commit carries the task ID, whether the code it describes
+//     exists, whether a test covers it. NOT a question for a human's memory. A
+//     project can carry dozens of these at once, and nobody recalls what a
+//     marker meant six weeks ago; asking produces "I don't know" and then a
+//     guess, which is issue #27 all over again. `taskHasCommit` is the
+//     primitive — it is what runEvidenceCheck already uses to demote a `[v]`
+//     nothing committed.
+//   - remedyTechPlan — the fix changes milestone structure, which is immutable
+//     outside `/belmont:tech-plan` and enforced at runtime: an agent that moves
+//     a task between milestones has the edit reverted by runScopeGuard and a
+//     correction injected. Route it, do not attempt it.
+//
+// Deliberately only two values. A "safe to just fix it" class was considered
+// and dropped: every remaining case turns on what a marker or a stray line
+// MEANT, and Belmont does not guess meanings.
+const (
+	remedyNeedsEvidence = "needs_evidence"
+	remedyTechPlan      = "tech_plan"
+)
+
+// progressStructureHelp is printed once beneath any violation report. The
+// report used to end by naming `skills/belmont/_partials/milestone-immutability.md`,
+// which is a build-time source path that `belmont install` never writes — so in
+// every consuming project the one line promising "the canonical rule" was a
+// dangling reference. Showing the shape beats pointing at it: this needs no
+// file to exist, works identically in both invocation paths, and is what an
+// agent needs in order to conform the file.
+const progressStructureHelp = `Expected structure:
+  ### M<n>: Name           milestone header — level 3, column zero
+  - [ ] P<n>-<id>: Task    task line — marker is one of [ ] [>] [x] [v] [!]
+  ## Anything              a level-2 heading at column zero ENDS the
+                           milestones region; task lines below it belong
+                           to no milestone and are counted by nothing
+
+Indentation is load-bearing: "  ## Foo" indented under a task is that task's
+body, not a heading.
+
+needs_evidence — do not guess and do not rely on memory. Check the repository:
+  git log --oneline --all --grep '<task-id>'    does a commit carry this task?
+  then read the code it describes and its tests.
+tech_plan — milestone structure is immutable outside /belmont:tech-plan, and
+  runScopeGuard reverts an agent that edits it anyway. Run that skill.`
 
 // Violation severities.
 //
@@ -585,7 +637,8 @@ func renderValidationReport(w io.Writer, violations []validationViolation) {
 	if len(blocking) == 0 {
 		fmt.Fprintln(w, "\033[32m✓ No blocking violations.\033[0m")
 	}
-	fmt.Fprintln(w, "\033[2mRerun after fixing with `belmont validate`. See skills/belmont/_partials/milestone-immutability.md for the canonical rule.\033[0m")
+	fmt.Fprintln(w, progressStructureHelp)
+	fmt.Fprintln(w, "\033[2mRerun after fixing with `belmont validate`.\033[0m")
 }
 
 func renderViolationGroup(w io.Writer, violations []validationViolation) {
@@ -604,15 +657,19 @@ func renderViolationGroup(w io.Writer, violations []validationViolation) {
 			// A violation can have neither a milestone nor a task ID — an
 			// orphaned task line belongs to no milestone by definition. Emit no
 			// bracket at all rather than an empty one.
+			rule := v.Rule
+			if v.Remedy != "" {
+				rule = fmt.Sprintf("%s [%s]", v.Rule, v.Remedy)
+			}
 			switch {
 			case v.Milestone != "" && v.TaskID != "":
-				fmt.Fprintf(w, "    • [%s/%s] %s — %s\n", v.Milestone, v.TaskID, v.Rule, v.Message)
+				fmt.Fprintf(w, "    • [%s/%s] %s — %s\n", v.Milestone, v.TaskID, rule, v.Message)
 			case v.Milestone != "":
-				fmt.Fprintf(w, "    • [%s] %s — %s\n", v.Milestone, v.Rule, v.Message)
+				fmt.Fprintf(w, "    • [%s] %s — %s\n", v.Milestone, rule, v.Message)
 			case v.TaskID != "":
-				fmt.Fprintf(w, "    • [%s] %s — %s\n", v.TaskID, v.Rule, v.Message)
+				fmt.Fprintf(w, "    • [%s] %s — %s\n", v.TaskID, rule, v.Message)
 			default:
-				fmt.Fprintf(w, "    • %s — %s\n", v.Rule, v.Message)
+				fmt.Fprintf(w, "    • %s — %s\n", rule, v.Message)
 			}
 		}
 		fmt.Fprintln(w)
