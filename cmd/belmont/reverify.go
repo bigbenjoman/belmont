@@ -79,24 +79,9 @@ func runReverifyCmd(args []string) error {
 
 	// Resolve feature — auto-detect if only one exists
 	featuresDir := filepath.Join(root, ".belmont", "features")
-	if feature == "" {
-		entries, err := os.ReadDir(featuresDir)
-		if err != nil {
-			return fmt.Errorf("reverify: no features directory at %s", featuresDir)
-		}
-		var dirs []string
-		for _, e := range entries {
-			if e.IsDir() {
-				dirs = append(dirs, e.Name())
-			}
-		}
-		if len(dirs) == 0 {
-			return fmt.Errorf("reverify: no features found")
-		}
-		if len(dirs) > 1 {
-			return fmt.Errorf("reverify: multiple features found, use --feature to specify one: %s", strings.Join(dirs, ", "))
-		}
-		feature = dirs[0]
+	feature, err := resolveSingleFeature(root, feature, "reverify")
+	if err != nil {
+		return err
 	}
 
 	progressPath := filepath.Join(featuresDir, feature, "PROGRESS.md")

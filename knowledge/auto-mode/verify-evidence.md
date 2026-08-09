@@ -12,7 +12,7 @@ In `cmd/belmont/guards.go`, called after `runScopeGuard`:
 
 - `runEvidenceCheck(cfg, action, preSnap)` is invoked after every `actionVerify` phase. Other phases are skipped — only verify marks tasks `[v]`.
 - `findEvidenceMissingFlips(root, pre, post, targetMS)` walks post-snapshot's milestones, collects every task whose state flipped to `v` this phase, and calls `taskHasCommit(root, taskID, sinceRef)` per candidate.
-- `taskHasCommit` runs `git log --format=%B%x1e <mergeBase>..HEAD` and greps each commit message with a regex that ensures word-boundary around the task ID (`(^|[^A-Za-z0-9-])P1-1([^A-Za-z0-9-]|$)`) so `P1-1` doesn't false-positive on `P1-12`.
+- `taskHasCommit` delegates to `lookupCommitEvidence`, which runs `git log` and greps each commit message with a regex that ensures word-boundary around the task ID (`(^|[^A-Za-z0-9-])P1-1([^A-Za-z0-9-]|$)`) so `P1-1` doesn't false-positive on `P1-12`. `belmont repair` uses the same function, so the guard and the healer cannot disagree about what counts as evidence — but repair reads the two-value answer and **does not inherit the fail-open**, because "could not look" must never read as "the work happened" outside a git repository. Repair also searches the FULL history rather than `mergeBase..HEAD`: it runs on the default branch, where that range is empty. See [../cross-cutting/progress-repair.md](../cross-cutting/progress-repair.md).
 - `findMergeBaseRef` tries `main`, `master`, `origin/main`, `origin/master` in order. If none resolves, the search is unscoped (entire `HEAD` log) and `taskHasCommit` **fails open** (returns true) to avoid blocking real work on a shallow clone or detached HEAD.
 - On missing evidence: `revertEvidenceMissing` rewrites the task's line in PROGRESS.md from `[v]` back to the pre-phase state (usually `[x]`), `git commit -a --amend --no-edit` folds the revert into the verify agent's commit, `[VERIFY-GUARD] reverted N [v] flip(s) lacking commit evidence — …` prints to the stream, and `injectEvidenceSteering` appends a `(pending)` STEERING entry naming the specific tasks so the next phase's agent sees the correction.
 
@@ -48,6 +48,7 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestFindEvidenceMissingFli
 
 ## Revisions
 
+- 2026-08-09 — the git query moved to `lookupCommitEvidence`, shared with `belmont repair`; recorded why repair scopes and fails differently. Added `TestEvidenceGuardAcceptsAFlipWithACommit`: the positive branch of this check had no test anywhere, so `if false && pattern.MatchString(msg)` left the suite green while every legitimate `[v]` flip got reverted.
 - 2026-04-21 — initial: commit-log evidence check, word-boundary regex, fail-open on git errors.
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.

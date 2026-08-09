@@ -59,7 +59,9 @@ Files: `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `Gemfile`, etc.
 ### Belmont Tracking Files
 Files: anything under `.belmont/`
 
-**PROGRESS.md** (single source of truth for task state): Take the most-advanced state per task. State progression: `[v]` verified > `[x]` done > `[>]` in_progress > `[ ]` todo. The `[!]` blocked state is preserved — if either side has `[!]`, keep it unless the other side has `[x]` or `[v]` (which means the block was resolved). Combine activity table entries from both sides chronologically. Milestone status is computed from tasks (no emoji on headers).
+**PROGRESS.md** (single source of truth for task state): Take the most-advanced state per task. State progression: `[v]` verified > `[x]` done > `[>]` in_progress > `[ ]` todo (letters are case-insensitive: `[X]` and `[V]` mean the same as `[x]` and `[v]`). Two states are decisions rather than progress and do **not** take part in that ordering:
+- `[-]` **withdrawn** wins from either side, over everything. Work somebody deliberately dropped must never come back as outstanding — that is the failure this marker exists to prevent. Keep the withdrawal and note the displaced state in your summary.
+- `[!]` **blocked** is preserved — if either side has `[!]`, keep it unless the other side has `[x]` or `[v]` (which means the block was resolved). Combine activity table entries from both sides chronologically. Milestone status is computed from tasks (no emoji on headers).
 
 **NOTES.md**: Append entries from both sides, deduplicating exact matches.
 

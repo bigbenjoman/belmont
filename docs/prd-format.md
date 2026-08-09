@@ -79,15 +79,25 @@ Tasks may additionally use `[WEB]` / `[API]` prefixes (e.g. `[WEB] Render the ne
 | `[x]`    | Done        | Task finished, not yet verified                        |
 | `[v]`    | Verified    | Task finished and verified                             |
 | `[!]`    | Blocked     | Cannot proceed (missing info, Figma unavailable, etc.) |
+| `[-]`    | Withdrawn   | Planned, then deliberately dropped                     |
 
-`[x]` and `[X]` are both accepted as done — a capital `[X]` is a standard
-Markdown "done" convention and is what GitHub renders as checked.
+**The letter markers are case-insensitive** — `[X]` and `[V]` mean exactly what
+`[x]` and `[v]` mean. One rule, easy to remember; a state reachable by a shift
+key has to parse.
 
 **`[x]` is not the finish line.** A feature whose tasks are all `[x]` reports `Complete`, not `Verified`, and `belmont status` warns that verification never recorded a result — recover with `belmont reverify --feature <slug>`. Only `[v]` means verified.
 
-`[v]` is verified. **`[V]` is not** — unlike `[X]` it has no convention behind
-it, and accepting it would let a verified flip slip past the commit-evidence
-guard. A capital `V` is treated as unrecognised.
+**`[-]` withdrawn is a state, not a deletion.** It covers work that was
+superseded, duplicated by another task, relocated to another feature, or
+descoped. It is neither outstanding nor done: excluded from both counts, never
+offered as next work, and it does not stop a milestone reading complete. Record
+*why* in `## Decisions Log` — a marker cannot carry a reason.
+
+Do **not** express withdrawal by deleting the line. Belmont's merge takes the
+worktree's document as its base and carries the other side's missing lines back
+in, so a deleted task is resurrected by the next sibling sync — in either
+direction. A marker survives, and a withdrawal wins from either side of a merge,
+so a stale worktree cannot silently revive dropped work.
 
 **Headings inside a milestone.** A `## ` heading at column zero ends the milestones
 region — that is how `## Session History` works. Inside a task's write-up, indent any
@@ -102,16 +112,28 @@ as the next task, prevents its milestone reading as complete, and makes
 containing one. Earlier versions silently treated it as `[ ]` todo, so cancelled
 or relocated work was counted as outstanding and handed to an agent to build.
 
-Fix it by hand — edit the marker, or delete the line if the work no longer
-exists. There is no in-tool override: skipping the milestone will not clear it.
+Fix it with `belmont repair`, which checks each one against the commit log and
+then against the current code — see [cli-commands.md](cli-commands.md). Editing
+the marker by hand works too. Do **not** delete the line: if the work was
+dropped, that is `[-]` withdrawn. There is no in-tool override, and skipping the
+milestone will not clear it.
 
 > **Upgrading?** If a PROGRESS.md already contains a stray marker, this is a
 > behaviour change. `belmont validate` will now exit 1 on it, and
 > `belmont auto` (single feature, non-interactive) will refuse to start where it
 > previously ran and quietly treated the entry as outstanding work. Run
-> `belmont status` to see every offending line with its line number. Note the
-> lint does **not** run for `belmont auto --features` / `--all`, and on a TTY it
-> asks before aborting.
+> `belmont status` to see every offending line with its line number, then
+> `belmont repair` to fix them. Note the lint does **not** run for
+> `belmont auto --features` / `--all`, and on a TTY it asks before aborting.
+>
+> `[-]` and `[V]` are the other half of that change, in the opposite direction:
+> both used to be unrecognised and now parse, as withdrawn and verified. A file
+> that already contains either **changes meaning on upgrade**, with no
+> migration. If yours does, run `belmont status --feature <slug>` before your
+> next `belmont auto` and check the reading is the one you meant: a `[-]` you
+> wrote to mean something else (parked, not applicable) is now excluded from the
+> counts and can let its milestone read complete, and a hand-written `[V]` now
+> claims verified without any commit evidence behind it.
 
 ### Example
 

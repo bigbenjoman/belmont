@@ -292,7 +292,7 @@ func detectOrphanViolations(slug, progress string) []validationViolation {
 		out = append(out, validationViolation{
 			Feature:  slug,
 			TaskID:   t.ID,
-			Rule:     "task_outside_milestone",
+			Rule:     ruleTaskOutsideMilestone,
 			Severity: severityWarning,
 			Remedy:   remedyNeedsEvidence,
 			Message: fmt.Sprintf(
@@ -322,7 +322,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 				Feature:       slug,
 				Milestone:     m.ID,
 				MilestoneName: m.Name,
-				Rule:          "duplicate_milestone_id",
+				Rule:          ruleDuplicateMilestoneID,
 				Severity:      severityError,
 				Remedy:        remedyNeedsEvidence,
 				Message: fmt.Sprintf(
@@ -340,7 +340,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 				Feature:       slug,
 				Milestone:     m.ID,
 				MilestoneName: m.Name,
-				Rule:          "polish_milestone_name",
+				Rule:          rulePolishMilestoneName,
 				Severity:      severityError,
 				Remedy:        remedyTechPlan,
 				Message: fmt.Sprintf(
@@ -364,7 +364,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 				Milestone:     m.ID,
 				MilestoneName: m.Name,
 				TaskID:        t.ID,
-				Rule:          "unrecognised_task_marker",
+				Rule:          ruleUnrecognisedMarker,
 				Severity:      severityError,
 				Remedy:        remedyNeedsEvidence,
 				Message: fmt.Sprintf(
@@ -376,12 +376,8 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 		// Rule 3: task IDs reference a milestone other than the one they live in.
 		currentNum := milestoneNumber(m.ID)
 		for _, t := range m.Tasks {
-			match := taskIDMilestoneRefRe.FindStringSubmatch(t.ID)
-			if len(match) < 2 {
-				continue
-			}
-			refNum, err := strconv.Atoi(match[1])
-			if err != nil {
+			_, refNum := taskIDNamedMilestone(t.ID)
+			if refNum < 0 {
 				continue
 			}
 			if refNum != currentNum {
@@ -390,7 +386,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 					Milestone:     m.ID,
 					MilestoneName: m.Name,
 					TaskID:        t.ID,
-					Rule:          "cross_milestone_task_id",
+					Rule:          ruleCrossMilestoneTaskID,
 					Severity:      severityError,
 					Remedy:        remedyTechPlan,
 					Message: fmt.Sprintf(
@@ -508,6 +504,17 @@ func revertEvidenceMissing(post *progressSnapshot, missing []evidenceMissing) st
 	return out.String()
 }
 
+// Finding rules. These are the SAME strings `belmont validate` reports, so the
+// two commands name a problem identically: `validate` tells you the file is
+// broken, `repair` fixes the thing it named.
+const (
+	ruleUnrecognisedMarker   = "unrecognised_task_marker"
+	ruleTaskOutsideMilestone = "task_outside_milestone"
+	ruleCrossMilestoneTaskID = "cross_milestone_task_id"
+	rulePolishMilestoneName  = "polish_milestone_name"
+	ruleDuplicateMilestoneID = "duplicate_milestone_id"
+)
+
 // validationViolation is one finding from `belmont validate`.
 type validationViolation struct {
 	Feature       string `json:"feature"`
@@ -613,6 +620,26 @@ var polishMilestoneNameRe = regexp.MustCompile(`(?i)(\bpolish\b|\bfollow[- ]?ups
 // Matches task IDs that embed a milestone number, e.g. P3-FWLUP-M2-1 or
 // P1-M4-FIX-2. Capture group 1 is the milestone number referenced by the ID.
 var taskIDMilestoneRefRe = regexp.MustCompile(`^P\d+-(?:FWLUP-)?M(\d+)(?:-|$)`)
+
+// taskIDNamedMilestone returns the milestone a task ID names — ("M2", 2) for
+// P3-M2-1 — or ("", -1) when it names none.
+//
+// One definition, because two consumers must agree on it: `belmont validate`
+// reports a task filed under the wrong milestone, and `belmont repair` offers
+// to move it to the one its ID names. A healer that disagreed with the
+// detector about which milestone that is would move tasks somewhere the lint
+// then flags again.
+func taskIDNamedMilestone(taskID string) (string, int) {
+	match := taskIDMilestoneRefRe.FindStringSubmatch(taskID)
+	if len(match) < 2 {
+		return "", -1
+	}
+	n, err := strconv.Atoi(match[1])
+	if err != nil {
+		return "", -1
+	}
+	return "M" + match[1], n
+}
 
 // milestoneNumber extracts the integer from a milestone ID like "M5".
 func milestoneNumber(id string) int {
@@ -826,12 +853,67 @@ func findMergeBaseRef(root string) string {
 // taskHasCommit reports whether any commit reachable from HEAD names the
 // given task ID. When sinceRef is non-empty the search is limited to
 // sinceRef..HEAD so older features' commits don't produce false positives.
+//
+// The query itself lives in `lookupCommitEvidence` (repair.go) so the auto
+// loop's evidence guard and `belmont repair` cannot drift apart about what
+// counts as a commit naming a task. This wrapper adds only the fail-open
+// policy, which is the guard's and NOT repair's — see commitEvidence.
+//
+// FAILS OPEN. A git query that errors (shallow clone, bad ref, no repository)
+// returns true, so the guard never blocks real work over plumbing. Any caller
+// that must distinguish "no evidence" from "could not look" has to call
+// lookupCommitEvidence directly and read Checked — a test that runs this
+// against a bare t.TempDir() is asserting nothing at all.
 func taskHasCommit(root, taskID, sinceRef string) bool {
 	if taskID == "" {
 		return true // nothing to check
 	}
+	ev := lookupCommitEvidence(root, taskID, sinceRef)
+	if !ev.Checked {
+		return true
+	}
+	return ev.Found
+}
+
+// commitEvidence is the mechanical tier's answer for one task ID.
+//
+// Checked is not decoration. `taskHasCommit` deliberately FAILS OPEN — a git
+// query that errors returns true so a shallow clone cannot block real work in
+// the auto loop. Repair must not inherit that: fail-open here would mark every
+// unreadable task `[x]` in a directory that is not a git repository at all.
+// So repair asks the two-value question and treats "could not check" as "no
+// mechanical answer", which sends the finding to the review tier.
+type commitEvidence struct {
+	Checked bool   `json:"checked"`
+	Found   bool   `json:"found"`
+	SHA     string `json:"sha,omitempty"`
+	Subject string `json:"subject,omitempty"`
+}
+
+// isGitWorkTree reports whether root is inside a git working tree. Repair asks
+// before trusting the commit log, because `taskHasCommit` fails open and would
+// otherwise report evidence for every task in a directory with no git at all.
+func isGitWorkTree(root string) bool {
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	return err == nil && strings.TrimSpace(string(out)) == "true"
+}
+
+// lookupCommitEvidence finds the first commit naming taskID, scoped to
+// sinceRef..HEAD when sinceRef is non-empty.
+//
+// This is the one implementation of "does a commit name this task ID?" —
+// `taskHasCommit` (the auto loop's evidence guard) routes through it too, so
+// the guard and the healer can never disagree about what counts as evidence.
+// The word-boundary pattern is what stops P1-1 being credited by a commit for
+// P1-12.
+func lookupCommitEvidence(root, taskID, sinceRef string) commitEvidence {
+	if taskID == "" {
+		return commitEvidence{}
+	}
 	pattern := regexp.MustCompile(`(^|[^A-Za-z0-9-])` + regexp.QuoteMeta(taskID) + `([^A-Za-z0-9-]|$)`)
-	args := []string{"log", "--format=%B%x1e"}
+	args := []string{"log", "--format=%H%x1f%s%x1f%B%x1e"}
 	if sinceRef != "" {
 		args = append(args, sinceRef+"..HEAD")
 	}
@@ -839,16 +921,30 @@ func taskHasCommit(root, taskID, sinceRef string) bool {
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
-		// If the git query fails (e.g., shallow clone, bad ref), treat as
-		// "evidence present" to avoid false negatives blocking real work.
-		return true
+		return commitEvidence{Checked: false}
 	}
-	for _, msg := range strings.Split(string(out), "\x1e") {
-		if pattern.MatchString(msg) {
-			return true
+	ev := commitEvidence{Checked: true}
+	for _, record := range strings.Split(string(out), "\x1e") {
+		fields := strings.SplitN(record, "\x1f", 3)
+		if len(fields) < 3 {
+			continue
 		}
+		if !pattern.MatchString(fields[2]) {
+			continue
+		}
+		ev.Found = true
+		ev.SHA = strings.TrimSpace(strings.TrimLeft(fields[0], "\n"))
+		ev.Subject = strings.TrimSpace(fields[1])
+		return ev
 	}
-	return false
+	return ev
+}
+
+func shortSHA(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
 }
 
 // logEvidenceRevert prints a one-line summary per verify-guard revert batch.
