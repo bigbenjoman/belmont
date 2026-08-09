@@ -218,13 +218,39 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 			if theirsMarker, ok := theirsStates[taskID]; ok {
 				oursRank, oursKnown := rank(oursMarker)
 				theirsRank, theirsKnown := rank(theirsMarker)
-				// Take the more-advanced state (but preserve [!] blocked).
+				oursState, _ := canonicalMarker(oursMarker)
+				theirsState, _ := canonicalMarker(theirsMarker)
+				// Take the more-advanced state, except for the two states that
+				// are decisions rather than progress.
+				//
+				// Withdrawal is checked FIRST and wins from either side, exactly
+				// as it does in mergeProgressState — the two merge paths must
+				// agree about a withdrawal, since which one runs depends only on
+				// whether git happened to register a conflict. Rank alone cannot
+				// express it: taskWithdrawn sorts at -2, below everything, so
+				// without this branch anything at all outranked a withdrawal and
+				// revived it as work to do. Before `[-]` was a recognised marker
+				// the bail-out above caught that case and escalated the whole
+				// file; making the marker legal removed the escalation and left
+				// nothing in its place, so cancelled work came back as todo —
+				// or as an un-evidenced `[v]` — under a green "conflicts
+				// auto-resolved".
+				//
 				// Both sides are known here — the scan above already bailed on
 				// anything unrecognised — but stay defensive rather than let a
 				// future edit reintroduce a zero-value rank.
-				if oursMarker == "!" || theirsMarker == "!" {
-					// Keep blocked as-is from ours
-				} else if oursKnown && theirsKnown && theirsRank > oursRank {
+				switch {
+				case oursState == taskWithdrawn:
+					// Already withdrawn on ours; leave the line as written.
+				case theirsState == taskWithdrawn:
+					line = strings.Replace(line, "["+oursMarker+"]", "["+theirsMarker+"]", 1)
+				case oursState == taskBlocked || theirsState == taskBlocked:
+					// Keep ours. Note this is NOT the rule mergeProgressState
+					// applies — there `[!]` wins from either side, here a blocker
+					// on theirs loses to a more advanced ours. Pre-existing;
+					// left alone deliberately rather than changed as a side
+					// effect of the withdrawn fix.
+				case oursKnown && theirsKnown && theirsRank > oursRank:
 					line = strings.Replace(line, "["+oursMarker+"]", "["+theirsMarker+"]", 1)
 				}
 			}

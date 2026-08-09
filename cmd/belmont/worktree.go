@@ -588,33 +588,66 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			continue
 		}
 
-		// `[!]` on EITHER side wins, in both directions.
+		// Two states win from EITHER side, in both directions, because neither
+		// is progress and rank cannot express either: taskBlocked sorts at -1
+		// and taskWithdrawn at -2, so literally anything outranks them.
 		//
-		// A blocker is a human-attention signal, and the two failure modes are
-		// not symmetric: keeping a stale `[!]` costs someone a look (and auto
-		// pauses on blocked tasks, so it is loud), whereas dropping a live one
-		// means work is silently treated as fine. Rank alone would clear it —
-		// taskBlocked sorts below todo, so literally anything outranks it.
-		// Withdrawal is a decision, and it wins from either side for the same
-		// reason `[!]` does — with one extra: a withdrawn task that loses a merge
+		// `[!]` is a human-attention signal, and its failure modes are not
+		// symmetric: keeping a stale blocker costs someone a look (and auto
+		// pauses loudly on blocked tasks), whereas dropping a live one means
+		// work is silently treated as fine.
+		//
+		// `[-]` is a decision, and it is checked BEFORE `[!]` — an unblocked
+		// route through cancelled work is not something anyone needs. It wins
+		// for `[!]`'s reason plus one more: a withdrawn task that loses a merge
 		// comes back as outstanding work, which is exactly what pushes people to
 		// delete the line instead, and deletion does not survive this function at
 		// all (master's copy is carried back in below). A stale sibling must never
 		// silently revive dropped work; reviving it is a deliberate edit.
+		//
+		// Whichever of the two wins, the state it displaced is reported. This
+		// function warns about every other state it declines to merge, and a
+		// `[v]` quietly overwritten by a `[-]` is exactly the kind of loss the
+		// rest of this file exists to prevent.
 		wtState, _ := canonicalMarker(wtMarker)
 		msState, _ := canonicalMarker(mt.marker)
 		if wtState == taskWithdrawn {
-			continue // already withdrawn here; leave the line as written
+			// Already withdrawn here; leave the line as written. If main still
+			// records progress on it, that progress is being discarded — say so.
+			// Withdrawal winning is the decision; withdrawal winning SILENTLY is
+			// the bug, and this function warns about every other state it
+			// declines to merge.
+			if msState != taskTodo && msState != taskWithdrawn {
+				warnings = append(warnings, fmt.Sprintf(
+					"task %s is withdrawn here but [%s] on main — the withdrawal wins, so that state was not merged; re-open the task deliberately if the work really did land",
+					id, mt.marker))
+			}
+			continue
 		}
 		if msState == taskWithdrawn {
+			// Same in reverse, and this is the direction that costs more: the
+			// worktree's `.belmont/` moves home only by this copy, so a `[v]`
+			// or a `[!]` overwritten here exists in no commit anywhere. It is
+			// still the right precedence — a stale sibling must not revive
+			// cancelled work — but it must not happen quietly.
+			if wtState != taskTodo {
+				warnings = append(warnings, fmt.Sprintf(
+					"task %s is [%s] here but withdrawn on main — the withdrawal wins, so this state was not merged; re-open the task deliberately if the work really did land",
+					id, wtMarker))
+			}
 			out[i] = tm[1] + "[" + mt.marker + "]" + tm[3] + tm[4] + tm[5]
 			continue
 		}
-		if wtMarker == "!" {
+		if wtState == taskBlocked {
 			continue // already blocked here; leave the line as written
 		}
-		if mt.marker == "!" {
-			out[i] = tm[1] + "[!]" + tm[3] + tm[4] + tm[5]
+		if msState == taskBlocked {
+			if wtState != taskTodo {
+				warnings = append(warnings, fmt.Sprintf(
+					"task %s is [%s] here but blocked on main — the blocker wins, so this state was not merged",
+					id, wtMarker))
+			}
+			out[i] = tm[1] + "[" + mt.marker + "]" + tm[3] + tm[4] + tm[5]
 			continue
 		}
 		if msRank > wtRank {

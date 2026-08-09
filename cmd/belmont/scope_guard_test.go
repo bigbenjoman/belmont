@@ -320,19 +320,13 @@ func TestRevertEvidenceMissing_FlipsTaskLineBack(t *testing.T) {
 - [v] P1-6: Subjects
 - [v] P1-7: Press
 `
-	preContent := `### M3: Lower
-- [ ] P1-5: Safety
-- [x] P1-6: Subjects
-- [ ] P1-7: Press
-`
-	pre := parseProgressSnapshot("/tmp/PROGRESS.md", preContent)
 	post := parseProgressSnapshot("/tmp/PROGRESS.md", postContent)
 	missing := []evidenceMissing{
 		{Milestone: "M3", TaskID: "P1-5", FromState: " "},
 		{Milestone: "M3", TaskID: "P1-7", FromState: " "},
 	}
 	// P1-6 is not in missing → its [v] should survive
-	rebuilt := revertEvidenceMissing(post, pre, missing)
+	rebuilt := revertEvidenceMissing(post, missing)
 	if !strings.Contains(rebuilt, "[ ] P1-5: Safety") {
 		t.Errorf("P1-5 not reverted to [ ]:\n%s", rebuilt)
 	}

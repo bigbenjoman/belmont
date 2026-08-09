@@ -108,16 +108,32 @@ func TestSplitBySeverityTreatsUnsetAsBlocking(t *testing.T) {
 // isolation cannot catch the gate blocking on warnings, nor the preflight call
 // sites being deleted. --from/--to skips the interactive milestone picker,
 // which would otherwise fire because `go test`'s stdin is a character device.
+//
+// `--tool claude` is not optional here. Without it runAutoCmd calls
+// detectTool(), which LookPaths every supported CLI *before* it reaches the
+// lint — so on a machine with none installed (CI is exactly that machine) the
+// warning-only half fails and the blocking half passes for entirely the wrong
+// reason. The name is validated but never executed under --dry-run.
 func TestAutoGateBySeverity(t *testing.T) {
 	warnOnly := writeValidateFixture(t, "# Progress\n\n### M1: Work\n- [ ] P1-M1-1: pending\n\n"+
 		"## Session History\n- [ ] follow up next week\n")
-	if err := runAutoCmd([]string{"--root", warnOnly, "--feature", "demo", "--from", "M1", "--to", "M1", "--dry-run"}); err != nil {
+	if err := runAutoCmd([]string{"--root", warnOnly, "--tool", "claude", "--feature", "demo", "--from", "M1", "--to", "M1", "--dry-run"}); err != nil {
 		t.Errorf("auto refused a run over a warning-only file: %v — this is the upgrade break", err)
 	}
 
 	blocked := writeValidateFixture(t, "# Progress\n\n### M1: Work\n- [?] P1-M1-1: unreadable\n")
-	if err := runAutoCmd([]string{"--root", blocked, "--feature", "demo", "--from", "M1", "--to", "M1", "--dry-run"}); err == nil {
-		t.Error("auto started against an unrecognised marker; that is issue #27's gate")
+	err := runAutoCmd([]string{"--root", blocked, "--tool", "claude", "--feature", "demo", "--from", "M1", "--to", "M1", "--dry-run"})
+	if err == nil {
+		t.Fatal("auto started against an unrecognised marker; that is issue #27's gate")
+	}
+	// Assert WHICH refusal. `err != nil` alone is satisfied by any startup
+	// failure at all, which is how this test passed while proving nothing.
+	// Both halves of the gate — the non-TTY abort and the declined `[y/N]`
+	// prompt — route the user to /belmont:tech-plan, and nothing else in auto's
+	// startup does. `go test` may hand the binary either kind of stdin, so the
+	// assertion has to hold for both.
+	if !strings.Contains(err.Error(), "tech-plan") {
+		t.Errorf("auto refused, but not over the marker: %v", err)
 	}
 }
 
@@ -125,9 +141,11 @@ func TestAutoPreflightRefusesDuplicateMilestoneOnBothPaths(t *testing.T) {
 	root := writeValidateFixture(t, "# Progress\n\n### M1: Work\n- [ ] P1-M1-1: pending\n\n"+
 		"## Session History\n\n### M1: retry notes\n- attempt log\n")
 
+	// --tool claude for the same reason as TestAutoGateBySeverity: without it
+	// this test fails on any machine with no AI CLI installed, CI included.
 	for _, args := range [][]string{
-		{"--root", root, "--feature", "demo", "--from", "M1", "--to", "M1", "--dry-run"},
-		{"--root", root, "--features", "demo", "--dry-run"},
+		{"--root", root, "--tool", "claude", "--feature", "demo", "--from", "M1", "--to", "M1", "--dry-run"},
+		{"--root", root, "--tool", "claude", "--features", "demo", "--dry-run"},
 	} {
 		err := runAutoCmd(args)
 		if err == nil {

@@ -189,6 +189,16 @@ func TestFwlupTasksIgnoreBulletsPastASectionBreak(t *testing.T) {
 	if fwlupTasksInRange(root, "demo", statusReport{}, "M1", "M1") {
 		t.Error("a FWLUP-shaped bullet under ## Session History was counted as outstanding follow-up work")
 	}
+
+	// The control. fwlupTasksInRange returns false on any read error, so the
+	// negative above is satisfied by a path typo or an unconditional `return
+	// false` — it proves nothing on its own.
+	real := t.TempDir()
+	writeFeature(t, real, "demo",
+		"# Progress\n\n### M1: Only\n- [ ] P1-M1-1: FWLUP: a genuine follow-up\n\n## Session History\n")
+	if !fwlupTasksInRange(real, "demo", statusReport{}, "M1", "M1") {
+		t.Error("a genuine in-region FWLUP task was not detected")
+	}
 }
 
 // A repeated `### M<n>:` heading makes every milestone-keyed lookup ambiguous.
@@ -403,7 +413,7 @@ func TestEvidenceRevertRespectsSectionBreak(t *testing.T) {
 - [v] P1-M1-2: flipped with no commit behind it
 `
 	snap := parseProgressSnapshot("P", doc)
-	got := revertEvidenceMissing(snap, snap, []evidenceMissing{
+	got := revertEvidenceMissing(snap, []evidenceMissing{
 		{Milestone: "M1", TaskID: "P1-M1-2", FromState: "x"},
 	})
 	if !strings.Contains(got, "- [x] P1-M1-2:") {

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -12,6 +14,16 @@ import (
 // agent as the next thing to build. Repair tooling does not fix that on its own
 // — without a legal way to express withdrawal the next person invents a marker
 // too.
+
+// gitRun runs one git command in root and fails the test on any error.
+func gitRun(t *testing.T, root string, args ...string) {
+	t.Helper()
+	c := exec.Command("git", args...)
+	c.Dir = root
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
 
 func TestWithdrawnAndCapitalVParse(t *testing.T) {
 	for marker, want := range map[string]taskStatus{
@@ -72,9 +84,12 @@ func TestWithdrawalSurvivesTheMergeThatDeletionDoesNot(t *testing.T) {
 	deleted := "### M3: Webhooks\n- [x] P1-M3-1: send\n"
 	withdrawn := "### M3: Webhooks\n- [x] P1-M3-1: send\n- [-] P1-M3-2: add retry\n"
 
-	// The control: deletion is NOT stable, which is why we do not use it.
+	// The control, asserted rather than logged. This is the premise the whole
+	// `[-]`-is-a-state design rests on, and a t.Log cannot fail — it read as
+	// evidence while checking nothing.
 	if got, _ := mergeProgressState(deleted, full); !strings.Contains(got, "P1-M3-2") {
-		t.Log("deletion happened to survive here; the marker approach does not depend on it")
+		t.Fatalf("deletion now survives the merge, so the argument for [-] over deleting the line "+
+			"needs re-deriving before this file is trusted:\n%s", got)
 	}
 
 	// The contract: a withdrawal wins from either side and is never revived.
@@ -162,5 +177,195 @@ func TestCapitalVIsNotAFreshFlip(t *testing.T) {
 	preTodo := parseProgressSnapshot("P", "### M1: Work\n- [ ] P1-M1-1: not yet\n")
 	if missing := findEvidenceMissingFlips(root, preTodo, post, "M1"); len(missing) != 1 {
 		t.Errorf("an un-evidenced [ ]->[V] flip was not caught: %+v", missing)
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Regressions the withdrawn/case-insensitive change introduced
+//
+// Making `[-]` and `[V]` parse changed the meaning of bytes already sitting in
+// files in the wild. Before, both were unrecognised: loud, blocking, and
+// impossible to act on by accident. After, they mean something — and every
+// reader that classified markers with its own rule instead of canonicalMarker's
+// silently started doing the wrong thing with them.
+// ----------------------------------------------------------------------------
+
+// resolveProgressConflict was the one markerRank consumer with no withdrawn
+// case. taskWithdrawn ranks at -2, below every other state, so anything at all
+// outranked a withdrawal and revived it — and the file was written back under a
+// green "conflicts auto-resolved". Before `[-]` parsed, the unrecognised-marker
+// bail-out caught this and escalated the whole file to the reconciliation
+// agent; making the marker legal removed that safety net.
+func TestMergeConflictResolverKeepsWithdrawalsFromEitherSide(t *testing.T) {
+	for _, tc := range []struct {
+		ours, theirs, want string
+	}{
+		{"-", " ", "-"}, // a stale sibling must not revive cancelled work…
+		{"-", "x", "-"},
+		{"-", "v", "-"}, // …least of all as an un-evidenced verification
+		{" ", "-", "-"}, // …and a withdrawal recorded on the other branch must arrive
+		{"x", "-", "-"},
+	} {
+		root := t.TempDir()
+		gitRun(t, root, "init", "-q", "-b", "main")
+		gitRun(t, root, "config", "user.email", "t@t.t")
+		gitRun(t, root, "config", "user.name", "t")
+
+		rel := "PROGRESS.md"
+		doc := func(marker string) string {
+			return "### M1: Work\n- [" + marker + "] P1-M1-1: retry logic\n- [ ] P1-M1-2: other\n"
+		}
+		writeAndCommit := func(content, msg string) {
+			t.Helper()
+			if err := os.WriteFile(filepath.Join(root, rel), []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+			gitRun(t, root, "add", "-A")
+			gitRun(t, root, "commit", "-q", "-m", msg)
+		}
+		// The base differs from BOTH sides in text as well as marker, so each
+		// side is a real commit and the two genuinely conflict. A base equal to
+		// one side produces an empty commit, or a clean merge in which the
+		// resolver under test never runs at all.
+		writeAndCommit("### M1: Work\n- [>] P1-M1-1: retry logic, as first written\n- [ ] P1-M1-2: other\n", "base")
+		gitRun(t, root, "checkout", "-q", "-b", "sib")
+		writeAndCommit(doc(tc.theirs), "sibling side")
+		gitRun(t, root, "checkout", "-q", "main")
+		writeAndCommit(doc(tc.ours), "main side")
+
+		merge := exec.Command("git", "merge", "--no-commit", "sib")
+		merge.Dir = root
+		if out, err := merge.CombinedOutput(); err == nil {
+			t.Fatalf("ours=%s theirs=%s merged cleanly — the fixture must actually conflict, or the resolver under test never runs\n%s",
+				tc.ours, tc.theirs, out)
+		}
+
+		if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+			t.Errorf("ours=[%s] theirs=[%s]: the resolver declined; a legal marker must not stop auto-resolution",
+				tc.ours, tc.theirs)
+			continue
+		}
+		got := readFile(t, filepath.Join(root, rel))
+		if !strings.Contains(got, "- ["+tc.want+"] P1-M1-1") {
+			t.Errorf("ours=[%s] theirs=[%s] resolved to something other than [%s]:\n%s",
+				tc.ours, tc.theirs, tc.want, got)
+		}
+	}
+}
+
+// A withdrawal winning is the decision. A withdrawal winning SILENTLY is the
+// bug: `.belmont/` is assume-unchanged inside a worktree, so this copy is the
+// only transport home and a `[v]` it overwrites exists in no commit anywhere.
+func TestMergeProgressStateReportsWhatAWithdrawalDisplaced(t *testing.T) {
+	for _, tc := range []struct {
+		master, worktree string
+		wantWarning      bool
+	}{
+		{"-", "v", true},  // a real completion is being discarded
+		{"-", "!", true},  // a live blocker is being cleared
+		{"-", ">", true},  // work in flight
+		{"-", " ", false}, // nothing lost — do not cry wolf
+		{"v", "-", true},  // the same in reverse: the worktree's withdrawal wins
+	} {
+		master := "### M3: W\n- [" + tc.master + "] P1-M3-1: x\n"
+		worktree := "### M3: W\n- [" + tc.worktree + "] P1-M3-1: x\n"
+		got, warnings := mergeProgressState(master, worktree)
+		if !strings.Contains(got, "- [-] P1-M3-1") {
+			t.Errorf("master=[%s] wt=[%s]: the withdrawal did not win:\n%s", tc.master, tc.worktree, got)
+		}
+		if hasWarning := len(warnings) > 0; hasWarning != tc.wantWarning {
+			t.Errorf("master=[%s] wt=[%s]: warnings=%v, want any=%v — state was dropped without telling anyone",
+				tc.master, tc.worktree, warnings, tc.wantWarning)
+		}
+	}
+}
+
+// Verified is the strongest claim Belmont makes and it must never be true
+// vacuously. Skipping withdrawn tasks without counting the survivors made a
+// milestone in which nothing was built and nothing was verified render `[v]` —
+// while computeOverallStatus called the same data "Complete".
+func TestAllWithdrawnMilestoneDoesNotReadVerified(t *testing.T) {
+	all := parseMilestones("### M1: Dropped\n- [-] P1-M1-1: a\n- [-] P1-M1-2: b\n")[0]
+	if milestoneAllVerified(all) {
+		t.Error("a milestone where nothing was built reads as verified")
+	}
+	if !milestoneAllDone(all) {
+		t.Error("an all-withdrawn milestone has nothing outstanding; the loop must not stall on it")
+	}
+	if got := milestoneStatusIcon(all, false); got != "[-]" {
+		t.Errorf("icon = %q, want [-] — done and verified both claim work happened", got)
+	}
+
+	// The control: one live verified task and the milestone is genuinely
+	// verified again.
+	mixed := parseMilestones("### M1: Mixed\n- [v] P1-M1-1: a\n- [-] P1-M1-2: b\n")[0]
+	if !milestoneAllVerified(mixed) {
+		t.Error("a withdrawn task made a genuinely verified milestone read unverified")
+	}
+	if got := milestoneStatusIcon(mixed, false); got != "[v]" {
+		t.Errorf("mixed icon = %q, want [v]", got)
+	}
+}
+
+// Listing mode is the half an agent reads. Withdrawn tasks sit inside
+// TasksTotal, so `TasksTotal - TasksVerified` counted deliberately dropped work
+// as implementations awaiting verification — and the listing said nothing about
+// the withdrawals at all, while the detail view reported both correctly.
+func TestListingViewAccountsForWithdrawnTasks(t *testing.T) {
+	ms := parseMilestones("### M1: Work\n- [x] P1-M1-1: shipped\n- [-] P1-M1-2: dropped\n- [-] P1-M1-3: also dropped\n")
+	report := statusReport{
+		Feature: "Demo Product", OverallStatus: "Complete", TaskCounts: map[string]int{},
+		Features: []featureSummary{{
+			Name: "Demo", Slug: "demo", Status: "Complete",
+			TasksDone: 1, TasksVerified: 0, TasksWithdrawn: 2, TasksTotal: 3, Milestones: ms,
+		}},
+	}
+	out := renderStatus(report, false, false)
+
+	if !strings.Contains(out, "2 withdrawn") {
+		t.Errorf("listing mode says nothing about withdrawn work, so total-minus-done is wrong by two:\n%s", out)
+	}
+	if !strings.Contains(out, "⚠ 1 task(s) implemented but never verified") {
+		t.Errorf("the never-verified count is not the number of [x] tasks:\n%s", out)
+	}
+	if strings.Contains(out, "3 task(s) implemented but never verified") {
+		t.Errorf("withdrawn tasks were counted as implementations awaiting verification:\n%s", out)
+	}
+
+	// …and the detail view has to agree with it, since disagreeing views are
+	// what made this invisible.
+	if n := len(doneNotVerifiedTasks(ms)); n != 1 {
+		t.Errorf("doneNotVerifiedTasks = %d, want 1 — the two views disagree", n)
+	}
+}
+
+// The scope guard compared raw marker bytes, so a case-only rewrite read as a
+// state change: it reverted a line, amended that revert into the agent's
+// commit, and injected a steering correction for a flip that never happened.
+func TestScopeGuardIgnoresACaseOnlyMarkerRewrite(t *testing.T) {
+	for _, tc := range []struct{ before, after string }{
+		{"v", "V"}, {"V", "v"}, {"x", "X"}, {"X", "x"},
+	} {
+		pre := parseProgressSnapshot("P", "### M1: A\n- [x] P1-M1-1: a\n### M2: B\n- ["+tc.before+"] P1-M2-1: b\n")
+		post := parseProgressSnapshot("P", "### M1: A\n- [x] P1-M1-1: a\n### M2: B\n- ["+tc.after+"] P1-M2-1: b\n")
+		if v := diffScopeViolations(pre, post, "M1"); len(v) != 0 {
+			t.Errorf("[%s] → [%s] read as an out-of-scope flip: %+v", tc.before, tc.after, v)
+		}
+	}
+
+	// The control: a real state change in a non-target milestone is still a
+	// violation, so the fix cannot have simply switched the rule off.
+	pre := parseProgressSnapshot("P", "### M1: A\n- [x] P1-M1-1: a\n### M2: B\n- [ ] P1-M2-1: b\n")
+	post := parseProgressSnapshot("P", "### M1: A\n- [x] P1-M1-1: a\n### M2: B\n- [x] P1-M2-1: b\n")
+	if v := diffScopeViolations(pre, post, "M1"); len(v) != 1 {
+		t.Errorf("a genuine out-of-scope flip is no longer caught: %+v", v)
+	}
+
+	// Two markers Belmont cannot read are not "the same" just because both are
+	// unknown — swapping one for another is still an edit.
+	preU := parseProgressSnapshot("P", "### M1: A\n- [x] P1-M1-1: a\n### M2: B\n- [?] P1-M2-1: b\n")
+	postU := parseProgressSnapshot("P", "### M1: A\n- [x] P1-M1-1: a\n### M2: B\n- [~] P1-M2-1: b\n")
+	if v := diffScopeViolations(preU, postU, "M1"); len(v) != 1 {
+		t.Errorf("an unreadable marker was swapped for a different one unnoticed: %+v", v)
 	}
 }

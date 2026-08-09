@@ -29,15 +29,36 @@ func milestoneAllDone(m milestone) bool {
 	return true
 }
 
+// milestoneAllVerified requires at least one LIVE task, for the same reason
+// the empty-milestone guard exists: verified is the strongest claim Belmont
+// makes and it must not be true vacuously. A milestone whose every task was
+// withdrawn has had nothing built and nothing verified, and skipping the
+// withdrawn ones without counting the survivors made it report `[v]` — while
+// computeOverallStatus called the same data "Complete". Nothing outstanding is
+// milestoneAllDone's business; this is a claim about verification.
 func milestoneAllVerified(m milestone) bool {
-	if len(m.Tasks) == 0 {
-		return false
-	}
+	live := 0
 	for _, t := range m.Tasks {
 		if t.Status == taskWithdrawn {
 			continue
 		}
+		live++
 		if t.Status != taskVerified {
+			return false
+		}
+	}
+	return live > 0
+}
+
+// milestoneAllWithdrawn reports a milestone with tasks, every one of them
+// withdrawn. It is resolved rather than done: nothing is outstanding, and
+// nothing was built either.
+func milestoneAllWithdrawn(m milestone) bool {
+	if len(m.Tasks) == 0 {
+		return false
+	}
+	for _, t := range m.Tasks {
+		if t.Status != taskWithdrawn {
 			return false
 		}
 	}
@@ -251,6 +272,27 @@ func markerRank(marker string) (int, bool) {
 func markerIsVerified(marker string) bool {
 	st, ok := canonicalMarker(marker)
 	return ok && st == taskVerified
+}
+
+// markersDiffer reports whether two raw markers mean different things.
+//
+// Not `a != b`. Once the letter markers became case-insensitive, a bare byte
+// comparison saw `[v]` → `[V]` as a state change: the scope guard read it as an
+// out-of-scope flip, reverted a line the agent had not meaningfully edited,
+// amended that into its commit and injected a steering correction for a flip
+// that never happened. The same trap as everywhere else in this file — a reader
+// that classifies markers with its own rule instead of canonicalMarker's.
+//
+// Two markers Belmont cannot read fall back to a byte comparison: they both
+// parse to taskUnknown, and calling `[?]` → `[@]` "the same" would let an
+// unreadable marker be swapped for a different unreadable marker unnoticed.
+func markersDiffer(a, b string) bool {
+	sa, oka := canonicalMarker(a)
+	sb, okb := canonicalMarker(b)
+	if !oka || !okb {
+		return a != b
+	}
+	return sa != sb
 }
 
 // isSectionBreak reports whether a line ends the milestones region.

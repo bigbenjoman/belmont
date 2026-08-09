@@ -90,7 +90,7 @@ func TestEveryVerifiedMarkerIsVisibleToEvidenceGuard(t *testing.T) {
 			continue
 		}
 		// And the revert must actually rewrite the line, not silently no-op.
-		rebuilt := revertEvidenceMissing(post, pre, missing)
+		rebuilt := revertEvidenceMissing(post, missing)
 		if strings.Contains(rebuilt, "["+m+"]") {
 			t.Errorf("marker [%s]: revertEvidenceMissing left the line untouched — the guard logs a revert it did not perform", m)
 		}

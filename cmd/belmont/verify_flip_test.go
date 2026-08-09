@@ -63,13 +63,22 @@ func TestStatusWarnsOnDoneNotVerified(t *testing.T) {
 	if !strings.Contains(out, "belmont reverify --feature demo") {
 		t.Errorf("status must name the recovery command with the SLUG (the only recovery, and it appears in no skill):\n%s", out)
 	}
+	// Scope the assertion to the warning BLOCK. Grepping the whole report is
+	// satisfied by the per-task listing seventy lines above it, so deleting the
+	// loop that names each unverified task left this test green — the one thing
+	// it exists to pin.
+	_, warn, found := strings.Cut(out, "implemented but never verified")
+	if !found {
+		t.Fatalf("no done-not-verified block in the report:\n%s", out)
+	}
+	warn, _, _ = strings.Cut(warn, "\n\n")
 	for _, id := range []string{"P1-M2-1", "P1-M2-2"} {
-		if !strings.Contains(out, id) {
-			t.Errorf("status should name the unverified task %s:\n%s", id, out)
+		if !strings.Contains(warn, id) {
+			t.Errorf("the warning block does not name %s:\n%s", id, warn)
 		}
 	}
-	if strings.Contains(out, "P1-M1-1") && strings.Contains(out, "never verified\n  [x] P1-M1-1") {
-		t.Error("an already-verified task was listed as unverified")
+	if strings.Contains(warn, "P1-M1-1") {
+		t.Errorf("an already-verified task was listed as unverified:\n%s", warn)
 	}
 }
 
@@ -166,14 +175,18 @@ func TestListingSurfacesAllDiagnostics(t *testing.T) {
 		}},
 	}
 	out := renderStatus(report, false, false)
-	if !strings.Contains(out, "unrecognised task marker") {
-		t.Errorf("listing mode hides unrecognised markers (#27):\n%s", out)
-	}
-	if !strings.Contains(out, "outside any milestone") {
-		t.Errorf("listing mode hides orphaned task lines (#31):\n%s", out)
-	}
-	if !strings.Contains(out, "--feature demo") {
-		t.Errorf("listing warnings must point at the detail view:\n%s", out)
+	// Each warning is asserted as a whole line, count included. Three separate
+	// warnings in this view emit `--feature demo`, so a bare grep for that
+	// string was satisfied by whichever one still worked — deleting the pointer
+	// from the orphan warning alone left the test green. The counts matter too:
+	// without them a hardcoded number passes.
+	for _, want := range []string{
+		"⚠ 1 unrecognised task marker(s) — excluded from counts, never scheduled; run: belmont status --feature demo",
+		"⚠ 3 task line(s) outside any milestone — not counted, never scheduled; run: belmont status --feature demo",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("listing mode is missing the line %q:\n%s", want, out)
+		}
 	}
 
 	// Control: a clean feature stays silent.

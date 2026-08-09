@@ -212,8 +212,14 @@ func TestCreateWorktreeIfNeededSeedsFreshWorktree(t *testing.T) {
 	if err := copyBelmontStateToWorktree(root, wtPath, "demo"); err != nil {
 		t.Fatalf("copy: %v", err)
 	}
+	// Asserted, not skipped. A t.Skip here made the test unfailable: correct
+	// behaviour fell off the end having checked only "no error", and the
+	// behaviour it was meant to detect took the Skip — both green. That left
+	// TestCreateWorktreeIfNeededResumeIsNoOp with no counterweight, so a
+	// createWorktreeIfNeeded that no-opped in BOTH directions passed both tests.
 	if got := readFile(t, wtProgress); strings.Contains(got, "- [x] P1-M2-1") {
-		t.Skip("copyBelmontStateToWorktree no longer replaces PROGRESS.md — the resume guard may now be redundant")
+		t.Fatalf("seeding no longer replaces PROGRESS.md, so the resume guard in "+
+			"createWorktreeIfNeeded is guarding nothing — re-derive #29 before trusting either test:\n%s", got)
 	}
 }
 
