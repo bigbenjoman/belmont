@@ -249,15 +249,22 @@ func auditVerifiedWithoutEvidence(root, progress string) []repairFinding {
 			if t.Line-1 >= 0 && t.Line-1 < len(lines) {
 				raw = lines[t.Line-1]
 			}
+			named, _ := taskIDNamedMilestone(t.ID)
 			out = append(out, repairFinding{
 				Rule:      ruleVerifiedWithoutEvidence,
 				TaskID:    t.ID,
 				Milestone: m.ID,
-				Marker:    t.Marker,
-				Text:      t.Name,
-				Line:      t.Line,
-				Raw:       raw,
-				Evidence:  commitEvidence{Checked: true},
+				// Carries NamedMilestone like every other finding. One line can
+				// be BOTH a parse finding and an audit finding — a `[v]` filed
+				// under the wrong milestone that no commit names is both — and
+				// whichever of the two the gate looks up has to hold enough to
+				// validate a move.
+				NamedMilestone: named,
+				Marker:         t.Marker,
+				Text:           t.Name,
+				Line:           t.Line,
+				Raw:            raw,
+				Evidence:       commitEvidence{Checked: true},
 			})
 		}
 	}
@@ -442,8 +449,17 @@ func needsReview(findings []repairFinding, settled []repairPlan) []repairFinding
 // `content` is the current PROGRESS.md, needed to answer questions about the
 // destination of a move.
 func validateRepairPlans(content string, findings []repairFinding, actions []repairAction) ([]repairPlan, []repairRejection) {
+	// FIRST wins. A line can produce two findings — a `[v]` filed under the
+	// wrong milestone that no commit names is both a cross-milestone parse
+	// finding and a verified-without-evidence audit finding — and the callers
+	// pass the parse findings first because those are the ones carrying the
+	// structural problem. Last-wins silently replaced them with the audit entry
+	// and then refused a legitimate move for the wrong reason.
 	byLine := map[int]repairFinding{}
 	for _, f := range findings {
+		if _, seen := byLine[f.Line]; seen {
+			continue
+		}
 		byLine[f.Line] = f
 	}
 	milestoneIDs := map[string]bool{}
