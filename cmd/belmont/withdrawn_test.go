@@ -369,3 +369,73 @@ func TestScopeGuardIgnoresACaseOnlyMarkerRewrite(t *testing.T) {
 		t.Errorf("an unreadable marker was swapped for a different one unnoticed: %+v", v)
 	}
 }
+
+// `inRange` comes from parseMilestones (strict header regex) and
+// `pendingInRange` from pendingTasksInRange (lenient, emoji-tolerant). Any
+// header the lenient one accepts and the strict one rejects gave no milestones
+// and pending work — and indexing the last element of an empty slice crashed
+// `belmont auto` with a Go stack trace on iteration one.
+func TestAutoDoesNotCrashWhenNoMilestoneParses(t *testing.T) {
+	doc := "# P\n\n### ✅ M1: Emoji header the parser rejects\n- [ ] P1-M1-1: work\n"
+	root := t.TempDir()
+	writeFeature(t, root, "demo", doc)
+
+	if ms := parseMilestones(doc); len(ms) != 0 {
+		t.Skip("the parser now accepts this header; the disagreement this test guards is gone")
+	}
+	if !pendingTasksInRange(root, "demo", "", "") {
+		t.Fatal("fixture: the lenient reader must see pending work, or there is no disagreement to test")
+	}
+
+	report := statusReport{Milestones: nil, TaskCounts: map[string]int{}, OverallStatus: "Not Started"}
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("belmont auto crashed instead of reporting the problem: %v", r)
+		}
+	}()
+	got := decideLoopActionSmart(report, nil, loopConfig{Feature: "demo", Root: root, MaxIterations: 5},
+		false, false, true, false, map[string]*milestoneLoopState{})
+	if got == nil || got.Type != actionPause {
+		t.Fatalf("action = %+v, want a PAUSE naming the unparseable header", got)
+	}
+	if !strings.Contains(got.Reason, "milestone") {
+		t.Errorf("the pause reason does not say what is wrong: %s", got.Reason)
+	}
+}
+
+// A `[!]` blocker beating master's `[x]` is the fourth of four directions in
+// which a decision beats progress. Three of them warned; this one was silent.
+func TestMergeProgressStateReportsWhatABlockerDisplaced(t *testing.T) {
+	got, warnings := mergeProgressState("### M3: W\n- [x] P1-M3-1: x\n", "### M3: W\n- [!] P1-M3-1: x\n")
+	if !strings.Contains(got, "- [!] P1-M3-1") {
+		t.Errorf("the blocker did not win:\n%s", got)
+	}
+	if len(warnings) == 0 {
+		t.Error("master's [x] was discarded without telling anyone")
+	}
+	// Control: nothing lost, nothing said.
+	if _, w := mergeProgressState("### M3: W\n- [ ] P1-M3-1: x\n", "### M3: W\n- [!] P1-M3-1: x\n"); len(w) != 0 {
+		t.Errorf("warned when a blocker displaced only a todo: %v", w)
+	}
+}
+
+// parseSectionLines was the last reader still ending a section on a TRIMMED
+// "## " — the exact rule issue #31 removed everywhere else. It made the writer
+// (appendDecisionLogEntry, which uses isSectionBreak) and the reader disagree.
+func TestDecisionsLogReaderUsesTheSameBoundaryAsTheWriter(t *testing.T) {
+	doc := "# P\n\n## Decisions Log\n\n- chose sqlite\n\n  ## quoted heading inside a decision's body\n\n- chose bun over node\n"
+	got := parseDecisions(doc, 10)
+	if len(got) != 2 {
+		t.Errorf("an indented heading truncated the log: %v", got)
+	}
+	// A column-zero heading still ends it.
+	doc2 := "# P\n\n## Decisions Log\n\n- chose sqlite\n\n## Session History\n\n- not a decision\n"
+	if got := parseDecisions(doc2, 10); len(got) != 1 {
+		t.Errorf("a real section break no longer ends the log: %v", got)
+	}
+	// …and so does a bare `##`, which the trimmed test did not recognise.
+	doc3 := "# P\n\n## Decisions Log\n\n- chose sqlite\n\n##\n\n- not a decision\n"
+	if got := parseDecisions(doc3, 10); len(got) != 1 {
+		t.Errorf("a bare ## did not end the log: %v", got)
+	}
+}

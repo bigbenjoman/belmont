@@ -222,6 +222,33 @@ func readActiveAutoJSONOrNil(root string) *autoJSON {
 	return &aj
 }
 
+// diagnosticListCap bounds the per-task lines each diagnostic prints.
+//
+// The COUNT is always exact and always shown; only the enumeration is capped.
+// `belmont status --feature` is the text an agent reads every loop iteration
+// (#26 exists to shrink that payload), and these lists are O(tasks) on exactly
+// the projects that triggered this PR — the reporting project had 85 orphans.
+// Ten lines plus the total is enough to know the file is wrong and roughly
+// where; `belmont validate` and `belmont repair` enumerate all of them.
+const diagnosticListCap = 10
+
+// writeDiagnosticLines prints "[marker] PROGRESS.md:<line> — <label>" per task,
+// capped, with an honest tail. It never truncates silently: the dropped count
+// is always stated, which is the same rule as everything else in this file.
+func writeDiagnosticLines(sb *strings.Builder, tasks []task) {
+	for i, t := range tasks {
+		if i == diagnosticListCap {
+			fmt.Fprintf(sb, "  … and %d more\n", len(tasks)-diagnosticListCap)
+			return
+		}
+		label := t.ID
+		if label == "" {
+			label = t.Name
+		}
+		fmt.Fprintf(sb, "  [%s] PROGRESS.md:%d — %s\n", t.Marker, t.Line, label)
+	}
+}
+
 func renderStatus(report statusReport, color bool, showArchived bool) string {
 	// Feature listing mode (default when no --feature specified)
 	if report.Features != nil {
@@ -310,13 +337,7 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 	if unknown := unknownMarkerTasks(report.Milestones); len(unknown) > 0 {
 		sb.WriteString(fmt.Sprintf("%sUnrecognised task markers (%d) — excluded from counts, never scheduled:%s\n",
 			warnPrefix(color), len(unknown), warnSuffix(color)))
-		for _, t := range unknown {
-			label := t.ID
-			if label == "" {
-				label = t.Name
-			}
-			sb.WriteString(fmt.Sprintf("  [%s] PROGRESS.md:%d — %s\n", t.Marker, t.Line, label))
-		}
+		writeDiagnosticLines(&sb, unknown)
 		sb.WriteString("  Expected one of [ ] [>] [x] [v] [!] [-] (letters are case-insensitive). Deliberately dropped work is [-] withdrawn, with the reason in ## Decisions Log.\n")
 		sb.WriteString("\n")
 	}
@@ -327,13 +348,7 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 	if len(report.Orphans) > 0 {
 		sb.WriteString(fmt.Sprintf("%s%d task line(s) outside any milestone — not counted, never scheduled:%s\n",
 			warnPrefix(color), len(report.Orphans), warnSuffix(color)))
-		for _, t := range report.Orphans {
-			label := t.ID
-			if label == "" {
-				label = t.Name
-			}
-			sb.WriteString(fmt.Sprintf("  [%s] PROGRESS.md:%d — %s\n", t.Marker, t.Line, label))
-		}
+		writeDiagnosticLines(&sb, report.Orphans)
 		sb.WriteString("  A `## ` heading at column zero ends the milestones region. Move these under their `### M<n>:` heading, or indent the heading above them.\n\n")
 	}
 
@@ -341,13 +356,17 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 	// of a dropped `[v]` flip: verification ran, the report said so, and the
 	// write never happened. Every stop condition in the product treats done as
 	// finished, so without this line the run ends reporting success. Naming
-	// `belmont reverify` matters — it is the only recovery, and it appears in
-	// no skill or partial. See issue #30.
+	// `belmont reverify` matters — it is the only recovery for this state, and
+	// naming it here is what makes it discoverable. See issue #30.
 	if report.OverallStatus == "Complete" {
 		if dnv := doneNotVerifiedTasks(report.Milestones); len(dnv) > 0 {
 			sb.WriteString(fmt.Sprintf("%s%d task(s) implemented but never verified — this feature reads Complete, not Verified:%s\n",
 				warnPrefix(color), len(dnv), warnSuffix(color)))
-			for _, t := range dnv {
+			for i, t := range dnv {
+				if i == diagnosticListCap {
+					sb.WriteString(fmt.Sprintf("  … and %d more\n", len(dnv)-diagnosticListCap))
+					break
+				}
 				label := t.ID
 				if label == "" {
 					label = t.Name

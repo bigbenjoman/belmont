@@ -570,8 +570,11 @@ Indentation is load-bearing: "  ## Foo" indented under a task is that task's
 body, not a heading.
 
 needs_evidence — do not guess and do not rely on memory. Check the repository:
-  git log --oneline --all --grep '<task-id>'    does a commit carry this task?
-  then read the code it describes and its tests.
+  belmont repair --dry-run     does a commit carry each task, and what else is wrong
+  then read the code each task describes, and its tests.
+Prefer that over a hand-rolled "git log --grep": --grep is an unanchored
+substring match, so P1-1 is credited by a commit for P1-12, and --all searches
+every ref including dead branches.
 tech_plan — milestone structure is immutable outside /belmont:tech-plan, and
   runScopeGuard reverts an agent that edits it anyway. Run that skill.`
 
@@ -888,6 +891,17 @@ type commitEvidence struct {
 	Found   bool   `json:"found"`
 	SHA     string `json:"sha,omitempty"`
 	Subject string `json:"subject,omitempty"`
+	// Reverting is set when the newest commit naming the task is a revert of
+	// one. A commit message mentioning a task ID is evidence that SOMETHING
+	// happened, not that the work stands — and `Revert "P1-M1-1: add X"` is git
+	// saying in its own generated words that it does not. That is the one case
+	// where the mechanical tier can tell, so it declines and sends the finding
+	// to the review tier instead of writing [x] over work that was taken out.
+	//
+	// A hand-written "Descope P1-M1-2" is the same hazard and cannot be
+	// detected this way. That is why every applied change prints the commit it
+	// relied on and nothing is committed for you.
+	Reverting bool `json:"reverting,omitempty"`
 }
 
 // isGitWorkTree reports whether root is inside a git working tree. Repair asks
@@ -935,10 +949,17 @@ func lookupCommitEvidence(root, taskID, sinceRef string) commitEvidence {
 		ev.Found = true
 		ev.SHA = strings.TrimSpace(strings.TrimLeft(fields[0], "\n"))
 		ev.Subject = strings.TrimSpace(fields[1])
+		// `git log` walks newest-first, so this is the most recent thing said
+		// about the task. If that is a revert, the task's state is not settled.
+		ev.Reverting = revertSubjectRe.MatchString(ev.Subject)
 		return ev
 	}
 	return ev
 }
+
+// revertSubjectRe matches the subject git generates for `git revert`, in both
+// the quoted form and the bare one people write by hand.
+var revertSubjectRe = regexp.MustCompile(`^[Rr]evert\b`)
 
 func shortSHA(sha string) string {
 	if len(sha) > 8 {

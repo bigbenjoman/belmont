@@ -92,6 +92,26 @@ func decideLoopActionSmart(report statusReport, history []historyEntry, cfg loop
 		}
 		// All milestones marked done — but verify against actual task counts (range-scoped)
 		if pendingInRange {
+			// `inRange` and `pendingInRange` come from two different answers to
+			// "what starts a milestone": parseMilestones matches
+			// `^###\s+M(\d+):` and pendingTasksInRange matches a lenient,
+			// case-insensitive, emoji-tolerant variant. Any header the lenient
+			// one accepts and the strict one rejects — `### ✅ M1: Name` is the
+			// live example — gives no milestones and pending work, and indexing
+			// the last element of an empty slice CRASHED the loop with a Go
+			// stack trace on iteration one.
+			//
+			// Pause and say what is wrong. Belmont cannot attribute the pending
+			// work to a milestone it cannot parse, and guessing is what this
+			// whole area exists to stop.
+			if len(inRange) == 0 {
+				return &loopAction{
+					Type: actionPause,
+					Reason: "PROGRESS.md has outstanding tasks but no milestone Belmont can parse in range. " +
+						"A milestone header must be `### M<n>: Name` at column zero, with no emoji — " +
+						"`belmont validate` and `belmont status` will show what is there.",
+				}
+			}
 			// State drift: milestones marked done but tasks still pending within range
 			lastMS := inRange[len(inRange)-1]
 			if fwlupInRange {

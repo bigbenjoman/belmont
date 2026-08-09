@@ -11,7 +11,7 @@ This is the mirror of [`auto-mode/verify-evidence.md`](../auto-mode/verify-evide
 - **The flip is recorded before the report is written**, on every outcome — including a clean ALL PASSED run with no follow-ups.
 - **The report states what was written, re-read from disk.** Not what the status implies.
 - **`Complete` is never treated as finished.** Only `Verified` is. `computeOverallStatus` returns `"Complete"` when every task is `[x]` **or** `[v]`, so the two are indistinguishable to any consumer that only reads the status string.
-- **`belmont status` says so out loud** when a feature reads Complete with unverified tasks, and names `belmont reverify` — the only recovery, which appears in no skill or partial.
+- **`belmont status` says so out loud** when a feature reads Complete with unverified tasks, and names `belmont reverify` — the only recovery. It appeared in no skill or partial when this entry was written; this branch added it to `verify.md`, `status.md`, `loop.md`, `repair.md` and `_partials/milestone-immutability.md`, so the naming in `status` is now reinforced rather than the sole mention.
 
 ## How it's enforced
 

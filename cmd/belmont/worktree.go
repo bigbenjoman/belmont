@@ -639,7 +639,16 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			continue
 		}
 		if wtState == taskBlocked {
-			continue // already blocked here; leave the line as written
+			// Already blocked here; leave the line as written. Master's more
+			// advanced state is being discarded, and this is the fourth of the
+			// four directions in which a decision beats progress — it warned in
+			// three of them and was silent in this one.
+			if msState != taskTodo && msState != taskBlocked {
+				warnings = append(warnings, fmt.Sprintf(
+					"task %s is blocked here but [%s] on main — the blocker wins, so that state was not merged",
+					id, mt.marker))
+			}
+			continue
 		}
 		if msState == taskBlocked {
 			if wtState != taskTodo {

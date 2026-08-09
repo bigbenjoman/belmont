@@ -631,11 +631,24 @@ func parseSectionLines(doc, header string) []string {
 	lines := strings.Split(rest, "\n")
 	var results []string
 	for _, line := range lines[1:] {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "## ") {
+		// isSectionBreak, not a trimmed prefix test. This is the reader behind
+		// `belmont status`'s Decisions Log, and it was the last place still
+		// answering "where does this section end?" with its own rule: an
+		// indented `##` quoted inside a decision entry truncated the log, and a
+		// bare `##` or `##` + tab did not end it at all. `appendDecisionLogEntry`
+		// writes to the boundary this function now reads. See issue #31.
+		if isSectionBreak(line) {
 			break
 		}
+		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
+			continue
+		}
+		// A heading inside the section is structure, not an entry. Before the
+		// boundary moved to isSectionBreak an indented `##` ended the section
+		// outright; now it stays, and listing it as a decision would just move
+		// the noise from one place to another.
+		if strings.HasPrefix(trimmed, "#") {
 			continue
 		}
 		if strings.Contains(strings.ToLower(trimmed), "none") {

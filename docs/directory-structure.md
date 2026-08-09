@@ -81,7 +81,8 @@ your-project/
 │           │   └── SKILL.md  (+ references/, agents/openai.yaml)
 │           └── ...              # one folder per skill: working-backwards, product-plan, tech-plan,
 │                                # next, debug, debug-auto, debug-manual, status, review-plans,
-│                                # codex-plan-apply, note, cleanup, reset
+│                                # repair, codex-plan-apply, note, cleanup, reset
+│                                # (loop is Claude-only and is NOT here — see below)
 ├── .belmont/                    # Planning & state (commit to share with team)
 │   ├── PR_FAQ.md
 │   ├── PRD.md                   # Living spec (no status markers — purely requirements)

@@ -572,3 +572,188 @@ func TestRepairBriefAdaptsForPromptRewritingTools(t *testing.T) {
 		t.Error("claude's prompt was rewritten; it accepts the slash form verbatim")
 	}
 }
+
+// A preview that reports different work from the real run is worse than no
+// preview. --dry-run used to list every finding as needing a code read,
+// including the ones the commit log already answered, because it skipped the
+// mechanical tier's own output entirely.
+func TestRepairDryRunReportsTheSameWorkAsTheRealRun(t *testing.T) {
+	doc := "### M1: Work\n- [?] P1-M1-1: shipped\n- [?] P1-M1-2: never touched\n"
+	root := gitFixture(t, doc, "P1-M1-1: implement the shipped thing")
+
+	findings, _ := attachCommitEvidence(root, collectRepairFindings(doc))
+	settled := mechanicalRepairs(findings)
+	if len(settled) != 1 {
+		t.Fatalf("fixture: mechanical tier settled %d, want 1", len(settled))
+	}
+	// What the preview says is left…
+	previewLeft := needsReview(findings, settled)
+	// …must equal what the real run leaves after writing.
+	applied, _, _ := applyRepairPlans(doc, settled, "2026-08-09")
+	realLeft := collectRepairFindings(applied)
+
+	if len(previewLeft) != len(realLeft) {
+		t.Fatalf("preview says %d finding(s) remain, the real run leaves %d", len(previewLeft), len(realLeft))
+	}
+	for i := range previewLeft {
+		if previewLeft[i].TaskID != realLeft[i].TaskID {
+			t.Errorf("finding %d: preview %q, real run %q", i, previewLeft[i].TaskID, realLeft[i].TaskID)
+		}
+	}
+}
+
+// Applying a proposal rebuilds the WHOLE file and writes it back, so a stale
+// snapshot silently reverts anything edited in the meantime — and on the agent
+// path "the meantime" is a subprocess that runs for minutes.
+//
+// This asserts the outcome end to end: the hand edit survives and the untouched
+// finding is still repaired. The mechanism has two halves — runRepairCmd
+// re-reads PROGRESS.md after the review tier returns, and applyRepairPlans
+// refuses any plan whose line no longer matches Finding.Raw. The second half is
+// pinned directly by TestRepairSkipsALineThatChangedSinceTheScan; without the
+// first, it would be comparing a snapshot against itself and could never fire.
+func TestRepairDoesNotOverwriteAConcurrentEdit(t *testing.T) {
+	root := gitFixture(t, "### M1: Work\n- [?] P1-M1-1: as scanned\n- [?] P1-M1-2: untouched\n")
+	progressPath := filepath.Join(root, ".belmont", "features", "demo", "PROGRESS.md")
+
+	proposal := filepath.Join(root, "proposal.json")
+	if err := os.WriteFile(proposal, []byte(`{"repairs":[
+		{"line":2,"task_id":"P1-M1-1","action":"withdraw","reason":"cut"},
+		{"line":3,"task_id":"P1-M1-2","action":"withdraw","reason":"also cut"}]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Somebody edits line 2 after the scan the proposal was written against.
+	if err := os.WriteFile(progressPath,
+		[]byte("### M1: Work\n- [x] P1-M1-1: a human fixed this by hand\n- [?] P1-M1-2: untouched\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runRepairCmd([]string{"--root", root, "--feature", "demo", "--apply-proposal", proposal, "--yes"}); err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	got := progressOf(t, root)
+	if !strings.Contains(got, "- [x] P1-M1-1: a human fixed this by hand") {
+		t.Errorf("repair overwrote an edit made while the agent was running:\n%s", got)
+	}
+	if !strings.Contains(got, "- [-] P1-M1-2") {
+		t.Errorf("the untouched line's repair was not applied:\n%s", got)
+	}
+}
+
+// A commit message mentioning a task ID proves something happened, not that the
+// work stands. `Revert "P1-M1-1: add X"` is git saying so in its own generated
+// words — the one case the log settles in the other direction.
+func TestRepairDoesNotTreatARevertAsEvidence(t *testing.T) {
+	root := gitFixture(t,
+		"### M1: Work\n- [?] P1-M1-1: the admin route\n",
+		"P1-M1-1: add the admin route",
+		`Revert "P1-M1-1: add the admin route"`)
+
+	findings, _ := attachCommitEvidence(root, collectRepairFindings(progressOf(t, root)))
+	if !findings[0].Evidence.Found {
+		t.Fatal("the revert commit was not even found")
+	}
+	if !findings[0].Evidence.Reverting {
+		t.Errorf("the newest commit naming the task is a revert and was not recognised as one: %+v", findings[0].Evidence)
+	}
+	if plans := mechanicalRepairs(findings); len(plans) != 0 {
+		t.Errorf("repair marked reverted work as done: %+v", plans)
+	}
+
+	// The control: without the revert on top, the same commit does settle it.
+	plain := gitFixture(t,
+		"### M1: Work\n- [?] P1-M1-1: the admin route\n",
+		"P1-M1-1: add the admin route")
+	pf, _ := attachCommitEvidence(plain, collectRepairFindings(progressOf(t, plain)))
+	if len(mechanicalRepairs(pf)) != 1 {
+		t.Error("the revert check swallowed a legitimate piece of evidence")
+	}
+}
+
+// validateRepairPlans builds its "which IDs does this milestone already hold"
+// map from the pre-apply document. Without claiming IDs as it accepts actions,
+// two moves of the same ID into the same milestone both pass — neither is there
+// yet — and the result is the duplicate the check exists to prevent.
+func TestRepairRefusesASecondMoveThatWouldDuplicateAnID(t *testing.T) {
+	doc := "### M1: A\n- [?] P1-M3-9: first copy\n- [?] P1-M3-9: second copy\n\n### M3: Dest\n- [ ] P1-M3-1: other\n"
+	findings := collectRepairFindings(doc)
+	if len(findings) != 2 {
+		t.Fatalf("fixture: %d findings, want 2", len(findings))
+	}
+	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 2, TaskID: "P1-M3-9", Action: repairMoveMilestone, Reason: "belongs to M3"},
+		{Line: 3, TaskID: "P1-M3-9", Action: repairMoveMilestone, Reason: "belongs to M3"},
+	})
+	if len(plans) != 1 || len(rejected) != 1 {
+		t.Fatalf("accepted %d move(s) of the same ID into one milestone, rejected %d", len(plans), len(rejected))
+	}
+	if !strings.Contains(rejected[0].Reason, "ambiguous") {
+		t.Errorf("refused for the wrong reason: %s", rejected[0].Reason)
+	}
+}
+
+// An action that names a task ID must be refused when the line it targets has
+// none — otherwise an agent off by one line has `withdraw` applied to whatever
+// ID-less finding sits there, marker and Decisions Log entry included.
+func TestRepairRefusesAnIDdActionAimedAtAnIDlessLine(t *testing.T) {
+	doc := "### M1: Work\n- [ ] P1-M1-1: real\n\n## Session History\n\n- [?] a bullet with no task ID\n"
+	findings := collectRepairFindings(doc)
+	if len(findings) != 1 || findings[0].TaskID != "" {
+		t.Fatalf("fixture: want one ID-less finding, got %+v", findings)
+	}
+	_, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: findings[0].Line, TaskID: "P1-M1-1", Action: repairWithdraw, Reason: "off by one"},
+	})
+	if len(rejected) != 1 {
+		t.Fatal("an action naming P1-M1-1 was applied to a line that holds no task ID")
+	}
+}
+
+// `## Decisions Log` is not always the last section. A milestone header is
+// deliberately not a section break, so scanning for one alone ran past
+// `### M1:` and appended the entry at EOF — inside the last milestone.
+func TestRepairWritesTheDecisionAboveTheMilestones(t *testing.T) {
+	doc := "# Progress\n\n## Decisions Log\n\n(none yet)\n\n## Milestones\n\n### M1: Work\n- [?] P1-M1-1: dropped\n"
+	findings := collectRepairFindings(doc)
+	plans, _ := validateRepairPlans(doc, findings,
+		[]repairAction{{Line: findings[0].Line, TaskID: "P1-M1-1", Action: repairWithdraw, Reason: "descoped"}})
+	got, _, _ := applyRepairPlans(doc, plans, "2026-08-09")
+
+	logIdx := strings.Index(got, "2026-08-09 — P1-M1-1 withdrawn: descoped")
+	if logIdx < 0 {
+		t.Fatalf("the reason was not recorded:\n%s", got)
+	}
+	if logIdx > strings.Index(got, "### M1: Work") {
+		t.Errorf("the decision landed below the milestone header, inside the milestone block:\n%s", got)
+	}
+	// …and the milestones still parse afterwards.
+	ms := parseMilestones(got)
+	if len(ms) != 1 || len(ms[0].Tasks) != 1 {
+		t.Errorf("the write disturbed the milestones region: %+v\n%s", ms, got)
+	}
+	// …and the reader that exists for the log can see the entry.
+	if d := parseDecisions(got, 10); len(d) != 1 {
+		t.Errorf("belmont status will not show the reason: %v", d)
+	}
+}
+
+// The report and the JSON must describe the same changes. A plan that was
+// skipped, or that writes nothing by definition, is not an applied change.
+func TestRepairReportsOnlyWhatItWrote(t *testing.T) {
+	doc := "### M1: Work\n- [?] P1-M1-1: a\n- [?] P1-M1-2: b\n"
+	findings := collectRepairFindings(doc)
+	plans, _ := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 2, TaskID: "P1-M1-1", Action: repairSetMarker, Marker: "x", Reason: "shipped"},
+		{Line: 3, TaskID: "P1-M1-2", Action: repairEscalate, Reason: "cannot tell"},
+	})
+	if len(plans) != 2 {
+		t.Fatalf("plans = %d, want 2", len(plans))
+	}
+	_, applied, _ := applyRepairPlans(doc, plans, "2026-08-09")
+	if len(applied) != 1 {
+		t.Fatalf("applied = %d, want 1 — an escalation writes nothing: %+v", len(applied), applied)
+	}
+	if applied[0].Action.Action != repairSetMarker {
+		t.Errorf("the wrong plan was reported as applied: %+v", applied[0])
+	}
+}

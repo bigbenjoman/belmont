@@ -31,6 +31,7 @@ belmont repair --feature my-feature       # Repair task states that no longer pa
 belmont repair --feature my-feature --dry-run          # Report findings + commit evidence, write nothing
 belmont repair --feature my-feature --mechanical-only  # Apply only what the commit log settles (no agent, no tokens)
 belmont repair --feature my-feature --yes # Apply reviewed proposals without prompting
+belmont repair --feature my-feature --apply-proposal fixes.json  # Validate + apply a proposal file
 belmont sync                             # Sync master PROGRESS.md with feature states (explicit only, no longer auto-hooked)
 belmont recover                          # List preserved worktrees from failed merges
 belmont recover --list                   # Same as above
@@ -92,8 +93,14 @@ What it will not do, whoever proposes it:
 - **Run against an ambiguous file.** A repeated `### M<n>:` heading makes every
   milestone-keyed lookup arbitrary; repair refuses, as both runtime guards do.
 
-Nothing is committed — review with `git diff` and commit yourself. Interactively,
-`/belmont:repair` runs the same two tiers with the CLI doing the mechanical half.
+Nothing is committed — review with `git diff` and commit yourself.
+
+`--apply-proposal FILE` validates and applies a proposal written by something
+else — the CLI-dispatched agent writes one, and `/belmont:repair` in a REPL
+writes one too rather than editing `PROGRESS.md` itself. That keeps the Go
+writer the only writer, so the bounds above are enforced rather than merely
+remembered. The JSON shape is `{"repairs": [{"line": N, "task_id": "...",
+"action": "...", "reason": "..."}]}`, with `line` as reported by `--dry-run`.
 
 ## Milestone-structure validation
 
