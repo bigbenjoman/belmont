@@ -290,9 +290,10 @@ func detectOrphanViolations(slug, progress string) []validationViolation {
 			label = t.Name
 		}
 		out = append(out, validationViolation{
-			Feature: slug,
-			TaskID:  t.ID,
-			Rule:    "task_outside_milestone",
+			Feature:  slug,
+			TaskID:   t.ID,
+			Rule:     "task_outside_milestone",
+			Severity: severityWarning,
 			Message: fmt.Sprintf(
 				"task line at PROGRESS.md:%d (%s) sits outside any milestone, so it is counted by nothing and never scheduled. A `## ` heading at column zero ends the milestones region — if this task is real, move it under its `### M<n>:` heading, or indent the heading above it so it reads as part of the preceding task's body.",
 				t.Line, label),
@@ -321,6 +322,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 				Milestone:     m.ID,
 				MilestoneName: m.Name,
 				Rule:          "duplicate_milestone_id",
+				Severity:      severityError,
 				Message: fmt.Sprintf(
 					"milestone %s appears more than once. Milestones are keyed by ID throughout, so a duplicate makes every lookup ambiguous — the scope guard and the evidence guard both refuse to run against it. Renumber one of them, or, if this is a session note, stop writing it in `### M<n>:` heading shape.",
 					m.ID),
@@ -337,6 +339,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 				Milestone:     m.ID,
 				MilestoneName: m.Name,
 				Rule:          "polish_milestone_name",
+				Severity:      severityError,
 				Message: fmt.Sprintf(
 					"milestone %s %q looks like a polish/follow-up catch-all. Follow-ups belong in their source milestone (the one that discovered them) as new `[ ]` tasks, not a dedicated milestone. Run `/belmont:tech-plan` to restructure.",
 					m.ID, m.Name),
@@ -359,6 +362,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 				MilestoneName: m.Name,
 				TaskID:        t.ID,
 				Rule:          "unrecognised_task_marker",
+				Severity:      severityError,
 				Message: fmt.Sprintf(
 					"unrecognised task marker %q at PROGRESS.md:%d (%s) — expected one of [ ] [>] [x] [v] [!]. Belmont will not guess a state for it: it is excluded from the counts and never offered as the next task. Fix the marker, or delete the line if the work no longer exists.",
 					"["+t.Marker+"]", t.Line, label),
@@ -383,6 +387,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 					MilestoneName: m.Name,
 					TaskID:        t.ID,
 					Rule:          "cross_milestone_task_id",
+					Severity:      severityError,
 					Message: fmt.Sprintf(
 						"task %q in milestone %s names milestone M%d in its ID. It belongs under M%d. Move it there — keeping it here is the dependency-graph lie that causes parallel merge conflicts.",
 						t.ID, m.ID, refNum, refNum),
@@ -500,7 +505,44 @@ type validationViolation struct {
 	MilestoneName string `json:"milestone_name"`
 	TaskID        string `json:"task_id,omitempty"`
 	Rule          string `json:"rule"`
+	Severity      string `json:"severity"`
 	Message       string `json:"message"`
+}
+
+// Violation severities.
+//
+// The split exists so upgrading Belmont cannot stop a run that worked
+// yesterday over something Belmont merely wants to tell you about. Only a file
+// Belmont genuinely cannot act on blocks:
+//
+//   - severityError — the loop cannot proceed correctly. An unrecognised
+//     marker makes its milestone permanently un-completable; colliding
+//     milestone IDs make every milestone-keyed lookup ambiguous, which turns
+//     the runtime guards off. Blocks `belmont auto`, exits 1.
+//   - severityWarning — real information that must not be lost, but nothing
+//     downstream is wrong. An orphaned task line is counted by nothing, which
+//     is worth saying loudly and is not worth refusing to run over: a `- [ ]`
+//     bullet in a retro is not work. Printed by `belmont status` and
+//     `belmont validate`, exits 0, `belmont auto` continues.
+//
+// `belmont validate --strict` exits 1 on warnings too, for CI.
+const (
+	severityError   = "error"
+	severityWarning = "warning"
+)
+
+// splitBySeverity partitions violations into blocking and advisory. Anything
+// without an explicit severity counts as blocking — a new rule that forgets to
+// set one fails loudly rather than being silently advisory.
+func splitBySeverity(violations []validationViolation) (blocking, advisory []validationViolation) {
+	for _, v := range violations {
+		if v.Severity == severityWarning {
+			advisory = append(advisory, v)
+			continue
+		}
+		blocking = append(blocking, v)
+	}
+	return blocking, advisory
 }
 
 // Matches milestone names that look like polish / follow-up catch-alls.
@@ -528,7 +570,25 @@ func renderValidationReport(w io.Writer, violations []validationViolation) {
 		fmt.Fprintln(w, "\033[32m✓ No milestone-structure violations found.\033[0m")
 		return
 	}
-	fmt.Fprintf(w, "\033[31m✗ %d violation(s) found:\033[0m\n\n", len(violations))
+	// Errors and warnings are reported separately, because only one of them
+	// stops anything. Printing them in one undifferentiated list is what makes
+	// an advisory finding look like a failed run.
+	blocking, advisory := splitBySeverity(violations)
+	if len(blocking) > 0 {
+		fmt.Fprintf(w, "\033[31m✗ %d violation(s) found:\033[0m\n\n", len(blocking))
+		renderViolationGroup(w, blocking)
+	}
+	if len(advisory) > 0 {
+		fmt.Fprintf(w, "\033[33m⚠ %d warning(s) — reported, not blocking:\033[0m\n\n", len(advisory))
+		renderViolationGroup(w, advisory)
+	}
+	if len(blocking) == 0 {
+		fmt.Fprintln(w, "\033[32m✓ No blocking violations.\033[0m")
+	}
+	fmt.Fprintln(w, "\033[2mRerun after fixing with `belmont validate`. See skills/belmont/_partials/milestone-immutability.md for the canonical rule.\033[0m")
+}
+
+func renderViolationGroup(w io.Writer, violations []validationViolation) {
 	// Group by feature → milestone for readability.
 	byFeat := map[string][]validationViolation{}
 	var featOrder []string
@@ -557,7 +617,6 @@ func renderValidationReport(w io.Writer, violations []validationViolation) {
 		}
 		fmt.Fprintln(w)
 	}
-	fmt.Fprintln(w, "\033[2mRerun after fixing with `belmont validate`. See skills/belmont/_partials/milestone-immutability.md for the canonical rule.\033[0m")
 }
 
 // milestoneBlockText captures a single milestone block's exact bytes along

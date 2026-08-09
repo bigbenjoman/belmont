@@ -140,7 +140,13 @@ func runAutoCmd(args []string) error {
 		if err != nil {
 			return err
 		}
+		if err := requireUnambiguousMilestones(absRoot, slugs); err != nil {
+			return err
+		}
 		return runAutoMultiFeature(cfg, slugs)
+	}
+	if err := requireUnambiguousMilestones(absRoot, []string{cfg.Feature}); err != nil {
+		return err
 	}
 
 	// Single-feature mode
@@ -173,9 +179,18 @@ func runAutoCmd(args []string) error {
 	// violations to avoid silent damage.
 	violations := detectViolations(cfg.Feature, milestones)
 	violations = append(violations, detectOrphanViolations(cfg.Feature, string(progressContent))...)
-	if len(violations) > 0 {
+	// Warnings are printed and the run continues. Only a file the loop cannot
+	// act on stops it — see severityError. Upgrading Belmont must not refuse a
+	// run that worked yesterday because a retro bullet sits below the region.
+	blocking, advisory := splitBySeverity(violations)
+	if len(advisory) > 0 {
+		fmt.Fprintf(os.Stderr, "\033[33m⚠ %d PROGRESS.md warning(s) — continuing:\033[0m\n\n", len(advisory))
+		renderViolationGroup(os.Stderr, advisory)
+	}
+	if len(blocking) > 0 {
+		violations = blocking
 		fmt.Fprintf(os.Stderr, "\033[31m✗ Milestone-structure violation(s) detected:\033[0m\n\n")
-		renderValidationReport(os.Stderr, violations)
+		renderViolationGroup(os.Stderr, violations)
 		if !isTerminal(os.Stdin) {
 			return fmt.Errorf("auto: %d milestone-structure violation(s); restructure via `/belmont:tech-plan` before rerunning, or run with a TTY to override interactively", len(violations))
 		}
@@ -296,6 +311,56 @@ func requireCleanWorkingTree(root string) error {
 	sb.WriteString("  git commit -am \"...\"          # commit your changes\n")
 	sb.WriteString("  belmont auto --allow-dirty    # skip this check (not recommended)")
 	return errors.New(sb.String())
+}
+
+// requireUnambiguousMilestones refuses to start when any feature's PROGRESS.md
+// declares the same milestone ID twice.
+//
+// This is a hard refusal on every path, and deliberately NOT part of the
+// overridable structural lint, for two reasons that compound:
+//
+//   - Colliding IDs make `runScopeGuard` and `runEvidenceCheck` decline, because
+//     `progressSnapshot.ByID` can only name one block per ID and guessing which
+//     one was meant is what corrupted files in the first place. Proceeding
+//     therefore runs the whole feature with both runtime guards absent.
+//   - The multi-feature path (`--features` / `--all`) returns before the lint
+//     ever runs, so on exactly the paths with the most parallelism there would
+//     be no warning at all.
+//
+// A guard that is off without anyone noticing is the failure mode this whole
+// area exists to remove, so this one is not a prompt and not a warning.
+// Renumbering the heading, or unshaping a session note that reads `### M<n>:`,
+// is a one-line fix.
+func requireUnambiguousMilestones(root string, slugs []string) error {
+	for _, slug := range slugs {
+		if slug == "" {
+			continue
+		}
+		path := filepath.Join(root, ".belmont", "features", slug, "PROGRESS.md")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue // a missing or unreadable PROGRESS.md is reported elsewhere
+		}
+		// Deliberately the guards' own parser: this asks the precise question
+		// "would the guards be able to place a milestone in this file?"
+		snap := parseProgressSnapshot(path, string(data))
+		if snap == nil || len(snap.DupIDs) == 0 {
+			continue
+		}
+		seen := map[string]bool{}
+		var ids []string
+		for _, id := range snap.DupIDs {
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+		return fmt.Errorf(
+			"auto: %s/PROGRESS.md declares %s more than once, so the scope guard and the evidence guard cannot tell which block a task belongs to and would both switch off for the whole run. "+
+				"Renumber the duplicate heading — or, if it is a session note, stop it looking like `### M<n>:`",
+			slug, strings.Join(ids, " and "))
+	}
+	return nil
 }
 
 // autoResolveBelmontConflicts attempts to auto-resolve merge conflicts on .belmont/ files.

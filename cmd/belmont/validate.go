@@ -95,9 +95,11 @@ func runValidateCmd(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var root, feature, format string
+	var strict bool
 	fs.StringVar(&root, "root", ".", "project root")
 	fs.StringVar(&feature, "feature", "", "feature slug (default: scan every feature)")
 	fs.StringVar(&format, "format", "text", "output format (text|json)")
+	fs.BoolVar(&strict, "strict", false, "exit non-zero on warnings as well as errors")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("validate: %w", err)
 	}
@@ -144,8 +146,16 @@ func runValidateCmd(args []string) error {
 		renderValidationReport(os.Stdout, violations)
 	}
 
-	if len(violations) > 0 {
-		return fmt.Errorf("validate: found %d milestone-structure violation(s)", len(violations))
+	// Only errors fail the command. A warning is information Belmont refuses to
+	// drop, not a reason to stop — upgrading must not turn a working project
+	// into a failing one over a `- [ ]` bullet in a retro. `--strict` is for CI,
+	// where "tell me about everything" is the right default.
+	blocking, advisory := splitBySeverity(violations)
+	if len(blocking) > 0 {
+		return fmt.Errorf("validate: found %d milestone-structure violation(s)", len(blocking))
+	}
+	if strict && len(advisory) > 0 {
+		return fmt.Errorf("validate: found %d warning(s) and --strict was set", len(advisory))
 	}
 	return nil
 }

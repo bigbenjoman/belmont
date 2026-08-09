@@ -173,6 +173,27 @@ unknown marker can never read as complete and cannot be cleared by
 loop alternates phases until `--max-iterations`. Fixing the file by hand is the
 only route.
 
+**Violations carry a severity, and only errors stop anything.** `severityError`
+means the loop cannot proceed correctly — an unrecognised marker, colliding
+milestone IDs, a polish-milestone name, a cross-milestone task ID. These block
+`belmont auto` and make `belmont validate` exit 1. `severityWarning` is
+information Belmont refuses to drop but that breaks nothing downstream —
+currently just `task_outside_milestone`, because a `- [ ]` bullet in a retro is
+not work. Warnings print in `status` and `validate`, exit 0, and auto continues;
+`belmont validate --strict` exits 1 on them for CI. **`splitBySeverity` treats
+an unset severity as blocking on purpose** — a new rule that forgets the field
+fails loudly instead of being silently downgraded to advice. The split exists
+because upgrading Belmont must never refuse a run that worked the day before
+over something it merely wants to mention.
+
+**Colliding `### M<n>:` headings are refused before the loop starts, on every
+path.** `requireUnambiguousMilestones` runs ahead of both the single- and
+multi-feature branches and is not overridable. `progressSnapshot.ByID` holds one
+block per ID, so a duplicate makes `runScopeGuard` and `runEvidenceCheck` both
+decline — and the multi-feature path never reaches the lint, so without this
+preflight a stray session note shaped like a milestone header would run a whole
+feature with both runtime guards silently absent.
+
 ### Milestone status: always computed from tasks
 - All `[v]` → verified
 - All `[x]` or `[v]` → done (needs verification)

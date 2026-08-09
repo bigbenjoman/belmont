@@ -39,6 +39,7 @@ belmont steer -                          # Read steering text from stdin
 belmont steer                            # Opens $EDITOR when a TTY is attached
 belmont validate                         # Lint PROGRESS.md for milestone-structure violations
 belmont validate --feature about         # Scope lint to one feature
+belmont validate --strict                # Also exit 1 on warnings (CI)
 belmont version                         # Show version, commit, build date
 # Note: "belmont loop" still works as an alias for "belmont auto"
 # If a previous run was interrupted, auto detects stale branches and prompts to resume or restart
@@ -46,18 +47,29 @@ belmont version                         # Show version, commit, build date
 
 ## Milestone-structure validation
 
-`belmont validate` lints `PROGRESS.md` for milestone-structure violations — the class of bug documented in [`knowledge/cross-cutting/milestone-immutability.md`](../knowledge/cross-cutting/milestone-immutability.md). It detects two patterns:
+`belmont validate` lints `PROGRESS.md` for milestone-structure violations — the class of bug documented in [`knowledge/cross-cutting/milestone-immutability.md`](../knowledge/cross-cutting/milestone-immutability.md).
+
+**Errors** (exit code `1`, and `belmont auto` will not start):
 
 - **Polish / follow-up milestone names.** Milestones whose name matches `polish`, `follow-ups`, `cleanup`, `verification fixes`, `deviations from M<N>`, `from M<N> implementation`, `fwlup(s)`. These violate the rule that follow-ups stay in the milestone that discovered them.
 - **Cross-milestone task IDs.** Task IDs like `P3-FWLUP-M2-1` that embed a milestone number should live under that milestone; when they're found under a different one, the milestone structure is lying about ownership and parallel merges will collide.
+- **Unrecognised task markers.** Anything outside `[ ] [>] [x] [v] [!]`. Belmont will not guess a state, so the milestone can never read as complete.
+- **Duplicate milestone IDs.** Two `### M<n>:` headings sharing a number — including a session note written in that shape. Milestones are keyed by ID throughout, so a collision makes the scope guard and the evidence guard switch off.
+
+**Warnings** (exit code `0`, auto continues):
+
+- **Task lines outside any milestone.** A `## ` heading at column zero ends the milestones region, so a checkbox line below it is counted by nothing and never scheduled. Reported with its line number because losing it silently is the bug this exists to prevent — but a `- [ ]` bullet in a retro is not work, so it does not stop a run.
 
 ```bash
 belmont validate                            # Scan every feature
 belmont validate --feature about            # One feature
-belmont validate --format json              # Machine-readable output
+belmont validate --strict                   # Exit 1 on warnings too (for CI)
+belmont validate --format json              # Machine-readable output; each entry carries "severity"
 ```
 
-Exit code `1` on violations. `belmont auto` runs this lint at startup; interactive runs get a `[y/N]` override prompt, non-interactive runs abort. Restructure via `/belmont:tech-plan` before rerunning.
+`belmont auto` runs this lint at startup on the single-feature path: interactive runs get a `[y/N]` override prompt on errors, non-interactive runs abort, and warnings print without stopping anything. Restructure via `/belmont:tech-plan` before rerunning.
+
+Duplicate milestone IDs are the exception — they are refused before the loop starts on **every** path, including `--features` / `--all`, and the refusal cannot be overridden. Proceeding would run the whole feature with both runtime guards absent.
 
 ## `--max-parallel` semantics
 
