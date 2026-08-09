@@ -132,15 +132,48 @@ a competing scale where one already exists.
     `.belmont/features/*/TECH_PLAN.md`. Most recently approved wins; name which
     feature. *Without rungs 0 and 0b, feature 1 and feature 4 of a greenfield
     project mint different scales with nothing to reconcile them.*
-1. **Storybook, if present** — the strongest project-local source, because
+1. **Storybook, if present** — the strongest source below a contract, because
    stories enumerate components *and their states*, which is exactly what State
-   Inventory needs. Detect via `.storybook/`, a `storybook` entry in the package
-   manifest, or `*.stories.@(js|jsx|ts|tsx|mdx)` files. **Read the story files
-   and `.storybook/preview.*` statically — do NOT run Storybook.** A planning
+   Inventory needs. It comes in two forms and **the hosted one is better**:
+
+   **1a. A deployed Storybook.** Detect from a URL in the master `TECH_PLAN.md`,
+   the feature PRD, `package.json` (`homepage`, `repository`, or a `storybook`
+   script's `--url`), or simply because the user named one during the interview —
+   ask if the project has one and you have not found it. Then fetch:
+
+   ```
+   <storybook-url>/index.json      # the story index — components and their stories
+   <storybook-url>/project.json    # framework and addon metadata (optional)
+   ```
+
+   `index.json` is a **static build artifact**. Fetching it runs nothing, needs no
+   port, and starts no server — so `forbidden-actions`' prohibition on build and
+   package-manager commands does not apply. Use `WebFetch`, which this skill is
+   already permitted to use.
+
+   Its `entries` map is the richest inventory available anywhere: each entry has a
+   `title` (the component path, e.g. `Bookings/BookingPicker`) and a `name` (the
+   story, e.g. `Empty`, `Loading`, `Pending`, `Declined`, `Long Headline`).
+   **Component titles give you `## Existing Components to Reuse`; story names give
+   you the State Inventory directly** — they are a real team's enumeration of the
+   states that component actually has, which is strictly better than your guess.
+   Ignore `Docs` entries (`type: "docs"`); they are generated, not states.
+
+   If the URL 404s or the JSON will not parse, say so and fall through to 1b or
+   rung 2 — never invent an inventory and never claim a Storybook source you could
+   not read.
+
+   **1b. Local story files.** Detect via `.storybook/`, a `storybook` entry in the
+   package manifest, or `*.stories.@(js|jsx|ts|tsx|mdx)` files. **Read the story
+   files and `.storybook/preview.*` statically — do NOT run Storybook.** A planning
    session may not run build or package-manager commands, and booting it would
-   collide with worktree port isolation. Record the component inventory you find
-   into the feature template's `## Existing Components to Reuse`, and treat those
-   components as **LAW** — the contract records them, it does not redesign them.
+   collide with worktree port isolation. A local build's `storybook-static/index.json`,
+   if one is already committed, counts as 1a and is preferable to parsing sources.
+
+   Either way: record the component inventory into the feature template's
+   `## Existing Components to Reuse`, treat those components as **LAW** — the
+   contract records them, it does not redesign them — and set `**Source**` to
+   `storybook (<url>)` or `storybook (local)` so a reader knows which you used.
 2. **Project config** — `tailwind.config.*`, CSS custom properties in
    `globals.css`, `components.json`, theme files.
 3. **Nothing exists** → establish the tier-2 defaults below and set

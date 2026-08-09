@@ -50,8 +50,9 @@ src/
 
 ## Design Contract
 **Mode**: [derived — UI, no Figma | N/A — no UI | N/A — Figma present]
-**Source**: [storybook | tailwind.config.ts | globals.css | components.json | master TECH_PLAN |
-             sibling feature <slug> | none — established here]
+**Source**: [storybook (<url>) | storybook (local) | tailwind.config.ts | globals.css |
+             components.json | master TECH_PLAN | sibling feature <slug> |
+             none — established here]
 **Authorities**: baseline[; ui-designer (tokens); ux-designer (strategy, states); ux-copywriter (microcopy);
              ux-motion (motion); frontend-design:frontend-design (aesthetic)]
 **Approval**: [approved <ISO date> | unreviewed (headless replan <ISO date>)]

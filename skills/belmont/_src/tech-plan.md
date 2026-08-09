@@ -279,19 +279,26 @@ Neither `N/A` value is "a contract". Only `derived — UI, no Figma` is.
    ladder (which design skills enrich which section), the derivation order
    (reuse before invention — master contract, sibling contract, Storybook,
    project config, then baseline defaults), and the tier-2 baseline rules.
-2. Derive all six subsections — Token Contract, Accessibility Floor, UX Strategy,
+2. **Ask whether the project has a deployed Storybook**, unless you already found
+   a URL in the master `TECH_PLAN.md`, the PRD, or `package.json`. A hosted
+   Storybook is the single most valuable input to this phase — its `index.json`
+   enumerates every component *and every state the team actually built* — and it
+   is the one rung you cannot discover by reading the repo. One question is cheap;
+   deriving a State Inventory by guesswork when the real one was a fetch away is
+   not.
+3. Derive all six subsections — Token Contract, Accessibility Floor, UX Strategy,
    State Inventory, Microcopy Rules, Motion Contract — using the Phase 3 answers
    about design system details, existing components to reuse, and animation
    approach.
-3. Fill `**Source**` with the ladder rung you actually stopped at, and
+4. Fill `**Source**` with the ladder rung you actually stopped at, and
    `**Authorities**` with the skill enriching each section.
-4. **Present the contract to the user for approval using your structured
+5. **Present the contract to the user for approval using your structured
    question tool.** The mandatory rules in *Asking Questions* apply in full: a
    Markdown pick-list is not an approval gate, and if you are Codex without the
    structured question tool, stop and tell the user to restart in plan mode.
-5. On approval, set `**Approval**: approved <ISO date>` and write the contract
+6. On approval, set `**Approval**: approved <ISO date>` and write the contract
    into `{base}/TECH_PLAN.md`'s `## Design Contract` section in Phase 4.
-6. Write `{base}/design-preview.html` — a **self-contained** page (no external
+7. Write `{base}/design-preview.html` — a **self-contained** page (no external
    assets, no network references) rendering the contract for review: colour
    swatches with computed contrast ratios, the type ramp, the spacing scale,
    radius and elevation samples, and one state row per State Inventory entry.

@@ -79,6 +79,15 @@ the standard once, per feature, interactively, where a human is already reviewin
   Warning is the one deferrable contract finding. A browser MCP is recommended,
   not required, so failing every contract milestone on a browser-less install
   would make Belmont unusable for a supported configuration.
+- **A deployed Storybook outranks local story files, and `index.json` is the way
+  in.** Rung 1 detects both forms. A hosted Storybook's `<url>/index.json` is a
+  static build artifact — fetching it runs nothing, needs no port, and starts no
+  server, so the planning-session prohibition on build commands does not apply.
+  Its `entries` give component titles (the reuse inventory) and story names
+  (`Empty`, `Loading`, `Pending`, `Declined`) which **are** the State Inventory,
+  written by the team that built the component. Phase 3.5 must *ask* whether one
+  exists — it is the one rung that cannot be discovered by reading the repo.
+  Skip `type: "docs"` entries; they are generated, not states.
 - **A contract is never a fallback for a *failed* Figma load.** Mode is keyed on
   URL *presence*, never on load outcome. The NO FALLBACK rule stands untouched.
 
@@ -227,6 +236,12 @@ ever ran on.
 
 ## Revisions
 
+- 2026-08-08 — rung 1 extended to deployed Storybooks after a real one
+  (storybook.studia.io) exposed the gap: detection was local-files-only, so a
+  project that ships Storybook as a deployment had its richest design source
+  invisible to the ladder. `index.json` there returns 104 components and 767
+  stories. The original "do NOT run Storybook" rule was right about a local
+  build and wrongly excluded the hosted case, which requires no running at all.
 - 2026-08-08 — hardened after a 108-agent adversarial red-team (49 findings, 39
   refuted, 10 survived, zero blockers) plus an independent Fable senior review.
   Four majors fixed, all self-inflicted by the first draft: the gate re-derived an
