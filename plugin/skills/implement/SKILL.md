@@ -243,7 +243,7 @@ When dispatching sub-agents (Step 3 below), apply the tier overrides per `dispat
 ## Step 1: Find Next Milestone
 
 1. Read `{base}/PROGRESS.md` and find the Milestones section
-2. A milestone is **complete** if all its tasks are marked `[v]` (verified)
+2. A milestone is **complete** if every task that is still live is marked `[v]` (verified). `[-]` withdrawn tasks are resolved — skip them, they neither block completion nor count towards it
 3. A milestone is **pending** if any task is `[ ]`, `[>]`, `[x]`, or `[!]`
 4. Select the **first pending milestone**
 5. If all milestones are complete, report "All milestones complete!" and stop

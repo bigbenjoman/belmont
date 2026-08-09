@@ -56,6 +56,7 @@ Skills become native slash commands:
 /belmont:debug-manual       Manual debug loop (user-verified, faster)
 /belmont:status             View progress
 /belmont:review-plans       Review document alignment and detect drift
+/belmont:repair             Repair a PROGRESS.md whose task states no longer parse
 /belmont:cleanup            Archive completed features, reduce token bloat
 /belmont:reset              Reset state and start fresh
 ```

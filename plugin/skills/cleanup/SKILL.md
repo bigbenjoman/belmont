@@ -49,7 +49,7 @@ Read all state files and build a cleanup profile:
    - Read `PROGRESS.md` — check if all tasks are `[v]` (verified) indicating the feature is complete
    - Count all files: PRD.md, TECH_PLAN.md, PROGRESS.md, NOTES.md, MILESTONE.md, MILESTONE-*.done.md
    - Estimate total size of the feature directory
-   - Classify as: **Completed** (all tasks `[v]`), **Active** (has `[>]` or `[x]` tasks), or **Not Started** (all tasks `[ ]`)
+   - Classify as: **Completed** (every live task `[v]`), **Active** (has `[>]` or `[x]` tasks), or **Not Started** (all tasks `[ ]`). `[-]` withdrawn tasks are resolved — ignore them in all three judgements
 5. Find all `MILESTONE-*.done.md` files across `.belmont/` root and all feature directories
 6. Read `.belmont/NOTES.md` — count entries/sections, note oldest entry date
 7. Check for convention files at project root: CLAUDE.md, `.cursorrules`, `.windsurfrules`, AGENTS.md

@@ -1,0 +1,1187 @@
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+)
+
+// `belmont repair` — the healer.
+//
+// #27 and #31 made a corrupted PROGRESS.md legible. Nothing fixed one. Repos
+// already carrying the damage were left diagnosed and unfixable, and the agents
+// working in them still had no idea what to do with a `[?]`. That gap is what
+// this command closes.
+//
+// Two tiers, the same shape as `belmont reverify`:
+//
+//  1. MECHANICAL — pure Go, zero tokens. Every finding that carries a task ID
+//     is checked against the commit log with the same primitive
+//     `runEvidenceCheck` uses to demote an unearned `[v]`. A commit naming the
+//     ID proves the work happened, so the marker becomes `[x]`.
+//  2. REVIEW — an agent reads what survived against the current code. That is
+//     usually enough to separate "still outstanding" from "superseded": if the
+//     route, component or spec the task names is gone, the task is moot.
+//
+// EVIDENCE-FIRST, NEVER MEMORY-FIRST. The obvious implementation of this
+// command interrogates the user — "did this ship? was it withdrawn? was it
+// blocked?" — and it is worse than useless. These arrive dozens at a time and
+// nobody remembers months later; you get "I don't know" followed by a guess,
+// which is issue #27 again with extra steps. Only what survives both tiers is
+// ever put to a human, and by then the question is grounded in what the
+// repository says today.
+//
+// Bounds, all enforced in validateRepairPlans:
+//
+//   - The action set is CLOSED (the causes are not — they travel as a reason
+//     string). set_marker / move_milestone / withdraw / leave / escalate.
+//   - Capped at `[x]`. Repair never mints `[v]`: that flip has its own evidence
+//     contract and `belmont reverify` is the only thing that may write it.
+//   - Withdrawal is `[-]` plus the reason in `## Decisions Log`, NEVER a
+//     deletion — a deleted line does not survive `mergeProgressState`, which
+//     takes the worktree as base and carries master's missing lines back in.
+//   - Milestone structure is immutable: repair never creates, renames or
+//     removes a `### M<n>:` heading. Moving a task BETWEEN existing milestones
+//     is allowed here and only here, because repair runs interactively outside
+//     the auto loop — `runScopeGuard` is called from `executeLoopAction`
+//     (auto_loop.go) and from nowhere else, so it is not running.
+//   - Repair may only touch lines it flagged, and only if they are still
+//     byte-for-byte what it scanned.
+
+// The closed action set. Adding a member here means teaching
+// validateRepairPlans what it may do and applyRepairPlans how to write it —
+// which is the point of keeping the set closed and the causes open.
+const (
+	// repairSetMarker writes a different marker on the same line, in place.
+	repairSetMarker = "set_marker"
+	// repairMoveMilestone relocates the line under the milestone its ID names.
+	repairMoveMilestone = "move_milestone"
+	// repairWithdraw writes `[-]` and records why in `## Decisions Log`.
+	repairWithdraw = "withdraw"
+	// repairLeave means "this is not a task" — a retro bullet, a quoted log
+	// line. No edit; recorded so the report says why nothing happened.
+	repairLeave = "leave"
+	// repairEscalate means the evidence does not settle it. No edit.
+	repairEscalate = "escalate"
+)
+
+// repairFinding is one line repair is allowed to act on.
+type repairFinding struct {
+	Rule      string `json:"rule"`
+	TaskID    string `json:"task_id,omitempty"`
+	Milestone string `json:"milestone,omitempty"`
+	// NamedMilestone is the milestone the task ID itself names — "M2" for
+	// P3-M2-1. Empty when the ID names none.
+	NamedMilestone string `json:"named_milestone,omitempty"`
+	Marker         string `json:"marker"`
+	Text           string `json:"text"`
+	Line           int    `json:"line"`
+	// Raw is the line exactly as scanned. Every write re-checks it: if the file
+	// changed under us (an editor, a concurrent agent), the action is refused
+	// rather than applied to a line that is no longer the one we judged.
+	Raw      string         `json:"-"`
+	Evidence commitEvidence `json:"evidence"`
+}
+
+// repairAction is one decision about one finding.
+type repairAction struct {
+	TaskID string `json:"task_id,omitempty"`
+	Line   int    `json:"line"`
+	Action string `json:"action"`
+	// Marker is the raw marker for set_marker — one of " ", ">", "x", "!".
+	Marker string `json:"marker,omitempty"`
+	// Milestone is the destination for move_milestone.
+	Milestone string `json:"milestone,omitempty"`
+	Reason    string `json:"reason"`
+	// Source records who decided: "commit_evidence" or "agent".
+	Source string `json:"source,omitempty"`
+}
+
+// repairPlan pairs a finding with the action chosen for it.
+type repairPlan struct {
+	Finding repairFinding `json:"finding"`
+	Action  repairAction  `json:"action"`
+}
+
+// repairRejection is a proposed action repair refused to apply, and why. These
+// are always printed: an action silently dropped is the same failure mode as a
+// task silently dropped.
+type repairRejection struct {
+	Action repairAction `json:"action"`
+	Reason string       `json:"reason"`
+}
+
+// repairProposal is the JSON an agent writes for the review tier.
+type repairProposal struct {
+	Repairs []repairAction `json:"repairs"`
+}
+
+// ---------------------------------------------------------------------------
+// Tier 1 — mechanical
+// ---------------------------------------------------------------------------
+
+// collectRepairFindings returns every line in PROGRESS.md that repair may act
+// on, in document order.
+//
+// It composes the existing readers rather than walking the file again:
+// `parseMilestones` for in-region tasks and `orphanedTaskLines` for everything
+// past a column-zero `## `. A third walk here would be a fourth answer to
+// "where does the milestones region end", which is exactly the duplication
+// that produced #27 and #31.
+func collectRepairFindings(progress string) []repairFinding {
+	lines := strings.Split(progress, "\n")
+	rawAt := func(line int) string {
+		if line-1 >= 0 && line-1 < len(lines) {
+			return lines[line-1]
+		}
+		return ""
+	}
+
+	var out []repairFinding
+	for _, m := range parseMilestones(progress) {
+		for _, t := range m.Tasks {
+			named, _ := taskIDNamedMilestone(t.ID)
+			// An unreadable marker is reported once, as itself. A task whose
+			// marker Belmont cannot parse has a state problem before it has a
+			// location problem, and reporting both would ask the reviewer to
+			// decide the same line twice.
+			if t.Status == taskUnknown {
+				out = append(out, repairFinding{
+					Rule:           ruleUnrecognisedMarker,
+					TaskID:         t.ID,
+					Milestone:      m.ID,
+					NamedMilestone: named,
+					Marker:         t.Marker,
+					Text:           t.Name,
+					Line:           t.Line,
+					Raw:            rawAt(t.Line),
+				})
+				continue
+			}
+			if named != "" && named != m.ID {
+				out = append(out, repairFinding{
+					Rule:           ruleCrossMilestoneTaskID,
+					TaskID:         t.ID,
+					Milestone:      m.ID,
+					NamedMilestone: named,
+					Marker:         t.Marker,
+					Text:           t.Name,
+					Line:           t.Line,
+					Raw:            rawAt(t.Line),
+				})
+			}
+		}
+	}
+	for _, t := range orphanedTaskLines(progress) {
+		named, _ := taskIDNamedMilestone(t.ID)
+		out = append(out, repairFinding{
+			Rule:           ruleTaskOutsideMilestone,
+			TaskID:         t.ID,
+			NamedMilestone: named,
+			Marker:         t.Marker,
+			Text:           t.Name,
+			Line:           t.Line,
+			Raw:            rawAt(t.Line),
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Line < out[j].Line })
+	return out
+}
+
+// attachCommitEvidence fills in the Evidence field of every finding that
+// carries a task ID. The second return value reports whether the commit log
+// could be read at all — false means the mechanical tier has no answers to
+// give, and the caller must say so rather than let an empty result read as
+// "nothing was provable".
+func attachCommitEvidence(root string, findings []repairFinding) ([]repairFinding, bool) {
+	if !isGitWorkTree(root) {
+		return findings, false
+	}
+	// Deliberately UNSCOPED — the whole history reachable from HEAD, not
+	// `mergeBase..HEAD` the way runEvidenceCheck scopes it.
+	//
+	// The guard's question is "did THIS phase earn the flip it just wrote", so
+	// it must exclude older work or a prior feature's commits would credit it.
+	// Repair's question is the opposite: this damage is historical — months
+	// old, usually on the default branch, written by a run that finished long
+	// ago. Scoping to the merge base there is not conservative, it is empty:
+	// on `main`, merge-base(HEAD, main) IS HEAD, so `HEAD..HEAD` matches
+	// nothing and every single task reports "no commit names it". The
+	// mechanical tier would look like it had run and settled nothing.
+	//
+	// The cost is that task IDs are feature-local, so two features can both
+	// hold a P1-M1-1 and a commit for one could credit the other. That is why
+	// every applied change names the commit it relied on, and why `--dry-run`
+	// exists.
+	const since = ""
+	cache := map[string]commitEvidence{}
+	available := false
+	for i := range findings {
+		id := findings[i].TaskID
+		if id == "" {
+			continue
+		}
+		ev, seen := cache[id]
+		if !seen {
+			ev = lookupCommitEvidence(root, id, since)
+			cache[id] = ev
+		}
+		findings[i].Evidence = ev
+		if ev.Checked {
+			available = true
+		}
+	}
+	return findings, available
+}
+
+// mechanicalRepairs returns the actions the commit log settles on its own.
+//
+// Deliberately narrow. Only an unreadable marker on a line that is already
+// inside a milestone is auto-applied, and only to `[x]`:
+//
+//   - Capped at `[x]` because `[v]` has its own evidence contract
+//     (knowledge/auto-mode/verify-evidence.md) and `belmont reverify` is its
+//     only legitimate writer.
+//   - An ORPHANED line is never auto-moved even with commit evidence. The
+//     commonest orphan is a sibling's completion quoted into `## Session
+//     History` — "- [x] P1-M1-1: done, commit abc123" — and it names a task ID
+//     that certainly has a commit. Moving it in would duplicate a live ID.
+//     Whether an orphan is a task or a log line is a reading question, so it
+//     goes to the review tier.
+//   - A cross-milestone ID is never auto-moved either: the ID naming M2 is
+//     evidence about where the task was FILED, not about whether it is real.
+func mechanicalRepairs(findings []repairFinding) []repairPlan {
+	var out []repairPlan
+	for _, f := range findings {
+		if f.Rule != ruleUnrecognisedMarker || f.Milestone == "" {
+			continue
+		}
+		if !f.Evidence.Checked || !f.Evidence.Found {
+			continue
+		}
+		reason := fmt.Sprintf("commit %s names this task", shortSHA(f.Evidence.SHA))
+		if f.Evidence.Subject != "" {
+			reason = fmt.Sprintf("commit %s (%q) names this task", shortSHA(f.Evidence.SHA), f.Evidence.Subject)
+		}
+		out = append(out, repairPlan{
+			Finding: f,
+			Action: repairAction{
+				TaskID: f.TaskID,
+				Line:   f.Line,
+				Action: repairSetMarker,
+				Marker: "x",
+				Reason: reason,
+				Source: "commit_evidence",
+			},
+		})
+	}
+	return out
+}
+
+// needsReview returns the findings the mechanical tier could not settle.
+func needsReview(findings []repairFinding, settled []repairPlan) []repairFinding {
+	done := map[int]bool{}
+	for _, p := range settled {
+		done[p.Finding.Line] = true
+	}
+	var out []repairFinding
+	for _, f := range findings {
+		if !done[f.Line] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// Validation — the gate every action passes through, whoever proposed it
+// ---------------------------------------------------------------------------
+
+// validateRepairPlans pairs proposed actions with the findings they name and
+// refuses anything outside the bounds at the top of this file. Both tiers go
+// through it: the mechanical tier's own output is validated too, so there is
+// exactly one place that decides what repair is allowed to write.
+//
+// `content` is the current PROGRESS.md, needed to answer questions about the
+// destination of a move.
+func validateRepairPlans(content string, findings []repairFinding, actions []repairAction) ([]repairPlan, []repairRejection) {
+	byLine := map[int]repairFinding{}
+	for _, f := range findings {
+		byLine[f.Line] = f
+	}
+	milestoneIDs := map[string]bool{}
+	idsIn := map[string]map[string]bool{} // milestone -> task IDs it already holds
+	for _, m := range parseMilestones(content) {
+		milestoneIDs[m.ID] = true
+		if idsIn[m.ID] == nil {
+			idsIn[m.ID] = map[string]bool{}
+		}
+		for _, t := range m.Tasks {
+			if t.ID != "" {
+				idsIn[m.ID][t.ID] = true
+			}
+		}
+	}
+
+	var plans []repairPlan
+	var rejected []repairRejection
+	seen := map[int]bool{}
+	reject := func(a repairAction, reason string) {
+		rejected = append(rejected, repairRejection{Action: a, Reason: reason})
+	}
+
+	for _, a := range actions {
+		f, ok := byLine[a.Line]
+		if !ok {
+			// Repair may only touch lines it flagged. Without this an agent
+			// could propose a marker change on any task in the file, which is
+			// the out-of-scope flip runScopeGuard exists to revert — and the
+			// guard is not running here.
+			reject(a, fmt.Sprintf("line %d is not one of the findings repair reported", a.Line))
+			continue
+		}
+		if a.TaskID != "" && f.TaskID != "" && a.TaskID != f.TaskID {
+			reject(a, fmt.Sprintf("names task %s but line %d holds %s", a.TaskID, a.Line, f.TaskID))
+			continue
+		}
+		if seen[a.Line] {
+			reject(a, fmt.Sprintf("line %d already has an action; the second one was not applied", a.Line))
+			continue
+		}
+		switch a.Action {
+		case repairSetMarker:
+			st, known := canonicalMarker(a.Marker)
+			if !known {
+				reject(a, fmt.Sprintf("marker %q is not one Belmont recognises", a.Marker))
+				continue
+			}
+			if st == taskVerified {
+				reject(a, "repair is capped at [x] — only `belmont reverify` may write [v], and only against its own commit evidence")
+				continue
+			}
+			if st == taskWithdrawn {
+				reject(a, "use the withdraw action for [-] so the reason is recorded in ## Decisions Log")
+				continue
+			}
+			if f.Milestone == "" {
+				reject(a, "this line sits outside every milestone, so a marker change would not make it visible to anything — move it or leave it")
+				continue
+			}
+		case repairMoveMilestone:
+			dest := a.Milestone
+			if dest == "" {
+				dest = f.NamedMilestone
+			}
+			if dest == "" {
+				reject(a, "no destination milestone, and the task ID does not name one")
+				continue
+			}
+			if !milestoneIDs[dest] {
+				reject(a, fmt.Sprintf("milestone %s does not exist, and repair never creates one — run /belmont:tech-plan", dest))
+				continue
+			}
+			if dest == f.Milestone {
+				reject(a, fmt.Sprintf("the line is already under %s", dest))
+				continue
+			}
+			if f.TaskID != "" && idsIn[dest][f.TaskID] {
+				reject(a, fmt.Sprintf("%s already holds a task with ID %s — moving this line in would make the ID ambiguous", dest, f.TaskID))
+				continue
+			}
+			a.Milestone = dest
+		case repairWithdraw:
+			if strings.TrimSpace(a.Reason) == "" {
+				reject(a, "withdrawal needs a reason — a marker cannot carry why, which is what ## Decisions Log is for")
+				continue
+			}
+		case repairLeave, repairEscalate:
+			// No edit. Recorded so the report can say what happened.
+		default:
+			reject(a, fmt.Sprintf("%q is not one of the actions repair can take (%s)", a.Action, strings.Join(repairActionNames(), ", ")))
+			continue
+		}
+		seen[a.Line] = true
+		plans = append(plans, repairPlan{Finding: f, Action: a})
+	}
+	return plans, rejected
+}
+
+func repairActionNames() []string {
+	return []string{repairSetMarker, repairMoveMilestone, repairWithdraw, repairLeave, repairEscalate}
+}
+
+// ---------------------------------------------------------------------------
+// Writers
+// ---------------------------------------------------------------------------
+
+// repairTaskLineRe splits a task line into prefix, marker and remainder.
+var repairTaskLineRe = regexp.MustCompile(`^(\s*-\s+)\[(.)\](\s+.*)$`)
+
+// applyRepairPlans rewrites PROGRESS.md content according to the plans.
+//
+// Returns the new content, one summary line per applied change, and warnings
+// for plans that could not be applied. A plan is skipped — never forced — when
+// the line is no longer byte-for-byte what was scanned.
+//
+// `today` is passed in rather than read from the clock so the Decisions Log
+// entries are deterministic under test.
+func applyRepairPlans(content string, plans []repairPlan, today string) (string, []string, []string) {
+	lines := strings.Split(content, "\n")
+	var applied, warnings []string
+
+	moves := map[int]string{}
+	var decisions []string
+
+	for _, p := range plans {
+		idx := p.Finding.Line - 1
+		if idx < 0 || idx >= len(lines) {
+			warnings = append(warnings, fmt.Sprintf("line %d is past the end of PROGRESS.md — skipped", p.Finding.Line))
+			continue
+		}
+		if lines[idx] != p.Finding.Raw {
+			warnings = append(warnings, fmt.Sprintf(
+				"line %d changed since it was scanned — skipped rather than applied to a line repair has not read", p.Finding.Line))
+			continue
+		}
+		switch p.Action.Action {
+		case repairSetMarker:
+			m := repairTaskLineRe.FindStringSubmatch(lines[idx])
+			if len(m) < 4 {
+				warnings = append(warnings, fmt.Sprintf("line %d is not shaped like a task line — skipped", p.Finding.Line))
+				continue
+			}
+			lines[idx] = m[1] + "[" + p.Action.Marker + "]" + m[3]
+			applied = append(applied, fmt.Sprintf("%s [%s] → [%s] — %s",
+				repairLabel(p.Finding), p.Finding.Marker, p.Action.Marker, p.Action.Reason))
+		case repairWithdraw:
+			m := repairTaskLineRe.FindStringSubmatch(lines[idx])
+			if len(m) < 4 {
+				warnings = append(warnings, fmt.Sprintf("line %d is not shaped like a task line — skipped", p.Finding.Line))
+				continue
+			}
+			lines[idx] = m[1] + "[-]" + m[3]
+			applied = append(applied, fmt.Sprintf("%s [%s] → [-] withdrawn — %s",
+				repairLabel(p.Finding), p.Finding.Marker, p.Action.Reason))
+			decisions = append(decisions, fmt.Sprintf("%s — %s withdrawn: %s",
+				today, repairLabel(p.Finding), strings.TrimSpace(p.Action.Reason)))
+		case repairMoveMilestone:
+			moves[idx] = p.Action.Milestone
+			applied = append(applied, fmt.Sprintf("%s moved to %s — %s",
+				repairLabel(p.Finding), p.Action.Milestone, p.Action.Reason))
+		case repairLeave, repairEscalate:
+			// Nothing to write.
+		}
+	}
+
+	if len(moves) > 0 {
+		var moveWarnings []string
+		var dropped []int
+		lines, moveWarnings, dropped = moveTaskLines(lines, moves)
+		warnings = append(warnings, moveWarnings...)
+		// A move that could not be placed is not applied, so its summary line
+		// would be a lie. Drop it.
+		if len(dropped) > 0 {
+			applied = dropMoveSummaries(applied, plans, dropped)
+		}
+	}
+
+	out := strings.Join(lines, "\n")
+	for _, d := range decisions {
+		out = appendDecisionLogEntry(out, d)
+	}
+	return out, applied, warnings
+}
+
+// repairLabel names a finding the way the rest of Belmont names tasks.
+func repairLabel(f repairFinding) string {
+	if f.TaskID != "" {
+		return f.TaskID
+	}
+	return fmt.Sprintf("PROGRESS.md:%d", f.Line)
+}
+
+// dropMoveSummaries removes the summary lines belonging to moves that were not
+// placed, identified by their original line index.
+func dropMoveSummaries(applied []string, plans []repairPlan, dropped []int) []string {
+	lost := map[string]bool{}
+	for _, idx := range dropped {
+		for _, p := range plans {
+			if p.Finding.Line-1 == idx && p.Action.Action == repairMoveMilestone {
+				lost[fmt.Sprintf("%s moved to %s — %s", repairLabel(p.Finding), p.Action.Milestone, p.Action.Reason)] = true
+			}
+		}
+	}
+	var out []string
+	for _, a := range applied {
+		if lost[a] {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// moveTaskLines relocates the lines in `moves` (line index -> destination
+// milestone ID) under the destination milestone, preserving each line verbatim.
+//
+// Anchoring follows `mergeProgressState`: after the destination's last task
+// line, or after its header when it holds no tasks yet — otherwise the first
+// task moved into an empty milestone has nowhere to land. Region boundaries are
+// `isSectionBreak`, like every other reader.
+//
+// Returns the new lines, warnings, and the indices of moves that could not be
+// placed (destination absent). A move that cannot be placed leaves the line
+// exactly where it was: repair never deletes a task line, and never creates a
+// milestone to receive one.
+func moveTaskLines(lines []string, moves map[int]string) ([]string, []string, []int) {
+	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
+	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+`)
+
+	lastTaskIdx := map[string]int{}
+	lastHeaderIdx := map[string]int{}
+	currentMS := ""
+	for i, line := range lines {
+		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 2 {
+			currentMS = "M" + m[1]
+			lastHeaderIdx[currentMS] = i
+			continue
+		}
+		if isSectionBreak(line) {
+			currentMS = ""
+			continue
+		}
+		if currentMS != "" && taskRe.MatchString(line) {
+			lastTaskIdx[currentMS] = i
+		}
+	}
+
+	var warnings []string
+	var dropped []int
+	// Resolve anchors first: a line being moved OUT cannot serve as the anchor
+	// for a line being moved IN, because it will not be emitted.
+	moving := map[int]bool{}
+	for idx := range moves {
+		moving[idx] = true
+	}
+	insertAfter := map[int][]int{} // anchor index -> moved line indices
+	var order []int
+	for idx := range moves {
+		order = append(order, idx)
+	}
+	sort.Ints(order)
+	for _, idx := range order {
+		dest := moves[idx]
+		anchor, ok := lastTaskIdx[dest]
+		if ok && moving[anchor] {
+			anchor, ok = lastHeaderIdx[dest]
+		}
+		if !ok {
+			anchor, ok = lastHeaderIdx[dest]
+		}
+		if !ok {
+			warnings = append(warnings, fmt.Sprintf(
+				"milestone %s is not in this PROGRESS.md, so the line at %d was left exactly where it is — repair never creates a milestone",
+				dest, idx+1))
+			dropped = append(dropped, idx)
+			delete(moving, idx)
+			continue
+		}
+		insertAfter[anchor] = append(insertAfter[anchor], idx)
+	}
+
+	out := make([]string, 0, len(lines))
+	for i, line := range lines {
+		if moving[i] {
+			continue
+		}
+		out = append(out, line)
+		for _, moved := range insertAfter[i] {
+			out = append(out, lines[moved])
+		}
+	}
+	return out, warnings, dropped
+}
+
+// decisionsHeadingRe matches the `## Decisions Log` heading at column zero.
+var decisionsHeadingRe = regexp.MustCompile(`^##\s+Decisions Log\s*$`)
+
+// appendDecisionLogEntry adds one line to `## Decisions Log`, creating the
+// section at the end of the document when it is absent.
+//
+// The reason a task was withdrawn cannot live in the marker, so it lives here.
+// A withdrawal recorded without its reason is the state that made someone
+// invent `[-]` in the first place: the file says work stopped and nothing says
+// why, so the next reader either re-opens it or deletes it.
+func appendDecisionLogEntry(content, entry string) string {
+	lines := strings.Split(content, "\n")
+	start := -1
+	for i, line := range lines {
+		if decisionsHeadingRe.MatchString(line) {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
+		trimmed := strings.TrimRight(content, "\n")
+		return trimmed + "\n\n## Decisions Log\n\n- " + entry + "\n"
+	}
+	// Find the end of the section: the next column-zero `## `, or EOF.
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		if isSectionBreak(lines[i]) {
+			end = i
+			break
+		}
+	}
+	// Drop the "(none yet)" placeholder and any trailing blank lines, then
+	// append. Keeping the placeholder above a real entry reads as a bug.
+	section := lines[start+1 : end]
+	var kept []string
+	for _, line := range section {
+		if strings.EqualFold(strings.TrimSpace(line), "(none yet)") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	for len(kept) > 0 && strings.TrimSpace(kept[len(kept)-1]) == "" {
+		kept = kept[:len(kept)-1]
+	}
+	if len(kept) == 0 {
+		kept = append(kept, "")
+	}
+	kept = append(kept, "- "+entry, "")
+
+	out := append([]string{}, lines[:start+1]...)
+	out = append(out, kept...)
+	out = append(out, lines[end:]...)
+	return strings.Join(out, "\n")
+}
+
+// ---------------------------------------------------------------------------
+// Review tier — agent dispatch
+// ---------------------------------------------------------------------------
+
+// buildRepairBrief renders the findings the agent must judge.
+func buildRepairBrief(feature, proposalPath string, findings []repairFinding, evidenceAvailable bool) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "/belmont:repair --feature %s\n\n", feature)
+	sb.WriteString("REPAIR BRIEF — proposal mode.\n\n")
+	sb.WriteString("Do NOT edit PROGRESS.md, or any other file. Investigate, then write a JSON proposal to:\n  ")
+	sb.WriteString(proposalPath)
+	sb.WriteString("\n\n")
+	if !evidenceAvailable {
+		sb.WriteString("The commit log could not be read here, so NONE of these has been checked against it. Weigh the code accordingly.\n\n")
+	}
+	sb.WriteString("Each finding below is a line in .belmont/features/" + feature + "/PROGRESS.md that Belmont cannot act on as written.\n")
+	sb.WriteString("`evidence.found: true` means a commit names the task ID — that has already been applied where it settles the answer, so anything still listed here is NOT settled by the commit log.\n\n")
+
+	data, err := json.MarshalIndent(struct {
+		Findings []repairFinding `json:"findings"`
+	}{findings}, "", "  ")
+	if err == nil {
+		sb.Write(data)
+		sb.WriteString("\n\n")
+	}
+	sb.WriteString(repairAgentRules)
+	return sb.String()
+}
+
+// repairAgentRules is the contract the review tier works to. It is duplicated
+// in the skill body on purpose: the CLI path injects this text directly (the
+// tool's own skill discovery is bypassed), and the interactive path reads the
+// skill. Both must state the same bounds. See
+// knowledge/cross-cutting/dual-invocation-paths.md.
+const repairAgentRules = `HOW TO DECIDE — evidence, never memory:
+
+For each finding, read the task text and then look for what it names in the
+CURRENT code: the route, component, table, endpoint, flag, test. You are
+deciding between "still outstanding", "already there", "superseded" and "not a
+task at all", and the repository answers all four.
+
+  - The thing exists and does what the task describes  -> set_marker "x"
+  - The thing does not exist and nothing supersedes it -> set_marker " "
+  - Something replaced it, or it was folded into other work, or the feature it
+    belonged to is gone                                -> withdraw (+ reason)
+  - It is waiting on something identifiable            -> set_marker "!"
+  - It is not a task: a retro bullet, a quoted log line, a table row that
+    happens to look like a checkbox                    -> leave
+  - The code does not settle it                        -> escalate
+
+Never guess. "escalate" is a real answer and is always better than a marker
+nobody can justify — a wrong state here is the bug this command exists to fix.
+
+ACTIONS (this set is closed; the reasons are not):
+  {"line": <int>, "task_id": "<id>", "action": "set_marker",     "marker": "x|>| |!", "reason": "<what in the code says so>"}
+  {"line": <int>, "task_id": "<id>", "action": "move_milestone", "milestone": "M<n>", "reason": "..."}
+  {"line": <int>, "task_id": "<id>", "action": "withdraw",       "reason": "<why it was dropped>"}
+  {"line": <int>, "task_id": "<id>", "action": "leave",          "reason": "<why this is not a task>"}
+  {"line": <int>, "task_id": "<id>", "action": "escalate",       "reason": "<what you could not determine>"}
+
+"line" identifies the finding and must match one from the brief exactly.
+
+HARD LIMITS — the CLI enforces every one of these and will refuse a proposal
+that breaks them, so proposing one only wastes the run:
+  - "v" is not an available marker. Repair is capped at [x]; only
+    ` + "`belmont reverify`" + ` may write [v], against its own commit evidence.
+  - Withdrawal is the withdraw action, not set_marker "-", because the reason
+    has to reach ## Decisions Log. Never express it by deleting the line: a
+    deletion does not survive a sibling worktree merge and the task comes back.
+  - move_milestone only ever targets a milestone that ALREADY exists, and never
+    one that already holds that task ID. Repair does not create, rename or
+    remove milestones — that is /belmont:tech-plan's job alone.
+  - You may only act on the lines in this brief.
+
+OUTPUT: write ONLY this JSON to the proposal path, nothing else:
+{"repairs": [ {...}, {...} ]}
+One entry per finding. A finding you cannot settle gets "escalate", not silence.`
+
+// parseRepairProposal reads and validates the agent's proposal file shape.
+func parseRepairProposal(path string) (repairProposal, error) {
+	var p repairProposal
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return p, fmt.Errorf("read proposal: %w", err)
+	}
+	if err := json.Unmarshal(data, &p); err != nil {
+		return p, fmt.Errorf("parse proposal: %w", err)
+	}
+	if len(p.Repairs) == 0 {
+		return p, fmt.Errorf("proposal contains no repairs")
+	}
+	for i := range p.Repairs {
+		p.Repairs[i].Source = "agent"
+	}
+	return p, nil
+}
+
+// runRepairAgent dispatches the review tier and returns the proposal path.
+func runRepairAgent(root, feature, tool string, tiers modelTierConfig, findings []repairFinding, evidenceAvailable bool) (string, error) {
+	proposalPath := filepath.Join(root, ".belmont", "features", feature, "repair-proposal.json")
+	// A stale proposal from an aborted run must never be mistaken for this
+	// run's answer.
+	os.Remove(proposalPath)
+
+	prompt := adaptPromptForTool(buildRepairBrief(feature, proposalPath, findings, evidenceAvailable), tool)
+	// Repair decides what a state marker means, which is the same class of
+	// judgement as merge reconciliation — and wrong is expensive. Same tier,
+	// which defaults to high.
+	flags := resolveModelFlags(tool, reconciliationTier(tiers), root)
+	args := toolHeadlessArgs(tool, prompt, root, flags, true)
+	if args == nil {
+		return "", fmt.Errorf("unsupported tool: %s", tool)
+	}
+	cmd := exec.Command(toolBinary(tool), args...)
+	cmd.Dir = root
+
+	prefix := fmt.Sprintf("\033[36m[%s][repair]\033[0m: ", feature)
+	if tool == "claude" {
+		tw := newTailWriter(os.Stderr, 1500, "")
+		cmd.Stdout = &claudeStreamWriter{tw: tw, prefix: prefix}
+		cmd.Stderr = tw
+	} else {
+		tw := newTailWriter(os.Stderr, 1500, prefix)
+		cmd.Stdout = tw
+		cmd.Stderr = tw
+	}
+	if err := cmd.Run(); err != nil {
+		return proposalPath, fmt.Errorf("%s: %w", tool, err)
+	}
+	return proposalPath, nil
+}
+
+// ---------------------------------------------------------------------------
+// Command
+// ---------------------------------------------------------------------------
+
+type repairJSON struct {
+	Feature           string            `json:"feature"`
+	EvidenceAvailable bool              `json:"evidence_available"`
+	Findings          []repairFinding   `json:"findings"`
+	Applied           []repairPlan      `json:"applied"`
+	NeedsReview       []repairFinding   `json:"needs_review"`
+	Rejected          []repairRejection `json:"rejected,omitempty"`
+	Warnings          []string          `json:"warnings,omitempty"`
+	Changed           bool              `json:"changed"`
+}
+
+// runRepairCmd handles `belmont repair`.
+func runRepairCmd(args []string) error {
+	fs := flag.NewFlagSet("repair", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var root, feature, format, tool, applyProposal string
+	var dryRun, mechanicalOnly, yes bool
+	fs.StringVar(&root, "root", ".", "project root")
+	fs.StringVar(&feature, "feature", "", "feature slug")
+	fs.StringVar(&format, "format", "text", "output format (text|json)")
+	fs.StringVar(&tool, "tool", "", "CLI tool (claude|codex|gemini|copilot|cursor|pi|opencode)")
+	fs.StringVar(&applyProposal, "apply-proposal", "", "apply a proposal JSON file instead of dispatching an agent")
+	fs.BoolVar(&dryRun, "dry-run", false, "report findings and commit evidence; change nothing")
+	fs.BoolVar(&mechanicalOnly, "mechanical-only", false, "apply only what commit evidence settles; do not dispatch an agent")
+	fs.BoolVar(&yes, "yes", false, "apply reviewed proposals without prompting")
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("repair: %w", err)
+	}
+	root, _ = filepath.Abs(root)
+
+	slug, err := resolveSingleFeature(root, feature, "repair")
+	if err != nil {
+		return err
+	}
+	progressPath := filepath.Join(root, ".belmont", "features", slug, "PROGRESS.md")
+	content, err := os.ReadFile(progressPath)
+	if err != nil {
+		return fmt.Errorf("repair: cannot read %s: %w", progressPath, err)
+	}
+
+	// Ambiguous milestone structure is refused, not guessed — the same policy
+	// runScopeGuard and runEvidenceCheck apply. Every lookup a move makes is
+	// keyed by milestone ID, so with a repeated heading repair would relocate a
+	// task into whichever block it saw last.
+	if snap := parseProgressSnapshot(progressPath, string(content)); snap != nil && len(snap.DupIDs) > 0 {
+		return fmt.Errorf(
+			"repair: PROGRESS.md has more than one `### %s:` heading, so milestone blocks are ambiguous. "+
+				"Repair will not guess which one a task belongs to. De-duplicate the heading (a session note must not be written in milestone-header shape), then re-run",
+			snap.DupIDs[0])
+	}
+
+	findings := collectRepairFindings(string(content))
+	findings, evidenceAvailable := attachCommitEvidence(root, findings)
+
+	out := repairJSON{Feature: slug, EvidenceAvailable: evidenceAvailable, Findings: findings}
+	jsonOut := strings.EqualFold(format, "json")
+
+	if len(findings) == 0 {
+		if jsonOut {
+			return emitJSON(out)
+		}
+		fmt.Fprintf(os.Stderr, "\033[32m✓ %s: nothing to repair — every task line parses and sits under a milestone.\033[0m\n", slug)
+		return nil
+	}
+
+	// ---- Tier 1: mechanical ------------------------------------------------
+	settled := mechanicalRepairs(findings)
+	settledActions := make([]repairAction, 0, len(settled))
+	for _, p := range settled {
+		settledActions = append(settledActions, p.Action)
+	}
+	// The mechanical tier's own output is validated too — one gate, whoever
+	// proposed the action.
+	plans, rejected := validateRepairPlans(string(content), findings, settledActions)
+	out.Rejected = rejected
+
+	today := time.Now().Format("2006-01-02")
+	if !dryRun && len(plans) > 0 {
+		newContent, applied, warnings := applyRepairPlans(string(content), plans, today)
+		if newContent != string(content) {
+			if err := os.WriteFile(progressPath, []byte(newContent), 0644); err != nil {
+				return fmt.Errorf("repair: write %s: %w", progressPath, err)
+			}
+			content = []byte(newContent)
+			out.Changed = true
+		}
+		out.Applied = append(out.Applied, plans...)
+		out.Warnings = append(out.Warnings, warnings...)
+		if !jsonOut {
+			fmt.Fprintf(os.Stderr, "\033[1mBelmont Repair\033[0m — %s\n\n", slug)
+			fmt.Fprintf(os.Stderr, "\033[1mCommit evidence\033[0m — applied %d change(s), no tokens spent:\n", len(applied))
+			for _, a := range applied {
+				fmt.Fprintf(os.Stderr, "  \033[32m✓\033[0m %s\n", a)
+			}
+			fmt.Fprintln(os.Stderr)
+		}
+	} else if !jsonOut {
+		fmt.Fprintf(os.Stderr, "\033[1mBelmont Repair\033[0m — %s\n\n", slug)
+	}
+
+	// Re-scan: the applied changes moved line numbers if anything was moved,
+	// and a finding that has been fixed is no longer a finding.
+	remaining := needsReview(collectRepairFindings(string(content)), nil)
+	remaining, _ = attachCommitEvidence(root, remaining)
+	out.NeedsReview = remaining
+
+	if !jsonOut {
+		renderRepairFindings(os.Stderr, slug, remaining, evidenceAvailable)
+	}
+
+	if len(remaining) == 0 {
+		if jsonOut {
+			return emitJSON(out)
+		}
+		fmt.Fprintf(os.Stderr, "\033[32m✓ Nothing left needs a code read.\033[0m\n")
+		renderRepairNextSteps(os.Stderr, slug, out.Changed)
+		return nil
+	}
+
+	if dryRun || mechanicalOnly {
+		if jsonOut {
+			return emitJSON(out)
+		}
+		if dryRun {
+			fmt.Fprintln(os.Stderr, "\033[2m--dry-run: nothing was written.\033[0m")
+		}
+		renderRepairRejections(os.Stderr, out.Rejected)
+		for _, w := range out.Warnings {
+			fmt.Fprintf(os.Stderr, "  \033[33m⚠\033[0m %s\n", w)
+		}
+		fmt.Fprintf(os.Stderr, "Run `belmont repair --feature %s` to have an agent read these against the code.\n", slug)
+		if out.Changed {
+			renderRepairNextSteps(os.Stderr, slug, true)
+		}
+		return nil
+	}
+
+	// ---- Tier 2: review ----------------------------------------------------
+	proposalPath := applyProposal
+	if proposalPath == "" {
+		if tool == "" {
+			tool = detectTool()
+			if tool == "" {
+				return fmt.Errorf("repair: no supported AI tool CLI found on PATH\n\nSupported tools: %s\nInstall one, pass --tool, or use --mechanical-only to stop after the commit-evidence tier",
+					strings.Join(allToolNames(), ", "))
+			}
+		}
+		tiers, _ := parseModelTiers(filepath.Join(root, ".belmont", "features", slug, "models.yaml"))
+		if !jsonOut {
+			fmt.Fprintf(os.Stderr, "\033[1mReview tier\033[0m — asking %s to read %d finding(s) against the code…\n\n", tool, len(remaining))
+		}
+		p, err := runRepairAgent(root, slug, tool, tiers, remaining, evidenceAvailable)
+		if err != nil {
+			return fmt.Errorf("repair: review tier failed: %w\n\nThe commit-evidence changes above are already applied and are unaffected", err)
+		}
+		proposalPath = p
+	}
+
+	proposal, err := parseRepairProposal(proposalPath)
+	if err != nil {
+		return fmt.Errorf("repair: %w\n\nThe commit-evidence changes above are already applied and are unaffected. Nothing from the review tier was written", err)
+	}
+	if applyProposal == "" {
+		defer os.Remove(proposalPath)
+	}
+
+	reviewPlans, reviewRejected := validateRepairPlans(string(content), remaining, proposal.Repairs)
+	out.Rejected = append(out.Rejected, reviewRejected...)
+	if !jsonOut {
+		// "leave" and "escalate" are answers, not silences — they are the two
+		// ways the review tier says a line should stay exactly as written, and
+		// a report that omitted them would look like the agent had skipped
+		// those findings.
+		renderRepairNonEdits(os.Stderr, reviewPlans)
+	}
+
+	accepted := reviewPlans
+	if !yes {
+		accepted, err = confirmRepairPlans(reviewPlans, jsonOut)
+		if err != nil {
+			return fmt.Errorf("repair: %w", err)
+		}
+	}
+
+	if len(accepted) > 0 {
+		newContent, applied, warnings := applyRepairPlans(string(content), accepted, today)
+		if newContent != string(content) {
+			if err := os.WriteFile(progressPath, []byte(newContent), 0644); err != nil {
+				return fmt.Errorf("repair: write %s: %w", progressPath, err)
+			}
+			out.Changed = true
+		}
+		out.Applied = append(out.Applied, accepted...)
+		out.Warnings = append(out.Warnings, warnings...)
+		if !jsonOut && len(applied) > 0 {
+			fmt.Fprintf(os.Stderr, "\n\033[1mReviewed\033[0m — applied %d change(s):\n", len(applied))
+			for _, a := range applied {
+				fmt.Fprintf(os.Stderr, "  \033[32m✓\033[0m %s\n", a)
+			}
+		}
+	}
+
+	if jsonOut {
+		return emitJSON(out)
+	}
+	renderRepairRejections(os.Stderr, out.Rejected)
+	for _, w := range out.Warnings {
+		fmt.Fprintf(os.Stderr, "  \033[33m⚠\033[0m %s\n", w)
+	}
+	renderRepairNextSteps(os.Stderr, slug, out.Changed)
+	return nil
+}
+
+func emitJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+// renderRepairFindings prints what still needs a code read.
+func renderRepairFindings(w io.Writer, slug string, findings []repairFinding, evidenceAvailable bool) {
+	if len(findings) == 0 {
+		return
+	}
+	if !evidenceAvailable {
+		fmt.Fprintf(w, "\033[33m⚠ The commit log could not be read here, so nothing was settled mechanically.\033[0m\n")
+		fmt.Fprintf(w, "  Run repair from inside the git working tree that holds this project's history.\n\n")
+	}
+	fmt.Fprintf(w, "\033[1m%d finding(s) need a code read:\033[0m\n", len(findings))
+	for _, f := range findings {
+		fmt.Fprintf(w, "  [%s] PROGRESS.md:%-4d %s\n", f.Marker, f.Line, repairFindingHeadline(f))
+		fmt.Fprintf(w, "        %s\n", repairEvidenceLine(f))
+	}
+	fmt.Fprintln(w)
+}
+
+func repairFindingHeadline(f repairFinding) string {
+	label := f.TaskID
+	if label == "" {
+		label = "(no task ID)"
+	}
+	text := f.Text
+	if len([]rune(text)) > 64 {
+		text = string([]rune(text)[:63]) + "…"
+	}
+	switch f.Rule {
+	case ruleUnrecognisedMarker:
+		return fmt.Sprintf("%s — %s  \033[2m(marker Belmont cannot read)\033[0m", label, text)
+	case ruleTaskOutsideMilestone:
+		return fmt.Sprintf("%s — %s  \033[2m(outside every milestone)\033[0m", label, text)
+	case ruleCrossMilestoneTaskID:
+		return fmt.Sprintf("%s — %s  \033[2m(filed under %s, ID names %s)\033[0m", label, text, f.Milestone, f.NamedMilestone)
+	}
+	return fmt.Sprintf("%s — %s", label, text)
+}
+
+func repairEvidenceLine(f repairFinding) string {
+	switch {
+	case f.TaskID == "":
+		return "\033[2mno task ID, so the commit log cannot speak to it\033[0m"
+	case !f.Evidence.Checked:
+		return "\033[2mcommit log not readable\033[0m"
+	case f.Evidence.Found:
+		return fmt.Sprintf("\033[2mcommit %s %q names it\033[0m", shortSHA(f.Evidence.SHA), f.Evidence.Subject)
+	default:
+		return "\033[2mno commit on this branch names it\033[0m"
+	}
+}
+
+// renderRepairNonEdits prints the review tier's "no change" verdicts.
+func renderRepairNonEdits(w io.Writer, plans []repairPlan) {
+	var noted []repairPlan
+	for _, p := range plans {
+		if p.Action.Action == repairLeave || p.Action.Action == repairEscalate {
+			noted = append(noted, p)
+		}
+	}
+	if len(noted) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\n\033[1m%d finding(s) left exactly as written:\033[0m\n", len(noted))
+	for _, p := range noted {
+		fmt.Fprintf(w, "  • %s\n", describeRepairPlan(p))
+	}
+}
+
+func renderRepairRejections(w io.Writer, rejected []repairRejection) {
+	if len(rejected) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\n\033[33m%d proposed action(s) refused:\033[0m\n", len(rejected))
+	for _, r := range rejected {
+		label := r.Action.TaskID
+		if label == "" {
+			label = fmt.Sprintf("PROGRESS.md:%d", r.Action.Line)
+		}
+		fmt.Fprintf(w, "  • %s %s — %s\n", label, r.Action.Action, r.Reason)
+	}
+}
+
+func renderRepairNextSteps(w io.Writer, slug string, changed bool) {
+	fmt.Fprintln(w)
+	if changed {
+		fmt.Fprintf(w, "  Review the diff before committing:  git diff -- .belmont/features/%s/PROGRESS.md\n", slug)
+	}
+	fmt.Fprintf(w, "  Confirm the file now parses:        belmont validate --feature %s\n", slug)
+	fmt.Fprintf(w, "  Repair stops at [x] — to earn [v]:  belmont reverify --feature %s\n", slug)
+}
+
+// confirmRepairPlans walks the reviewed proposals with the user.
+//
+// Non-interactive runs apply NOTHING from the review tier without --yes. The
+// commit-evidence tier has already run by this point and needs no permission —
+// it is a fact about the repository — but a judgement call about what a task
+// meant is not something to apply to someone's file behind their back.
+func confirmRepairPlans(plans []repairPlan, quiet bool) ([]repairPlan, error) {
+	var editing []repairPlan
+	for _, p := range plans {
+		if p.Action.Action == repairLeave || p.Action.Action == repairEscalate {
+			continue
+		}
+		editing = append(editing, p)
+	}
+	if len(editing) == 0 {
+		if !quiet {
+			fmt.Fprintln(os.Stderr, "\n  The review tier proposed no edits.")
+		}
+		return nil, nil
+	}
+	if !isTerminal(os.Stdin) {
+		fmt.Fprintf(os.Stderr, "\n\033[33m%d proposed edit(s), not applied — no terminal to confirm at.\033[0m\n", len(editing))
+		for _, p := range editing {
+			fmt.Fprintf(os.Stderr, "  • %s\n", describeRepairPlan(p))
+		}
+		fmt.Fprintln(os.Stderr, "  Re-run with --yes to apply them.")
+		return nil, nil
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	var accepted []repairPlan
+	all := false
+	fmt.Fprintf(os.Stderr, "\n\033[1m%d proposed edit(s):\033[0m\n", len(editing))
+	for i, p := range editing {
+		fmt.Fprintf(os.Stderr, "\n  [%d/%d] %s\n", i+1, len(editing), describeRepairPlan(p))
+		fmt.Fprintf(os.Stderr, "        %s\n", repairEvidenceLine(p.Finding))
+		if all {
+			accepted = append(accepted, p)
+			continue
+		}
+		fmt.Fprint(os.Stderr, "  Apply? [y/N/a=all/q=quit] ")
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return accepted, nil
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "y", "yes":
+			accepted = append(accepted, p)
+		case "a", "all":
+			all = true
+			accepted = append(accepted, p)
+		case "q", "quit":
+			return accepted, nil
+		}
+	}
+	return accepted, nil
+}
+
+func describeRepairPlan(p repairPlan) string {
+	label := repairLabel(p.Finding)
+	switch p.Action.Action {
+	case repairSetMarker:
+		return fmt.Sprintf("%s  [%s] → [%s]  — %s", label, p.Finding.Marker, p.Action.Marker, p.Action.Reason)
+	case repairWithdraw:
+		return fmt.Sprintf("%s  [%s] → [-] withdrawn (reason recorded in ## Decisions Log) — %s", label, p.Finding.Marker, p.Action.Reason)
+	case repairMoveMilestone:
+		return fmt.Sprintf("%s  move to %s — %s", label, p.Action.Milestone, p.Action.Reason)
+	case repairLeave:
+		return fmt.Sprintf("%s  left as written (not a task) — %s", label, p.Action.Reason)
+	case repairEscalate:
+		return fmt.Sprintf("%s  escalated — %s", label, p.Action.Reason)
+	}
+	return fmt.Sprintf("%s  %s", label, p.Action.Action)
+}

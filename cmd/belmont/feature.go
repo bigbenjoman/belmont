@@ -507,3 +507,40 @@ func computeWaves(milestones []milestone) ([]wave, error) {
 
 	return waves, nil
 }
+
+// resolveSingleFeature returns the feature slug a single-feature command
+// should operate on: the one given, or the only one on disk.
+//
+// Shared by `belmont reverify` and `belmont repair` so the two cannot disagree
+// about what "the feature" is when the flag is omitted. `cmd` names the caller
+// in the error text, which is the only thing that varies.
+//
+// Refusing when more than one exists is deliberate — both commands write to
+// PROGRESS.md, and picking one alphabetically would edit a file the user was
+// not looking at.
+func resolveSingleFeature(root, feature, cmd string) (string, error) {
+	featuresDir := filepath.Join(root, ".belmont", "features")
+	if feature != "" {
+		if !dirExists(filepath.Join(featuresDir, feature)) {
+			return "", fmt.Errorf("%s: feature %q not found at %s", cmd, feature, filepath.Join(featuresDir, feature))
+		}
+		return feature, nil
+	}
+	entries, err := os.ReadDir(featuresDir)
+	if err != nil {
+		return "", fmt.Errorf("%s: no features directory at %s", cmd, featuresDir)
+	}
+	var dirs []string
+	for _, e := range entries {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			dirs = append(dirs, e.Name())
+		}
+	}
+	if len(dirs) == 0 {
+		return "", fmt.Errorf("%s: no features found", cmd)
+	}
+	if len(dirs) > 1 {
+		return "", fmt.Errorf("%s: multiple features found, use --feature to specify one: %s", cmd, strings.Join(dirs, ", "))
+	}
+	return dirs[0], nil
+}

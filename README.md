@@ -329,6 +329,7 @@ go run ./cmd/belmont install --source . --project /tmp/test-project --no-prompt
 | `debug-auto`        | Auto debug loop with agent verification           |
 | `debug-manual`      | User-verified debug loop with deep Belmont context + in-place spec reconciliation |
 | `review-plans`      | Document alignment and drift detection            |
+| `repair`            | Fix a PROGRESS.md whose task states no longer parse |
 | `cleanup`           | Archive completed features, reduce token bloat    |
 | `status`            | Read-only progress report                         |
 | `reset`             | Reset state and start fresh                       |

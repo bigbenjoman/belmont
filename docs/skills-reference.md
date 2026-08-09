@@ -190,6 +190,45 @@ Reset belmont state. In feature mode, choose to reset a specific feature, all fe
 
 **Resets**: `.belmont/PR_FAQ.md`, `.belmont/PRD.md`, `.belmont/PROGRESS.md`, `.belmont/TECH_PLAN.md`, `.belmont/MILESTONE.md`, `.belmont/MILESTONE-*.done.md`, `.belmont/features/`
 
+## `repair`
+
+Repair a `PROGRESS.md` whose task states no longer parse. Interactive; runs
+outside the auto loop.
+
+Acts on exactly three findings, all of them entries Belmont cannot act on as
+written:
+
+- a checkbox marker outside `[ ] [>] [x] [v] [!] [-]`
+- a task line sitting outside every milestone (below a column-zero `## ` heading)
+- a task whose ID names a different milestone from the one it is filed under
+
+**Evidence, never memory.** The skill does not ask you what a marker meant — a
+damaged file carries dozens of these at once, and the honest answer six weeks
+later is "I don't know", which is how the file got this way. It asks the
+repository instead:
+
+1. `belmont repair --feature <slug> --mechanical-only` settles everything the
+   commit log can, at zero token cost — a commit naming the task ID proves the
+   work happened, so the marker becomes `[x]`.
+2. Whatever survives is read against the current code. If the route, component
+   or spec a task names is gone, the task is moot; if it is there and does what
+   the task describes, the task is done.
+
+Every conclusion is presented with its evidence and confirmed before anything is
+written.
+
+**Bounds** — enforced by the CLI when it dispatches the skill, and stated in the
+skill body for interactive use:
+
+- never writes `[v]` (repair stops at `[x]`; `belmont reverify` earns the flip)
+- never deletes a task line (dropped work is `[-]` withdrawn, reason in
+  `## Decisions Log`)
+- never creates, renames or removes a milestone; may move a task between
+  milestones that already exist
+- never touches a line it did not flag, or a line that changed since it scanned
+
+See [cli-commands.md](cli-commands.md) for the CLI half.
+
 ## `status`
 
 Read-only progress report. Does not modify any files.

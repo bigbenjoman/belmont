@@ -273,7 +273,10 @@ Before committing, verify PROGRESS.md is internally consistent:
    - Verify a matching `### P...:` task definition exists in PRD.md → flag missing definitions
    - PRD.md has NO status markers — it is a pure spec document
 
-2. **State validity** — Check that task states use valid markers: `[ ]`, `[>]`, `[x]`, `[v]`, `[!]`
+2. **State validity** — Check that task states use valid markers: `[ ]`, `[>]`, `[x]`, `[v]`, `[!]`, `[-]`
+   (letters are case-insensitive, so `[X]` and `[V]` are valid too). `[-]` is **withdrawn** —
+   work that was deliberately dropped. It is a legal state, not a mistake: never rewrite it,
+   and never delete the line (a deletion does not survive a sibling worktree merge)
    - Flag any tasks with old-style markers (emoji, `[DONE]`, etc.)
 
 3. **Milestone consistency** — Milestone status is computed from tasks, not stored:

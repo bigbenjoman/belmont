@@ -27,6 +27,10 @@ belmont auto --feature auth --allow-dirty # Skip clean-working-tree preflight (n
 belmont reverify --feature my-feature     # Re-verify all completed milestones
 belmont reverify --feature my-feature --from M3 --to M10  # Re-verify specific range
 belmont reverify --feature my-feature --tool codex  # Use specific tool
+belmont repair --feature my-feature       # Repair task states that no longer parse
+belmont repair --feature my-feature --dry-run          # Report findings + commit evidence, write nothing
+belmont repair --feature my-feature --mechanical-only  # Apply only what the commit log settles (no agent, no tokens)
+belmont repair --feature my-feature --yes # Apply reviewed proposals without prompting
 belmont sync                             # Sync master PROGRESS.md with feature states (explicit only, no longer auto-hooked)
 belmont recover                          # List preserved worktrees from failed merges
 belmont recover --list                   # Same as above
@@ -44,6 +48,52 @@ belmont version                         # Show version, commit, build date
 # Note: "belmont loop" still works as an alias for "belmont auto"
 # If a previous run was interrupted, auto detects stale branches and prompts to resume or restart
 ```
+
+## Repairing a PROGRESS.md that no longer parses
+
+`belmont validate` tells you a file is broken. `belmont repair` fixes it.
+
+The three findings it acts on are the ones Belmont cannot act on itself: a
+checkbox marker outside `[ ] [>] [x] [v] [!] [-]`, a task line sitting outside
+every milestone (below a column-zero `## ` heading), and a task whose ID names a
+different milestone from the one it is filed under.
+
+It works in two tiers, the same shape as `belmont reverify`:
+
+| Tier | What it does | Cost |
+|---|---|---|
+| **Commit evidence** | Runs `git log` for each task ID, using the same word-boundary match the auto loop's evidence guard uses. A commit naming the ID proves the work happened, so the marker becomes `[x]`. Applied automatically, and each change names the commit it relied on. | zero tokens |
+| **Review** | Dispatches an agent to read whatever survived against the current code — usually enough to separate "still outstanding" from "superseded". It proposes; you confirm each edit. | one agent run |
+
+**It never asks you what a marker meant.** A damaged file carries dozens of
+these at once and nobody remembers six weeks later, so the answer comes from the
+repository. Only what survives both tiers reaches a question, and by then it is
+grounded in what the code says today.
+
+```bash
+belmont repair --feature auth --dry-run          # report findings + evidence, write nothing
+belmont repair --feature auth --mechanical-only  # apply only what the commit log settles
+belmont repair --feature auth                    # both tiers, confirming each reviewed edit
+belmont repair --feature auth --yes              # apply reviewed proposals without prompting
+belmont repair --feature auth --format json      # machine-readable findings
+```
+
+What it will not do, whoever proposes it:
+
+- **Write `[v]`.** Repair stops at `[x]`. The verified flip has its own evidence
+  contract; `belmont reverify` is its only legitimate writer.
+- **Delete a task line.** Dropped work is `[-]` withdrawn, with the reason
+  written to `## Decisions Log`. A deletion does not survive a sibling worktree
+  merge, so the task would come back as outstanding work.
+- **Create, rename or remove a milestone.** That is `/belmont:tech-plan` alone.
+  Moving a task between milestones that already exist is allowed here, because
+  repair runs outside the auto loop where the scope guard would revert it.
+- **Touch a line it did not flag**, or a line that changed since it was scanned.
+- **Run against an ambiguous file.** A repeated `### M<n>:` heading makes every
+  milestone-keyed lookup arbitrary; repair refuses, as both runtime guards do.
+
+Nothing is committed — review with `git diff` and commit yourself. Interactively,
+`/belmont:repair` runs the same two tiers with the CLI doing the mechanical half.
 
 ## Milestone-structure validation
 
