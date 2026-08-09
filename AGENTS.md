@@ -198,8 +198,9 @@ only aborts outright when stdin is not a TTY — interactively it prompts
 `runAutoMultiFeature` before the lint and never run it. A milestone holding an
 unknown marker can never read as complete and cannot be cleared by
 `skipMilestoneInProgress` (its regex is `[ >!]`), so on the ungated paths the
-loop alternates phases until `--max-iterations`. Fixing the file by hand is the
-only route.
+loop alternates phases until `--max-iterations`. `belmont repair` is the route
+out — it settles what a commit proves and has an agent read the rest against the
+code; hand-editing the marker also works.
 
 **Violations carry a severity, and only errors stop anything.** `severityError`
 means the loop cannot proceed correctly — an unrecognised marker, colliding

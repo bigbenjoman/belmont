@@ -268,6 +268,12 @@ func mechanicalRepairs(findings []repairFinding) []repairPlan {
 		if !f.Evidence.Checked || !f.Evidence.Found {
 			continue
 		}
+		// The newest thing said about this task is that it was reverted. A
+		// commit naming the ID is evidence that something happened, not that the
+		// work stands, and this is the one case the log states outright.
+		if f.Evidence.Reverting {
+			continue
+		}
 		reason := fmt.Sprintf("commit %s names this task", shortSHA(f.Evidence.SHA))
 		if f.Evidence.Subject != "" {
 			reason = fmt.Sprintf("commit %s (%q) names this task", shortSHA(f.Evidence.SHA), f.Evidence.Subject)
@@ -349,8 +355,16 @@ func validateRepairPlans(content string, findings []repairFinding, actions []rep
 			reject(a, fmt.Sprintf("line %d is not one of the findings repair reported", a.Line))
 			continue
 		}
-		if a.TaskID != "" && f.TaskID != "" && a.TaskID != f.TaskID {
-			reject(a, fmt.Sprintf("names task %s but line %d holds %s", a.TaskID, a.Line, f.TaskID))
+		// The cross-check has to fire when the finding has NO id too. An agent
+		// off by one line otherwise has its action accepted against whichever
+		// finding sits there, provided that one is ID-less — and `withdraw`
+		// would write `[-]` plus a Decisions Log entry onto the wrong task.
+		if a.TaskID != "" && a.TaskID != f.TaskID {
+			held := f.TaskID
+			if held == "" {
+				held = "a line with no task ID"
+			}
+			reject(a, fmt.Sprintf("names task %s but line %d holds %s", a.TaskID, a.Line, held))
 			continue
 		}
 		if seen[a.Line] {
@@ -397,6 +411,16 @@ func validateRepairPlans(content string, findings []repairFinding, actions []rep
 				reject(a, fmt.Sprintf("%s already holds a task with ID %s — moving this line in would make the ID ambiguous", dest, f.TaskID))
 				continue
 			}
+			// Claim the ID for the destination. `idsIn` was built from the
+			// pre-apply document, so without this two moves of the same ID into
+			// the same milestone both pass — neither is there *yet* — and the
+			// result is the duplicate this check exists to prevent.
+			if f.TaskID != "" {
+				if idsIn[dest] == nil {
+					idsIn[dest] = map[string]bool{}
+				}
+				idsIn[dest][f.TaskID] = true
+			}
 			a.Milestone = dest
 		case repairWithdraw:
 			if strings.TrimSpace(a.Reason) == "" {
@@ -434,9 +458,10 @@ var repairTaskLineRe = regexp.MustCompile(`^(\s*-\s+)\[(.)\](\s+.*)$`)
 //
 // `today` is passed in rather than read from the clock so the Decisions Log
 // entries are deterministic under test.
-func applyRepairPlans(content string, plans []repairPlan, today string) (string, []string, []string) {
+func applyRepairPlans(content string, plans []repairPlan, today string) (string, []repairPlan, []string) {
 	lines := strings.Split(content, "\n")
-	var applied, warnings []string
+	var wrote []repairPlan
+	var warnings []string
 
 	moves := map[int]string{}
 	var decisions []string
@@ -460,8 +485,7 @@ func applyRepairPlans(content string, plans []repairPlan, today string) (string,
 				continue
 			}
 			lines[idx] = m[1] + "[" + p.Action.Marker + "]" + m[3]
-			applied = append(applied, fmt.Sprintf("%s [%s] → [%s] — %s",
-				repairLabel(p.Finding), p.Finding.Marker, p.Action.Marker, p.Action.Reason))
+			wrote = append(wrote, p)
 		case repairWithdraw:
 			m := repairTaskLineRe.FindStringSubmatch(lines[idx])
 			if len(m) < 4 {
@@ -469,14 +493,12 @@ func applyRepairPlans(content string, plans []repairPlan, today string) (string,
 				continue
 			}
 			lines[idx] = m[1] + "[-]" + m[3]
-			applied = append(applied, fmt.Sprintf("%s [%s] → [-] withdrawn — %s",
-				repairLabel(p.Finding), p.Finding.Marker, p.Action.Reason))
+			wrote = append(wrote, p)
 			decisions = append(decisions, fmt.Sprintf("%s — %s withdrawn: %s",
 				today, repairLabel(p.Finding), strings.TrimSpace(p.Action.Reason)))
 		case repairMoveMilestone:
 			moves[idx] = p.Action.Milestone
-			applied = append(applied, fmt.Sprintf("%s moved to %s — %s",
-				repairLabel(p.Finding), p.Action.Milestone, p.Action.Reason))
+			wrote = append(wrote, p)
 		case repairLeave, repairEscalate:
 			// Nothing to write.
 		}
@@ -487,10 +509,22 @@ func applyRepairPlans(content string, plans []repairPlan, today string) (string,
 		var dropped []int
 		lines, moveWarnings, dropped = moveTaskLines(lines, moves)
 		warnings = append(warnings, moveWarnings...)
-		// A move that could not be placed is not applied, so its summary line
-		// would be a lie. Drop it.
+		// A move that could not be placed did not happen, so it must come back
+		// out of the written set — otherwise the report, and the JSON, claim a
+		// change that is not in the file.
 		if len(dropped) > 0 {
-			applied = dropMoveSummaries(applied, plans, dropped)
+			droppedIdx := map[int]bool{}
+			for _, i := range dropped {
+				droppedIdx[i] = true
+			}
+			kept := wrote[:0]
+			for _, p := range wrote {
+				if p.Action.Action == repairMoveMilestone && droppedIdx[p.Finding.Line-1] {
+					continue
+				}
+				kept = append(kept, p)
+			}
+			wrote = kept
 		}
 	}
 
@@ -498,7 +532,25 @@ func applyRepairPlans(content string, plans []repairPlan, today string) (string,
 	for _, d := range decisions {
 		out = appendDecisionLogEntry(out, d)
 	}
-	return out, applied, warnings
+	return out, wrote, warnings
+}
+
+// summariseRepairPlan is the ONE description of a change repair made. The
+// report prints it, and the JSON `applied` list is the plans behind it — two
+// renderings of one fact rather than two lists that can disagree.
+func summariseRepairPlan(p repairPlan) string {
+	switch p.Action.Action {
+	case repairSetMarker:
+		return fmt.Sprintf("%s [%s] → [%s] — %s",
+			repairLabel(p.Finding), p.Finding.Marker, p.Action.Marker, p.Action.Reason)
+	case repairWithdraw:
+		return fmt.Sprintf("%s [%s] → [-] withdrawn — %s",
+			repairLabel(p.Finding), p.Finding.Marker, p.Action.Reason)
+	case repairMoveMilestone:
+		return fmt.Sprintf("%s moved to %s — %s",
+			repairLabel(p.Finding), p.Action.Milestone, p.Action.Reason)
+	}
+	return fmt.Sprintf("%s %s", repairLabel(p.Finding), p.Action.Action)
 }
 
 // repairLabel names a finding the way the rest of Belmont names tasks.
@@ -507,27 +559,6 @@ func repairLabel(f repairFinding) string {
 		return f.TaskID
 	}
 	return fmt.Sprintf("PROGRESS.md:%d", f.Line)
-}
-
-// dropMoveSummaries removes the summary lines belonging to moves that were not
-// placed, identified by their original line index.
-func dropMoveSummaries(applied []string, plans []repairPlan, dropped []int) []string {
-	lost := map[string]bool{}
-	for _, idx := range dropped {
-		for _, p := range plans {
-			if p.Finding.Line-1 == idx && p.Action.Action == repairMoveMilestone {
-				lost[fmt.Sprintf("%s moved to %s — %s", repairLabel(p.Finding), p.Action.Milestone, p.Action.Reason)] = true
-			}
-		}
-	}
-	var out []string
-	for _, a := range applied {
-		if lost[a] {
-			continue
-		}
-		out = append(out, a)
-	}
-	return out
 }
 
 // moveTaskLines relocates the lines in `moves` (line index -> destination
@@ -634,10 +665,16 @@ func appendDecisionLogEntry(content, entry string) string {
 		trimmed := strings.TrimRight(content, "\n")
 		return trimmed + "\n\n## Decisions Log\n\n- " + entry + "\n"
 	}
-	// Find the end of the section: the next column-zero `## `, or EOF.
+	// Find the end of the section: the next column-zero `## `, the next
+	// milestone header, or EOF.
+	//
+	// A milestone header is deliberately NOT a section break, so scanning for
+	// one alone ran past `### M1:` when `## Decisions Log` sits above the
+	// milestones — the whole rest of the document became the log body and the
+	// entry was appended at EOF, inside the last milestone.
 	end := len(lines)
 	for i := start + 1; i < len(lines); i++ {
-		if isSectionBreak(lines[i]) {
+		if isSectionBreak(lines[i]) || msHeaderRe.MatchString(lines[i]) {
 			end = i
 			break
 		}
@@ -803,14 +840,19 @@ func runRepairAgent(root, feature, tool string, tiers modelTierConfig, findings 
 // ---------------------------------------------------------------------------
 
 type repairJSON struct {
-	Feature           string            `json:"feature"`
-	EvidenceAvailable bool              `json:"evidence_available"`
-	Findings          []repairFinding   `json:"findings"`
-	Applied           []repairPlan      `json:"applied"`
-	NeedsReview       []repairFinding   `json:"needs_review"`
-	Rejected          []repairRejection `json:"rejected,omitempty"`
-	Warnings          []string          `json:"warnings,omitempty"`
-	Changed           bool              `json:"changed"`
+	Feature           string          `json:"feature"`
+	EvidenceAvailable bool            `json:"evidence_available"`
+	Findings          []repairFinding `json:"findings"`
+	Applied           []repairPlan    `json:"applied"`
+	// WouldApply is what the mechanical tier settles but has not written,
+	// because this is a --dry-run. Separate from Applied so a consumer — the
+	// interactive skill runs `--dry-run --format json` first — can never mistake
+	// a preview for a change on disk. Changed is false throughout a dry run.
+	WouldApply  []repairPlan      `json:"would_apply,omitempty"`
+	NeedsReview []repairFinding   `json:"needs_review"`
+	Rejected    []repairRejection `json:"rejected,omitempty"`
+	Warnings    []string          `json:"warnings,omitempty"`
+	Changed     bool              `json:"changed"`
 }
 
 // runRepairCmd handles `belmont repair`.
@@ -888,23 +930,46 @@ func runRepairCmd(args []string) error {
 			content = []byte(newContent)
 			out.Changed = true
 		}
-		out.Applied = append(out.Applied, plans...)
+		// Only plans applyRepairPlans actually wrote. `leave` and `escalate`
+		// write nothing by definition, and a plan it skipped emitted a warning
+		// instead — reporting either as applied is the same class of untruth
+		// this command exists to remove.
+		out.Applied = append(out.Applied, applied...)
 		out.Warnings = append(out.Warnings, warnings...)
 		if !jsonOut {
 			fmt.Fprintf(os.Stderr, "\033[1mBelmont Repair\033[0m — %s\n\n", slug)
 			fmt.Fprintf(os.Stderr, "\033[1mCommit evidence\033[0m — applied %d change(s), no tokens spent:\n", len(applied))
 			for _, a := range applied {
-				fmt.Fprintf(os.Stderr, "  \033[32m✓\033[0m %s\n", a)
+				fmt.Fprintf(os.Stderr, "  \033[32m✓\033[0m %s\n", summariseRepairPlan(a))
 			}
 			fmt.Fprintln(os.Stderr)
 		}
-	} else if !jsonOut {
-		fmt.Fprintf(os.Stderr, "\033[1mBelmont Repair\033[0m — %s\n\n", slug)
+	} else {
+		if dryRun {
+			out.WouldApply = plans
+		}
+		if !jsonOut {
+			fmt.Fprintf(os.Stderr, "\033[1mBelmont Repair\033[0m — %s\n\n", slug)
+			// A dry run must still say what the mechanical tier WOULD settle.
+			// Without this the preview lists every finding as needing a code
+			// read, including the ones a commit already answers — which is both
+			// wrong and the opposite of the point.
+			if dryRun && len(plans) > 0 {
+				_, applied, _ := applyRepairPlans(string(content), plans, today)
+				fmt.Fprintf(os.Stderr, "\033[1mCommit evidence\033[0m — would apply %d change(s), no tokens spent:\n", len(applied))
+				for _, a := range applied {
+					fmt.Fprintf(os.Stderr, "  \033[2m→\033[0m %s\n", summariseRepairPlan(a))
+				}
+				fmt.Fprintln(os.Stderr)
+			}
+		}
 	}
 
 	// Re-scan: the applied changes moved line numbers if anything was moved,
-	// and a finding that has been fixed is no longer a finding.
-	remaining := needsReview(collectRepairFindings(string(content)), nil)
+	// and a finding that has been fixed is no longer a finding. On a dry run
+	// nothing was written, so exclude what the mechanical tier settled instead —
+	// otherwise the preview and the real run report different work.
+	remaining := needsReview(collectRepairFindings(string(content)), plans)
 	remaining, _ = attachCommitEvidence(root, remaining)
 	out.NeedsReview = remaining
 
@@ -917,7 +982,12 @@ func runRepairCmd(args []string) error {
 			return emitJSON(out)
 		}
 		fmt.Fprintf(os.Stderr, "\033[32m✓ Nothing left needs a code read.\033[0m\n")
-		renderRepairNextSteps(os.Stderr, slug, out.Changed)
+		// Even on the happy path: a refusal or a skipped write is never dropped.
+		renderRepairRejections(os.Stderr, out.Rejected)
+		for _, w := range out.Warnings {
+			fmt.Fprintf(os.Stderr, "  \033[33m⚠\033[0m %s\n", w)
+		}
+		renderRepairNextSteps(os.Stderr, slug, out.Changed, 0)
 		return nil
 	}
 
@@ -934,7 +1004,7 @@ func runRepairCmd(args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "Run `belmont repair --feature %s` to have an agent read these against the code.\n", slug)
 		if out.Changed {
-			renderRepairNextSteps(os.Stderr, slug, true)
+			renderRepairNextSteps(os.Stderr, slug, true, len(remaining))
 		}
 		return nil
 	}
@@ -954,6 +1024,15 @@ func runRepairCmd(args []string) error {
 			fmt.Fprintf(os.Stderr, "\033[1mReview tier\033[0m — asking %s to read %d finding(s) against the code…\n\n", tool, len(remaining))
 		}
 		p, err := runRepairAgent(root, slug, tool, tiers, remaining, evidenceAvailable)
+		// Arm the cleanup on the path RETURNED, before checking the error and
+		// before parsing. Every failure below — the agent exiting non-zero,
+		// writing prose instead of JSON, writing an empty repairs array —
+		// otherwise returns with the scratch file still sitting inside
+		// `.belmont/features/<slug>/`, where it is an untracked file that
+		// `requireCleanWorkingTree` refuses to start `belmont auto` over. A
+		// command that heals PROGRESS.md must not leave debris that blocks the
+		// loop.
+		defer os.Remove(p)
 		if err != nil {
 			return fmt.Errorf("repair: review tier failed: %w\n\nThe commit-evidence changes above are already applied and are unaffected", err)
 		}
@@ -964,9 +1043,24 @@ func runRepairCmd(args []string) error {
 	if err != nil {
 		return fmt.Errorf("repair: %w\n\nThe commit-evidence changes above are already applied and are unaffected. Nothing from the review tier was written", err)
 	}
-	if applyProposal == "" {
-		defer os.Remove(proposalPath)
+
+	// RE-READ from disk before validating or writing anything.
+	//
+	// The review tier is a subprocess that runs for minutes, and everything
+	// below rebuilds the WHOLE file and writes it back. Using the copy read
+	// before the agent started would silently revert any edit made in the
+	// meantime — by the user, by an editor, or by the agent itself if it
+	// ignored the instruction not to write.
+	//
+	// It is also what makes the staleness guard real rather than decorative.
+	// `applyRepairPlans` refuses a plan whose line no longer matches
+	// `Finding.Raw`; against the same snapshot the findings came from, that
+	// comparison can never fail, so it protected nothing on this path.
+	fresh, err := os.ReadFile(progressPath)
+	if err != nil {
+		return fmt.Errorf("repair: re-read %s after the review tier: %w", progressPath, err)
 	}
+	content = fresh
 
 	reviewPlans, reviewRejected := validateRepairPlans(string(content), remaining, proposal.Repairs)
 	out.Rejected = append(out.Rejected, reviewRejected...)
@@ -994,12 +1088,12 @@ func runRepairCmd(args []string) error {
 			}
 			out.Changed = true
 		}
-		out.Applied = append(out.Applied, accepted...)
+		out.Applied = append(out.Applied, applied...)
 		out.Warnings = append(out.Warnings, warnings...)
 		if !jsonOut && len(applied) > 0 {
 			fmt.Fprintf(os.Stderr, "\n\033[1mReviewed\033[0m — applied %d change(s):\n", len(applied))
 			for _, a := range applied {
-				fmt.Fprintf(os.Stderr, "  \033[32m✓\033[0m %s\n", a)
+				fmt.Fprintf(os.Stderr, "  \033[32m✓\033[0m %s\n", summariseRepairPlan(a))
 			}
 		}
 	}
@@ -1011,7 +1105,7 @@ func runRepairCmd(args []string) error {
 	for _, w := range out.Warnings {
 		fmt.Fprintf(os.Stderr, "  \033[33m⚠\033[0m %s\n", w)
 	}
-	renderRepairNextSteps(os.Stderr, slug, out.Changed)
+	renderRepairNextSteps(os.Stderr, slug, out.Changed, countUnresolved(reviewPlans, remaining))
 	return nil
 }
 
@@ -1064,6 +1158,8 @@ func repairEvidenceLine(f repairFinding) string {
 		return "\033[2mno task ID, so the commit log cannot speak to it\033[0m"
 	case !f.Evidence.Checked:
 		return "\033[2mcommit log not readable\033[0m"
+	case f.Evidence.Found && f.Evidence.Reverting:
+		return fmt.Sprintf("\033[2mthe newest commit naming it is a revert: %s %q\033[0m", shortSHA(f.Evidence.SHA), f.Evidence.Subject)
 	case f.Evidence.Found:
 		return fmt.Sprintf("\033[2mcommit %s %q names it\033[0m", shortSHA(f.Evidence.SHA), f.Evidence.Subject)
 	default:
@@ -1102,10 +1198,37 @@ func renderRepairRejections(w io.Writer, rejected []repairRejection) {
 	}
 }
 
-func renderRepairNextSteps(w io.Writer, slug string, changed bool) {
+// countUnresolved reports how many findings the review tier left as they were
+// — escalations, plus anything it did not answer at all. These are what the
+// user still has to edit by hand, and a report that ends with "confirm the file
+// now parses" without naming them points at a command that will exit 1.
+func countUnresolved(plans []repairPlan, findings []repairFinding) int {
+	answered := map[int]bool{}
+	for _, p := range plans {
+		if p.Action.Action == repairEscalate {
+			continue // answered, but not resolved
+		}
+		answered[p.Finding.Line] = true
+	}
+	n := 0
+	for _, f := range findings {
+		if !answered[f.Line] {
+			n++
+		}
+	}
+	return n
+}
+
+func renderRepairNextSteps(w io.Writer, slug string, changed bool, unresolved int) {
 	fmt.Fprintln(w)
 	if changed {
 		fmt.Fprintf(w, "  Review the diff before committing:  git diff -- .belmont/features/%s/PROGRESS.md\n", slug)
+	}
+	// An escalation is a finding repair looked at and could not settle. Saying
+	// "confirm the file now parses" and nothing else points the user at a
+	// command that will exit 1 on exactly those lines, with no route forward.
+	if unresolved > 0 {
+		fmt.Fprintf(w, "  \033[33m%d finding(s) unresolved\033[0m — edit those lines by hand; `belmont validate --feature %s` names each one\n", unresolved, slug)
 	}
 	fmt.Fprintf(w, "  Confirm the file now parses:        belmont validate --feature %s\n", slug)
 	fmt.Fprintf(w, "  Repair stops at [x] — to earn [v]:  belmont reverify --feature %s\n", slug)

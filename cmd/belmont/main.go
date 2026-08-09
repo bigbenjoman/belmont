@@ -335,7 +335,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  belmont auto --feature SLUG [--from M1] [--to M5] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--policy autonomous|milestone|every_action] [--max-iterations N] [--max-parallel N] [--allow-dirty] [--root PATH]")
 	fmt.Fprintln(w, "    (alias: belmont loop)")
 	fmt.Fprintln(w, "  belmont reverify [--feature SLUG] [--from M1] [--to M5] [--root PATH] [--format text|json]")
-	fmt.Fprintln(w, "  belmont repair [--feature SLUG] [--dry-run] [--mechanical-only] [--yes] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
+	fmt.Fprintln(w, "  belmont repair [--feature SLUG] [--dry-run] [--mechanical-only] [--apply-proposal FILE] [--yes] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont sync [--root PATH]")
 	fmt.Fprintln(w, "  belmont recover [--list] [--merge SLUG] [--clean SLUG] [--clean-all] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont steer [--feature SLUG] [--milestone M5] [--message \"text\" | --file PATH | -] [--root PATH]")

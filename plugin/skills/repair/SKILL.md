@@ -76,16 +76,44 @@ This marks `[x]` — and only `[x]` — where a commit names the task ID. It pri
 the commit it relied on for each change.
 
 If the CLI is not installed, do the same by hand: read
-`.belmont/features/<slug>/PROGRESS.md`, find the task lines Belmont cannot read
-(see *What counts as a finding*), and check each ID with
-`git log --oneline --all --grep '<task-id>'`.
+`.belmont/features/<slug>/PROGRESS.md` and find the task lines Belmont cannot
+read (see *What counts as a finding*). To check an ID, match the commit log with
+a **word boundary** around it and search **HEAD's history only** —
+
+```bash
+git log --format='%H %s' | grep -E '(^|[^A-Za-z0-9-])P1-M2-3([^A-Za-z0-9-]|$)'
+```
+
+Not `--grep P1-M2-3`, which is an unanchored substring match and credits `P1-M2-3`
+with a commit for `P1-M2-30`; and not `--all`, which searches dead branches. If
+the newest matching commit is a revert, the task is **not** settled.
 
 ### Tier 2 — read the survivors against the code
 
-For everything still outstanding, follow *How to decide* below. Then present
-your conclusions to the user **as a list, with the evidence for each**, and ask
-them to confirm before anything is written. Apply the confirmed ones by editing
-`PROGRESS.md` directly, obeying every rule under *Hard limits*.
+For everything still outstanding, follow *How to decide* below. Present your
+conclusions to the user **as a list, with the evidence for each** — name the
+file, route or test you looked at, not just the verdict — and ask them to
+confirm before anything is written.
+
+Then write the confirmed ones as a proposal and hand it back to the CLI:
+
+```bash
+cat > /tmp/belmont-repair.json <<'JSON'
+{"repairs":[
+  {"line": 14, "task_id": "P1-M2-3", "action": "withdraw", "reason": "the /admin/reports route was removed in M3; nothing references it"}
+]}
+JSON
+belmont repair --feature <slug> --apply-proposal /tmp/belmont-repair.json
+```
+
+**Use that rather than editing `PROGRESS.md` yourself.** It is the same
+validation the CLI-dispatched path goes through, so the rules under *Hard
+limits* are enforced rather than merely remembered, and every refusal is
+explained. Without `--yes` it walks you through each edit for confirmation.
+The `line` values are the ones tier 1 reported.
+
+Only edit the file by hand if the CLI is not installed — and then obey every
+rule under *Hard limits* yourself.
 
 Finish by running `belmont validate --feature <slug>` and reporting the result.
 
