@@ -377,7 +377,12 @@ func interactiveMilestoneSelect(milestones []milestone) (from, to string, err er
 	firstUndone := ""
 	for _, m := range milestones {
 		marker := "[ ]"
-		if milestoneAllDone(m) {
+		// Same order as milestoneStatusIcon and auto's dry-run: withdrawn first,
+		// because an all-withdrawn milestone is milestoneAllDone and rendering
+		// it [x] claims work that never happened.
+		if milestoneAllWithdrawn(m) {
+			marker = "[-]"
+		} else if milestoneAllDone(m) {
 			marker = "[x]"
 		}
 		if !milestoneAllDone(m) && firstUndone == "" {
