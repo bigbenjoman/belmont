@@ -33,10 +33,19 @@ permanently. That is independent of who wrote it: a hand-written `[v]`, a `[V]`,
 or one left by a run from before this guard existed are all equally invisible.
 
 `belmont repair` covers it, as an audit rather than a guard: it reports every
-verified task no commit names, never acts on it mechanically, and routes the
-judgement to an agent reading the code. Demotion to `[x]` is the remedy, which
-hands the flip back to `belmont reverify`. See
+verified task the commit log does not settle, never acts on it mechanically, and
+routes the judgement to an agent reading the code. Demotion to `[x]` is the
+remedy, which hands the flip back to `belmont reverify`. See
 [../cross-cutting/progress-repair.md](../cross-cutting/progress-repair.md).
+
+"Does not settle" is wider than "no commit names it", and the difference is the
+whole audit on a multi-feature project. Task IDs are feature-local and the commit
+log is not, so `auth`'s commit for its own `P1-M1-1` is not evidence about
+`billing`'s — and under the shipped template every feature holds a `P1-M1-1`.
+Accepting a bare log match silenced the audit for every feature but the one that
+did the work. `auditVerifiedWithoutEvidence` therefore takes the slug and
+consults `taskIDsClaimedElsewhere`, exactly as the mechanical tier does; a shared
+ID is reported with the commit named and `Ambiguous` set, never treated as proof.
 
 ## The other half of the contract
 
@@ -62,6 +71,7 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestFindEvidenceMissingFli
 
 ## Revisions
 
+- 2026-08-09 — the `[v]` audit applies the cross-feature ambiguity rule too: a bare commit-log match on a task ID another feature also claims is not evidence, and accepting one made the audit silent on every feature but the one that did the work. `commitTaskIDRe` gained the left word boundary its comment already claimed, so `commitNamedTaskIDs` and `lookupCommitEvidence` no longer disagree about what counts as a mention.
 - 2026-08-09 — the git query moved to `lookupCommitEvidence`, shared with `belmont repair`; recorded why repair scopes and fails differently. Added `TestEvidenceGuardAcceptsAFlipWithACommit`: the positive branch of this check had no test anywhere, so `if false && pattern.MatchString(msg)` left the suite green while every legitimate `[v]` flip got reverted.
 - 2026-04-21 — initial: commit-log evidence check, word-boundary regex, fail-open on git errors.
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.

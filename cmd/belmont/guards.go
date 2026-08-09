@@ -918,6 +918,39 @@ func isGitWorkTree(root string) bool {
 	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 
+// commitLogReadable reports whether `git log` can answer questions here at all.
+//
+// It exists because "the log is unreadable" and "no finding carried a task ID"
+// are different facts, and attachCommitEvidence used to return the same value
+// for both — it set its availability flag only inside the per-finding loop, so
+// a healthy repository reported the log as unreadable whenever nothing it was
+// asked about had an ID. The brief then told the review tier to discount
+// evidence that had in fact been gathered.
+//
+// isGitWorkTree is not enough on its own: a repository with no commits yet is a
+// work tree, and `git log` fails in it.
+func commitLogReadable(root string) bool {
+	cmd := exec.Command("git", "log", "-1", "--format=%H")
+	cmd.Dir = root
+	return cmd.Run() == nil
+}
+
+// isShallowClone reports whether this repository's history is truncated.
+//
+// `git log` succeeds in a shallow clone and returns the commits it has, so
+// "could not look" and "looked at a fifth of the history" are indistinguishable
+// from the exit code alone. The evidence guard already treats shallowness as a
+// hazard — `taskHasCommit` fails open so a shallow CI checkout cannot block real
+// work — and the `[v]` audit needs the same fact for the opposite reason: there,
+// a truncated log turns "no commit names it" into an accusation against work
+// that was committed before the cut.
+func isShallowClone(root string) bool {
+	cmd := exec.Command("git", "rev-parse", "--is-shallow-repository")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	return err == nil && strings.TrimSpace(string(out)) == "true"
+}
+
 // lookupCommitEvidence finds the first commit naming taskID, scoped to
 // sinceRef..HEAD when sinceRef is non-empty.
 //
@@ -972,27 +1005,52 @@ func shortSHA(sha string) string {
 	return sha
 }
 
-// commitNamedTaskIDs returns every task ID mentioned by any commit reachable
-// from HEAD, plus whether the log could be read at all.
+// commitNamedTaskIDs returns, for every task ID mentioned by any commit
+// reachable from HEAD, the newest commit that mentions it — plus whether the log
+// could be read at all.
 //
-// One `git log` for the whole question, rather than one per task. The audit in
+// ONE `git log` for the whole question, rather than one per task. The audit in
 // `belmont repair` asks it of every `[v]` in the file, and a project with three
 // hundred verified tasks would otherwise fork three hundred processes to learn
-// what a single pass already knows.
+// what a single pass already knows. It carries the SHA and subject for the same
+// reason: the audit has to NAME the commit when it reports an ID another feature
+// also claims, and fetching that per ID afterwards puts the three hundred forks
+// straight back — on exactly the projects where every ID is shared.
 //
-// It answers only presence. `lookupCommitEvidence` stays the per-ID primitive
-// because it also reports WHICH commit, and whether that commit is a revert —
-// facts the mechanical tier acts on and this audit does not need.
-func commitNamedTaskIDs(root string) (map[string]bool, bool) {
-	cmd := exec.Command("git", "log", "--format=%B%x1e")
+// `lookupCommitEvidence` stays the per-ID primitive for the mechanical tier,
+// which asks about one task at a time. Both read `%B` and both use
+// `commitTaskIDRe`'s word boundaries, so they cannot disagree about what counts
+// as a mention.
+//
+// `git log` walks newest-first, so the first record naming an ID wins — the same
+// rule `lookupCommitEvidence` follows when it returns on its first match.
+func commitNamedTaskIDs(root string) (map[string]commitEvidence, bool) {
+	cmd := exec.Command("git", "log", "--format=%H%x1f%s%x1f%B%x1e")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, false
 	}
-	ids := map[string]bool{}
-	for _, m := range commitTaskIDRe.FindAllString(string(out), -1) {
-		ids[m] = true
+	ids := map[string]commitEvidence{}
+	for _, record := range strings.Split(string(out), "\x1e") {
+		fields := strings.SplitN(record, "\x1f", 3)
+		if len(fields) < 3 {
+			continue
+		}
+		sha := strings.TrimSpace(strings.TrimLeft(fields[0], "\n"))
+		subject := strings.TrimSpace(fields[1])
+		for _, m := range commitTaskIDRe.FindAllStringSubmatch(fields[2], -1) {
+			if _, seen := ids[m[2]]; seen {
+				continue
+			}
+			ids[m[2]] = commitEvidence{
+				Checked:   true,
+				Found:     true,
+				SHA:       sha,
+				Subject:   subject,
+				Reverting: revertSubjectRe.MatchString(subject),
+			}
+		}
 	}
 	return ids, true
 }
@@ -1000,7 +1058,15 @@ func commitNamedTaskIDs(root string) (map[string]bool, bool) {
 // commitTaskIDRe matches a Belmont task ID appearing in prose, with the same
 // word boundaries lookupCommitEvidence uses so the two cannot disagree about
 // what counts as a mention.
-var commitTaskIDRe = regexp.MustCompile(`P\d+-[A-Za-z0-9][A-Za-z0-9-]*`)
+//
+// The LEFT boundary is a capture group rather than a lookbehind, which RE2 does
+// not have — group 2 is the ID. Without it the pattern matched a task ID out of
+// the middle of a longer token (`feat-P1-M1-1`, `APP1-M1-1`), which
+// lookupCommitEvidence rejects, so the audit read a mention where the per-ID
+// primitive read none and a stale `[v]` went unreported. The right boundary
+// needs no assertion: the body already stops at the first character outside
+// `[A-Za-z0-9-]`, which is exactly lookupCommitEvidence's trailing class.
+var commitTaskIDRe = regexp.MustCompile(`(^|[^A-Za-z0-9-])(P\d+-[A-Za-z0-9][A-Za-z0-9-]*)`)
 
 // logEvidenceRevert prints a one-line summary per verify-guard revert batch.
 func logEvidenceRevert(feature, milestoneID string, missing []evidenceMissing) {

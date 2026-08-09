@@ -62,6 +62,17 @@ Not `--grep P1-M2-3`, which is an unanchored substring match and credits `P1-M2-
 with a commit for `P1-M2-30`; and not `--all`, which searches dead branches. If
 the newest matching commit is a revert, the task is **not** settled.
 
+**And check no sibling feature claims the same ID first.** Task IDs are
+feature-local — `P1-M1-1` exists in essentially every feature — while the commit
+log is not, so a bare ID match can be about entirely different work:
+
+```bash
+grep -l 'P1-M2-3:' .belmont/features/*/PROGRESS.md
+```
+
+More than one file means the commit proves nothing about *this* feature. Read the
+code instead; do not mark it `[x]` on that commit.
+
 ### Tier 2 — read the survivors against the code
 
 For everything still outstanding, follow *How to decide* below. Present your
@@ -109,6 +120,15 @@ Three things Belmont cannot act on:
 
 Nothing else. A task that is merely old, or wrong, or badly worded is not a
 repair finding.
+
+### Reading the evidence on a finding
+
+| Field | What it means |
+|---|---|
+| `checked: false` | the commit log could not be read at all — weigh the code alone |
+| `found: true` | a commit names this task ID |
+| `ambiguous: true` | …but another feature's PROGRESS.md claims the same ID. Task IDs are feature-local and the commit log is not, so **treat it as no evidence** and read the code. It is why the finding reached you with a SHA attached instead of being settled without you |
+| `also_verified_without_evidence: true` | the line is **both** the parse problem named by `rule` **and** a verified marker no commit proves. You get one action for it: decide the parse problem, and say in your reason whether the verified claim still stands |
 
 ## How to decide
 
@@ -169,6 +189,9 @@ them. In Mode B nothing enforces them but you, and they matter more, not less.
   carry why. Never express withdrawal by deleting the line: a deletion does not
   survive a sibling worktree merge, so the task comes back as outstanding work
   and the next person deletes it again.
+- **A `[v]` task cannot be withdrawn in one step.** Nothing in Belmont writes
+  that marker back — `belmont reverify` only ever promotes `[x]` — so demote it
+  with `set_marker` `"x"` first. Withdrawing from there is unrestricted.
 - **Never create, rename or remove a `### M<n>:` milestone.** That is
   `/belmont:tech-plan`'s job alone. Moving a task between milestones that
   already exist is fine here — repair runs outside the auto loop, where the

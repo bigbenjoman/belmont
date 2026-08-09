@@ -202,11 +202,13 @@ written:
 - a task line sitting outside every milestone (below a column-zero `## ` heading)
 - a task whose ID names a different milestone from the one it is filed under
 
-…plus one audit that is not a repair: a task marked `[v]` that no commit names.
-The commit-evidence guard only compares one phase's before and after, so a `[v]`
-already on disk when a run started is audited by nothing. Reported separately,
-never applied mechanically, and `leave` is a legitimate verdict — docs-only and
-config-only tasks often leave no commit naming them.
+…plus one audit that is not a repair: a task marked `[v]` that the commit log does
+not settle — no commit names it, or one does but another feature also claims the
+task ID, which makes the match no evidence at all. The commit-evidence guard only
+compares one phase's before and after, so a `[v]` already on disk when a run
+started is audited by nothing. Reported separately, never applied mechanically,
+and `leave` is a legitimate verdict — docs-only and config-only tasks often leave
+no commit naming them.
 
 **Evidence, never memory.** The skill does not ask you what a marker meant — a
 damaged file carries dozens of these at once, and the honest answer six weeks
