@@ -635,9 +635,14 @@ func parseSectionLines(doc, header string) []string {
 		// `belmont status`'s Decisions Log, and it was the last place still
 		// answering "where does this section end?" with its own rule: an
 		// indented `##` quoted inside a decision entry truncated the log, and a
-		// bare `##` or `##` + tab did not end it at all. `appendDecisionLogEntry`
-		// writes to the boundary this function now reads. See issue #31.
-		if isSectionBreak(line) {
+		// bare `##` or `##` + tab did not end it at all. See issue #31.
+		//
+		// A milestone header ends it too, and for the same reason
+		// `appendDecisionLogEntry` stops there: `### M<n>:` is deliberately not
+		// a section break, so a `## Decisions Log` sitting ABOVE the milestones
+		// swallowed the entire milestones region and `belmont status` listed
+		// task lines as decisions. Reader and writer agree on one boundary.
+		if isSectionBreak(line) || msHeaderRe.MatchString(line) {
 			break
 		}
 		trimmed := strings.TrimSpace(line)

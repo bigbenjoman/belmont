@@ -1105,7 +1105,15 @@ func runRepairCmd(args []string) error {
 	for _, w := range out.Warnings {
 		fmt.Fprintf(os.Stderr, "  \033[33m⚠\033[0m %s\n", w)
 	}
-	renderRepairNextSteps(os.Stderr, slug, out.Changed, countUnresolved(reviewPlans, remaining))
+	// Re-scan the file as it now stands rather than reasoning from the plans.
+	// A "leave" verdict resolves an orphan and does NOT resolve an unreadable
+	// marker, and an escalation resolves nothing — the only measure that cannot
+	// drift from those distinctions is what the file still reports.
+	unresolved := 0
+	if final, err := os.ReadFile(progressPath); err == nil {
+		unresolved = len(collectRepairFindings(string(final)))
+	}
+	renderRepairNextSteps(os.Stderr, slug, out.Changed, unresolved)
 	return nil
 }
 
@@ -1196,27 +1204,6 @@ func renderRepairRejections(w io.Writer, rejected []repairRejection) {
 		}
 		fmt.Fprintf(w, "  • %s %s — %s\n", label, r.Action.Action, r.Reason)
 	}
-}
-
-// countUnresolved reports how many findings the review tier left as they were
-// — escalations, plus anything it did not answer at all. These are what the
-// user still has to edit by hand, and a report that ends with "confirm the file
-// now parses" without naming them points at a command that will exit 1.
-func countUnresolved(plans []repairPlan, findings []repairFinding) int {
-	answered := map[int]bool{}
-	for _, p := range plans {
-		if p.Action.Action == repairEscalate {
-			continue // answered, but not resolved
-		}
-		answered[p.Finding.Line] = true
-	}
-	n := 0
-	for _, f := range findings {
-		if !answered[f.Line] {
-			n++
-		}
-	}
-	return n
 }
 
 func renderRepairNextSteps(w io.Writer, slug string, changed bool, unresolved int) {

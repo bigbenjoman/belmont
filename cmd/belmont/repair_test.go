@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -713,7 +714,10 @@ func TestRepairRefusesAnIDdActionAimedAtAnIDlessLine(t *testing.T) {
 // deliberately not a section break, so scanning for one alone ran past
 // `### M1:` and appended the entry at EOF — inside the last milestone.
 func TestRepairWritesTheDecisionAboveTheMilestones(t *testing.T) {
-	doc := "# Progress\n\n## Decisions Log\n\n(none yet)\n\n## Milestones\n\n### M1: Work\n- [?] P1-M1-1: dropped\n"
+	// NO `## Milestones` between the log and the milestone header — with one
+	// there, the scan stops at that column-zero heading and the milestone check
+	// is never needed, so the fixture would pass with the fix removed.
+	doc := "# Progress\n\n## Decisions Log\n\n(none yet)\n\n### M1: Work\n- [?] P1-M1-1: dropped\n"
 	findings := collectRepairFindings(doc)
 	plans, _ := validateRepairPlans(doc, findings,
 		[]repairAction{{Line: findings[0].Line, TaskID: "P1-M1-1", Action: repairWithdraw, Reason: "descoped"}})
@@ -755,5 +759,70 @@ func TestRepairReportsOnlyWhatItWrote(t *testing.T) {
 	}
 	if applied[0].Action.Action != repairSetMarker {
 		t.Errorf("the wrong plan was reported as applied: %+v", applied[0])
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected and returns what it wrote.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	done := make(chan string, 1)
+	go func() {
+		var sb strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, err := r.Read(buf)
+			sb.Write(buf[:n])
+			if err != nil {
+				break
+			}
+		}
+		done <- sb.String()
+	}()
+	fn()
+	w.Close()
+	os.Stdout = orig
+	return <-done
+}
+
+// The dry-run preview must exclude what the mechanical tier settles, through
+// the COMMAND — not just through the helper. TestRepairDryRunReportsTheSame
+// WorkAsTheRealRun pins needsReview directly; this pins the call site, which is
+// where the `nil` that broke it lived.
+func TestRepairDryRunJSONExcludesSettledFindings(t *testing.T) {
+	root := gitFixture(t,
+		"### M1: Work\n- [?] P1-M1-1: shipped\n- [?] P1-M1-2: never touched\n",
+		"P1-M1-1: implement the shipped thing")
+
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runRepairCmd([]string{"--root", root, "--feature", "demo", "--dry-run", "--format", "json"})
+	})
+	if runErr != nil {
+		t.Fatalf("repair: %v", runErr)
+	}
+	var got struct {
+		WouldApply  []map[string]any `json:"would_apply"`
+		NeedsReview []struct {
+			TaskID string `json:"task_id"`
+		} `json:"needs_review"`
+		Changed bool `json:"changed"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("parse repair JSON: %v\n%s", err, out)
+	}
+	if got.Changed {
+		t.Error("--dry-run reported the file as changed")
+	}
+	if len(got.WouldApply) != 1 {
+		t.Errorf("would_apply = %d, want 1 — the preview must say what the commit log settles", len(got.WouldApply))
+	}
+	if len(got.NeedsReview) != 1 || got.NeedsReview[0].TaskID != "P1-M1-2" {
+		t.Errorf("needs_review = %+v, want only P1-M1-2 — a finding the commit log settles does not need a code read", got.NeedsReview)
 	}
 }

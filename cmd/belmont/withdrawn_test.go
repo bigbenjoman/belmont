@@ -337,6 +337,19 @@ func TestListingViewAccountsForWithdrawnTasks(t *testing.T) {
 	if n := len(doneNotVerifiedTasks(ms)); n != 1 {
 		t.Errorf("doneNotVerifiedTasks = %d, want 1 — the two views disagree", n)
 	}
+
+	// A feature whose every task was withdrawn reads Complete with nothing
+	// implemented. `TasksVerified < TasksTotal` is true there and prints
+	// "0 task(s) implemented but never verified"; the count has to come from
+	// the done tasks, and there are none.
+	allDropped := parseMilestones("### M1: Dropped\n- [-] P1-M1-1: a\n- [-] P1-M1-2: b\n")
+	report.Features[0] = featureSummary{
+		Name: "Demo", Slug: "demo", Status: "Complete",
+		TasksDone: 0, TasksVerified: 0, TasksWithdrawn: 2, TasksTotal: 2, Milestones: allDropped,
+	}
+	if out := renderStatus(report, false, false); strings.Contains(out, "never verified") {
+		t.Errorf("an all-withdrawn feature was told to run reverify on nothing:\n%s", out)
+	}
 }
 
 // The scope guard compared raw marker bytes, so a case-only rewrite read as a
@@ -437,5 +450,23 @@ func TestDecisionsLogReaderUsesTheSameBoundaryAsTheWriter(t *testing.T) {
 	doc3 := "# P\n\n## Decisions Log\n\n- chose sqlite\n\n##\n\n- not a decision\n"
 	if got := parseDecisions(doc3, 10); len(got) != 1 {
 		t.Errorf("a bare ## did not end the log: %v", got)
+	}
+}
+
+// `## Decisions Log` is not always the last section, and `### M<n>:` is
+// deliberately not a section break — so a log sitting ABOVE the milestones
+// swallowed the whole milestones region and `belmont status` listed task lines
+// as decisions. The reader and `appendDecisionLogEntry` now stop at the same
+// boundary.
+func TestDecisionsLogStopsAtTheMilestones(t *testing.T) {
+	doc := "# P\n\n## Decisions Log\n\n- chose sqlite\n\n### M1: Work\n- [x] P1-M1-1: a real task\n- [ ] P1-M1-2: another\n"
+	got := parseDecisions(doc, 10)
+	if len(got) != 1 {
+		t.Errorf("task lines were read as decisions: %v", got)
+	}
+	for _, d := range got {
+		if strings.Contains(d, "P1-M1-") {
+			t.Errorf("a task line appeared in the Decisions Log: %q", d)
+		}
 	}
 }

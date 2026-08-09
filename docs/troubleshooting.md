@@ -81,6 +81,38 @@ Blocked tasks show as `[!]` in `.belmont/PROGRESS.md`. Common causes:
 
 Fix the underlying issue, change the task's checkbox from `[!]` back to `[ ]` in PROGRESS.md, and re-run implement.
 
+## `belmont status` reports unrecognised markers, or `belmont validate` exits 1
+
+The file has task lines Belmont cannot act on: a checkbox marker outside
+`[ ] [>] [x] [v] [!] [-]`, a task line below a column-zero `## ` heading (so it
+belongs to no milestone), or a task whose ID names a different milestone from
+the one it is filed under. On the single-feature path `belmont auto` will refuse
+to start; on `--features` / `--all` it will not, and the loop can alternate
+phases without making progress.
+
+```bash
+belmont repair --feature <slug> --dry-run          # what is wrong, and the evidence for each
+belmont repair --feature <slug> --mechanical-only  # apply what the commit log settles, free
+belmont repair --feature <slug>                    # then have an agent read the rest
+belmont validate --feature <slug>                  # confirm
+```
+
+Repair never asks you what a marker meant — it checks the commit log first, then
+reads the remaining tasks against the current code, and only puts to you what
+neither settles. It stops at `[x]`; `belmont reverify --feature <slug>` earns
+the `[v]`. Nothing is committed, so review with `git diff` first.
+
+If a task was deliberately dropped, the marker is `[-]` withdrawn, with the
+reason in `## Decisions Log`. **Do not delete the line** — a deletion does not
+survive a sibling worktree merge, so the task comes back as outstanding work.
+
+## `belmont auto` pauses saying it cannot parse a milestone header
+
+A milestone header must be `### M<n>: Name` at column zero, with no emoji.
+Several readers accept `### ✅ M2: Name`; the parser that produces the counts
+does not, so such a milestone exists for some parts of Belmont and not others.
+Remove the emoji and re-run.
+
 ## Want to start fresh
 
 Run the reset skill (`/belmont:reset` in Claude Code) to reset all state files. Alternatively, delete `.belmont/PRD.md`, `.belmont/PROGRESS.md`, `.belmont/TECH_PLAN.md`, `.belmont/MILESTONE.md`, and any `.belmont/MILESTONE-*.done.md` files manually, then re-run `belmont install` (or `belmont install --source /path/to/belmont`) to recreate templates.
