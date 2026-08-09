@@ -202,7 +202,7 @@ func collectRepairFindings(progress string) []repairFinding {
 // could be read at all — false means the mechanical tier has no answers to
 // give, and the caller must say so rather than let an empty result read as
 // "nothing was provable".
-func attachCommitEvidence(root string, findings []repairFinding) ([]repairFinding, bool) {
+func attachCommitEvidence(root, slug string, findings []repairFinding) ([]repairFinding, bool) {
 	if !isGitWorkTree(root) {
 		return findings, false
 	}
@@ -223,6 +223,7 @@ func attachCommitEvidence(root string, findings []repairFinding) ([]repairFindin
 	// every applied change names the commit it relied on, and why `--dry-run`
 	// exists.
 	const since = ""
+	shared := taskIDsClaimedElsewhere(root, slug)
 	cache := map[string]commitEvidence{}
 	available := false
 	for i := range findings {
@@ -235,6 +236,7 @@ func attachCommitEvidence(root string, findings []repairFinding) ([]repairFindin
 			ev = lookupCommitEvidence(root, id, since)
 			cache[id] = ev
 		}
+		ev.Ambiguous = shared[id]
 		findings[i].Evidence = ev
 		if ev.Checked {
 			available = true
@@ -242,6 +244,53 @@ func attachCommitEvidence(root string, findings []repairFinding) ([]repairFindin
 	}
 	return findings, available
 }
+
+// taskIDsClaimedElsewhere returns the task IDs that appear in some OTHER
+// feature's PROGRESS.md.
+//
+// Task IDs are feature-local — `P1-M1-1` exists in essentially every feature —
+// and the commit log is not, so an unscoped search for a bare ID can match a
+// commit that belongs to a different feature entirely. Repairing `billing`
+// would then mark its never-built `P1-M1-1` done on the strength of `auth`'s
+// commit, and a milestone of those reads Complete.
+//
+// The fix is not to scope the git query. `.belmont/` is `--assume-unchanged`
+// inside worktrees, so an agent's work commits do not touch the feature's state
+// directory at all — a pathspec would find Belmont's own state commits, whose
+// messages carry no task ID, and the mechanical tier would go quietly inert.
+// That is the same mistake as scoping to the merge base, one layer down.
+//
+// So: detect the ambiguity directly and refuse it. An ID no other feature
+// claims cannot be confused; one that two features claim is exactly the
+// "ambiguous structure is refused, not guessed" rule this codebase already
+// applies to duplicate milestone IDs and duplicate task IDs. The finding still
+// goes to the review tier, which reads the code and can tell them apart.
+func taskIDsClaimedElsewhere(root, slug string) map[string]bool {
+	out := map[string]bool{}
+	featuresDir := filepath.Join(root, ".belmont", "features")
+	entries, err := os.ReadDir(featuresDir)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == slug || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(featuresDir, e.Name(), "PROGRESS.md"))
+		if err != nil {
+			continue
+		}
+		// Every task line, in region or not: a sibling's stray copy of the ID
+		// makes the commit just as ambiguous as an in-region one.
+		for _, m := range repairAnyTaskIDRe.FindAllStringSubmatch(string(data), -1) {
+			out[m[1]] = true
+		}
+	}
+	return out
+}
+
+// repairAnyTaskIDRe matches the task ID on any checkbox line.
+var repairAnyTaskIDRe = regexp.MustCompile(`(?m)^\s*-\s+\[.\]\s+(P\d+-[\w][\w-]*):`)
 
 // mechanicalRepairs returns the actions the commit log settles on its own.
 //
@@ -272,6 +321,12 @@ func mechanicalRepairs(findings []repairFinding) []repairPlan {
 		// commit naming the ID is evidence that something happened, not that the
 		// work stands, and this is the one case the log states outright.
 		if f.Evidence.Reverting {
+			continue
+		}
+		// Another feature holds this task ID too, so the commit that names it
+		// may not be about this task at all. Not settled — send it to the tier
+		// that can read the code and tell.
+		if f.Evidence.Ambiguous {
 			continue
 		}
 		reason := fmt.Sprintf("commit %s names this task", shortSHA(f.Evidence.SHA))
@@ -896,7 +951,7 @@ func runRepairCmd(args []string) error {
 	}
 
 	findings := collectRepairFindings(string(content))
-	findings, evidenceAvailable := attachCommitEvidence(root, findings)
+	findings, evidenceAvailable := attachCommitEvidence(root, slug, findings)
 
 	out := repairJSON{Feature: slug, EvidenceAvailable: evidenceAvailable, Findings: findings}
 	jsonOut := strings.EqualFold(format, "json")
@@ -970,7 +1025,7 @@ func runRepairCmd(args []string) error {
 	// nothing was written, so exclude what the mechanical tier settled instead —
 	// otherwise the preview and the real run report different work.
 	remaining := needsReview(collectRepairFindings(string(content)), plans)
-	remaining, _ = attachCommitEvidence(root, remaining)
+	remaining, _ = attachCommitEvidence(root, slug, remaining)
 	out.NeedsReview = remaining
 
 	if !jsonOut {
@@ -1166,6 +1221,8 @@ func repairEvidenceLine(f repairFinding) string {
 		return "\033[2mno task ID, so the commit log cannot speak to it\033[0m"
 	case !f.Evidence.Checked:
 		return "\033[2mcommit log not readable\033[0m"
+	case f.Evidence.Found && f.Evidence.Ambiguous:
+		return fmt.Sprintf("\033[2mcommit %s %q names it, but another feature uses this task ID too\033[0m", shortSHA(f.Evidence.SHA), f.Evidence.Subject)
 	case f.Evidence.Found && f.Evidence.Reverting:
 		return fmt.Sprintf("\033[2mthe newest commit naming it is a revert: %s %q\033[0m", shortSHA(f.Evidence.SHA), f.Evidence.Subject)
 	case f.Evidence.Found:

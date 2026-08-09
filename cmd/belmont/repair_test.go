@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -60,7 +61,7 @@ func TestRepairEvidenceIsNotScopedToTheMergeBase(t *testing.T) {
 		"### M1: Work\n- [?] P1-M1-1: the admin route\n",
 		"P1-M1-1: add the admin route")
 
-	findings, available := attachCommitEvidence(root, collectRepairFindings(progressOf(t, root)))
+	findings, available := attachCommitEvidence(root, "demo", collectRepairFindings(progressOf(t, root)))
 	if !available {
 		t.Fatal("commit evidence reported unavailable inside a real git repository")
 	}
@@ -85,7 +86,7 @@ func TestRepairDoesNotInheritFailOpen(t *testing.T) {
 	root := t.TempDir()
 	writeFeature(t, root, "demo", "### M1: Work\n- [?] P1-M1-1: unreadable\n")
 
-	findings, available := attachCommitEvidence(root, collectRepairFindings(progressOf(t, root)))
+	findings, available := attachCommitEvidence(root, "demo", collectRepairFindings(progressOf(t, root)))
 	if available {
 		t.Error("repair claimed commit evidence was available with no git repository present")
 	}
@@ -111,7 +112,7 @@ func TestRepairNeverMintsVerified(t *testing.T) {
 		"### M1: Work\n- [?] P1-M1-1: the thing\n",
 		"P1-M1-1: implement and verify the thing")
 
-	findings, _ := attachCommitEvidence(root, collectRepairFindings(progressOf(t, root)))
+	findings, _ := attachCommitEvidence(root, "demo", collectRepairFindings(progressOf(t, root)))
 	plans := mechanicalRepairs(findings)
 	if len(plans) != 1 {
 		t.Fatalf("plans = %d, want 1", len(plans))
@@ -142,7 +143,7 @@ func TestRepairNeverAutoMovesAnOrphanEvenWithEvidence(t *testing.T) {
 		"### M1: Work\n- [x] P1-M1-1: the thing\n\n## Session History\n\n- [x] P1-M1-1: done, commit abc123\n",
 		"P1-M1-1: implement the thing")
 
-	findings, _ := attachCommitEvidence(root, collectRepairFindings(progressOf(t, root)))
+	findings, _ := attachCommitEvidence(root, "demo", collectRepairFindings(progressOf(t, root)))
 	if len(findings) != 1 || findings[0].Rule != ruleTaskOutsideMilestone {
 		t.Fatalf("want one orphan finding, got %+v", findings)
 	}
@@ -160,7 +161,7 @@ func TestRepairNeverAutoMovesACrossMilestoneTask(t *testing.T) {
 		"### M2: Surface\n- [ ] P1-M3-9: the export button\n\n### M3: Later\n- [ ] P1-M3-1: other\n",
 		"P1-M3-9: build the export button")
 
-	findings, _ := attachCommitEvidence(root, collectRepairFindings(progressOf(t, root)))
+	findings, _ := attachCommitEvidence(root, "demo", collectRepairFindings(progressOf(t, root)))
 	if len(findings) != 1 || findings[0].Rule != ruleCrossMilestoneTaskID {
 		t.Fatalf("want one cross-milestone finding, got %+v", findings)
 	}
@@ -182,7 +183,7 @@ func TestRepairNeverAutoMovesACrossMilestoneTask(t *testing.T) {
 func TestRepairRefusesActionsOnLinesItDidNotFlag(t *testing.T) {
 	doc := "### M1: Work\n- [ ] P1-M1-1: untouched\n- [?] P1-M1-2: unreadable\n"
 	root := gitFixture(t, doc)
-	findings, _ := attachCommitEvidence(root, collectRepairFindings(doc))
+	findings, _ := attachCommitEvidence(root, "demo", collectRepairFindings(doc))
 
 	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
 		{Line: 2, TaskID: "P1-M1-1", Action: repairSetMarker, Marker: "x", Reason: "not a finding"},
@@ -582,7 +583,7 @@ func TestRepairDryRunReportsTheSameWorkAsTheRealRun(t *testing.T) {
 	doc := "### M1: Work\n- [?] P1-M1-1: shipped\n- [?] P1-M1-2: never touched\n"
 	root := gitFixture(t, doc, "P1-M1-1: implement the shipped thing")
 
-	findings, _ := attachCommitEvidence(root, collectRepairFindings(doc))
+	findings, _ := attachCommitEvidence(root, "demo", collectRepairFindings(doc))
 	settled := mechanicalRepairs(findings)
 	if len(settled) != 1 {
 		t.Fatalf("fixture: mechanical tier settled %d, want 1", len(settled))
@@ -650,7 +651,7 @@ func TestRepairDoesNotTreatARevertAsEvidence(t *testing.T) {
 		"P1-M1-1: add the admin route",
 		`Revert "P1-M1-1: add the admin route"`)
 
-	findings, _ := attachCommitEvidence(root, collectRepairFindings(progressOf(t, root)))
+	findings, _ := attachCommitEvidence(root, "demo", collectRepairFindings(progressOf(t, root)))
 	if !findings[0].Evidence.Found {
 		t.Fatal("the revert commit was not even found")
 	}
@@ -665,7 +666,7 @@ func TestRepairDoesNotTreatARevertAsEvidence(t *testing.T) {
 	plain := gitFixture(t,
 		"### M1: Work\n- [?] P1-M1-1: the admin route\n",
 		"P1-M1-1: add the admin route")
-	pf, _ := attachCommitEvidence(plain, collectRepairFindings(progressOf(t, plain)))
+	pf, _ := attachCommitEvidence(plain, "demo", collectRepairFindings(progressOf(t, plain)))
 	if len(mechanicalRepairs(pf)) != 1 {
 		t.Error("the revert check swallowed a legitimate piece of evidence")
 	}
@@ -824,5 +825,97 @@ func TestRepairDryRunJSONExcludesSettledFindings(t *testing.T) {
 	}
 	if len(got.NeedsReview) != 1 || got.NeedsReview[0].TaskID != "P1-M1-2" {
 		t.Errorf("needs_review = %+v, want only P1-M1-2 — a finding the commit log settles does not need a code read", got.NeedsReview)
+	}
+}
+
+// Task IDs are feature-local; the commit log is not. `P1-M1-1` exists in
+// essentially every feature, so an unscoped search can match a commit that
+// belongs to entirely different work — and the mechanical tier writes without
+// asking.
+func TestRepairRefusesEvidenceAnotherFeatureCouldOwn(t *testing.T) {
+	root := gitFixture(t, "### M1: Invoices\n- [?] P1-M1-1: generate PDF invoices\n",
+		"P1-M1-1: build the login form")
+	// A sibling feature that also holds P1-M1-1 — the commit could be its.
+	writeFeature(t, root, "auth", "### M1: Login\n- [x] P1-M1-1: build the login form\n")
+
+	findings, _ := attachCommitEvidence(root, "demo", collectRepairFindings(progressOf(t, root)))
+	if !findings[0].Evidence.Found {
+		t.Fatal("fixture: the commit must be found, or there is no ambiguity to refuse")
+	}
+	if !findings[0].Evidence.Ambiguous {
+		t.Error("a task ID two features both claim was treated as unambiguous evidence")
+	}
+	if plans := mechanicalRepairs(findings); len(plans) != 0 {
+		t.Errorf("repair marked a never-built task done on another feature's commit: %+v", plans)
+	}
+
+	// The control: with no sibling claiming the ID, the same commit still
+	// settles it. Scoping this away entirely would make the tier inert — which
+	// is what a pathspec on `.belmont/features/<slug>` would do, since
+	// `.belmont/` is assume-unchanged in worktrees and work commits never
+	// touch it.
+	solo := gitFixture(t, "### M1: Login\n- [?] P1-M1-1: build the login form\n",
+		"P1-M1-1: build the login form")
+	sf, _ := attachCommitEvidence(solo, "demo", collectRepairFindings(progressOf(t, solo)))
+	if len(mechanicalRepairs(sf)) != 1 {
+		t.Error("the ambiguity check swallowed evidence in a single-feature project")
+	}
+}
+
+// moveTaskLines has to place a line whose anchor is itself being moved out of
+// the way. Without the fallback the insertion point is never emitted, so BOTH
+// lines vanish — and the caller reports them applied, because the move was
+// planned rather than dropped.
+func TestRepairMovesTwoTasksWhoseAnchorIsAlsoMoving(t *testing.T) {
+	// The two milestones swap a task, so EACH one's last task line is the line
+	// leaving it. Both anchors are therefore "moving", and each has to fall
+	// back to its milestone header. A destination that is merely empty does
+	// not reach this branch — its lastTaskIdx never existed.
+	doc := "### M2: Surface\n- [ ] P1-M2-1: stays\n- [ ] P1-M3-9: beta\n\n" +
+		"### M3: Later\n- [ ] P1-M3-1: stays\n- [ ] P1-M2-4: gamma\n\n## Session History\n"
+	findings := collectRepairFindings(doc)
+	if len(findings) != 2 {
+		t.Fatalf("fixture: %d findings, want 2: %+v", len(findings), findings)
+	}
+	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 3, TaskID: "P1-M3-9", Action: repairMoveMilestone, Reason: "belongs to M3"},
+		{Line: 7, TaskID: "P1-M2-4", Action: repairMoveMilestone, Reason: "belongs to M2"},
+	})
+	if len(rejected) != 0 || len(plans) != 2 {
+		t.Fatalf("plans=%d rejected=%+v", len(plans), rejected)
+	}
+	got, applied, warnings := applyRepairPlans(doc, plans, "2026-08-09")
+
+	for _, id := range []string{"P1-M3-9", "P1-M2-4", "P1-M2-1", "P1-M3-1"} {
+		if !strings.Contains(got, id) {
+			t.Errorf("%s was DELETED by the move:\n%s", id, got)
+		}
+	}
+	if len(applied) != 2 {
+		t.Errorf("applied = %d, want 2 — the report must match the file", len(applied))
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	byID := map[string][]string{}
+	for _, m := range parseMilestones(got) {
+		for _, task := range m.Tasks {
+			byID[m.ID] = append(byID[m.ID], task.ID)
+		}
+	}
+	// Order is not the property under test — placement is. Both anchors fell
+	// back to their milestone header, so the moved line lands first.
+	for ms, want := range map[string][]string{"M2": {"P1-M2-1", "P1-M2-4"}, "M3": {"P1-M3-1", "P1-M3-9"}} {
+		have := append([]string{}, byID[ms]...)
+		sort.Strings(have)
+		if strings.Join(have, ",") != strings.Join(want, ",") {
+			t.Errorf("%s = %v, want %v:\n%s", ms, byID[ms], want, got)
+		}
+	}
+	if v := detectViolations("demo", parseMilestones(got)); len(v) != 0 {
+		t.Errorf("the swap left a violation behind: %+v", v)
+	}
+	if !strings.Contains(got, "## Session History") {
+		t.Errorf("the move ate the region boundary:\n%s", got)
 	}
 }

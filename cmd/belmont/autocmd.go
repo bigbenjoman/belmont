@@ -224,7 +224,12 @@ func runAutoCmd(args []string) error {
 		fmt.Fprintf(os.Stderr, "\n\033[1mMilestones:\033[0m\n")
 		for _, m := range inRange {
 			status := "pending"
-			if milestoneAllVerified(m) {
+			// Checked before "done" for the reason milestoneStatusIcon checks it
+			// first: an all-withdrawn milestone satisfies milestoneAllDone, and
+			// calling it done claims work happened.
+			if milestoneAllWithdrawn(m) {
+				status = "withdrawn"
+			} else if milestoneAllVerified(m) {
 				status = "verified"
 			} else if milestoneAllDone(m) {
 				status = "done"

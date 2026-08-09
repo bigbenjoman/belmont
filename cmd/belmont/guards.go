@@ -902,6 +902,10 @@ type commitEvidence struct {
 	// detected this way. That is why every applied change prints the commit it
 	// relied on and nothing is committed for you.
 	Reverting bool `json:"reverting,omitempty"`
+	// Ambiguous is set when another feature's PROGRESS.md claims the same task
+	// ID. Task IDs are feature-local and the commit log is not, so the match
+	// may be about entirely different work. See taskIDsClaimedElsewhere.
+	Ambiguous bool `json:"ambiguous,omitempty"`
 }
 
 // isGitWorkTree reports whether root is inside a git working tree. Repair asks

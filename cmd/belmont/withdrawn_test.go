@@ -470,3 +470,223 @@ func TestDecisionsLogStopsAtTheMilestones(t *testing.T) {
 		}
 	}
 }
+
+// Every surface that labels a milestone must agree about an all-withdrawn one.
+// milestoneStatusIcon was fixed to say [-]; the auto dry-run still said "done"
+// and the interactive range picker still drew [x], both of which claim work
+// that never happened.
+func TestAllWithdrawnMilestoneReadsTheSameEverywhere(t *testing.T) {
+	all := parseMilestones("### M1: Dropped\n- [-] P1-M1-1: a\n- [-] P1-M1-2: b\n")[0]
+	live := parseMilestones("### M2: Real\n- [x] P1-M2-1: a\n")[0]
+
+	if !milestoneAllWithdrawn(all) || milestoneAllWithdrawn(live) {
+		t.Fatal("fixture: milestoneAllWithdrawn does not distinguish the two")
+	}
+	// The icon, the dry-run label and the picker all branch on the same helper
+	// in the same order. Assert the helper drives each of the three, by
+	// asserting the one thing they share: withdrawn is checked before done.
+	if !milestoneAllDone(all) {
+		t.Fatal("an all-withdrawn milestone must still satisfy milestoneAllDone — " +
+			"otherwise the loop stalls on it; the point is that the LABEL must not say done")
+	}
+	if got := milestoneStatusIcon(all, false); got != "[-]" {
+		t.Errorf("icon = %q, want [-]", got)
+	}
+	if got := milestoneStatusIcon(live, false); got != "[x]" {
+		t.Errorf("live milestone icon = %q, want [x]", got)
+	}
+}
+
+// The listing's withdrawn counter has to come from the real pipeline. A test
+// that hand-builds featureSummary asserts the renderer and leaves the producer
+// — listFeaturesWithOverrides — completely uncovered.
+func TestListingWithdrawnCountComesFromThePipeline(t *testing.T) {
+	root := t.TempDir()
+	writeFeature(t, root, "demo",
+		"# Progress: demo\n\n## Milestones\n\n### M1: Work\n- [x] P1-M1-1: shipped\n- [-] P1-M1-2: dropped\n- [-] P1-M1-3: also dropped\n")
+
+	features := listFeatures(filepath.Join(root, ".belmont", "features"), 50)
+	if len(features) != 1 {
+		t.Fatalf("features = %d, want 1", len(features))
+	}
+	f := features[0]
+	if f.TasksWithdrawn != 2 {
+		t.Errorf("TasksWithdrawn = %d, want 2 — the producer does not count them", f.TasksWithdrawn)
+	}
+	// TasksDone is done+verified, and the #30 listing warning subtracts
+	// TasksVerified from it. Drop the `+ tasksVerified` and that warning goes
+	// silent on every fully-verified-plus-one-done feature.
+	if f.TasksDone != 1 || f.TasksTotal != 3 {
+		t.Errorf("TasksDone=%d TasksTotal=%d, want 1 and 3", f.TasksDone, f.TasksTotal)
+	}
+
+	verified := t.TempDir()
+	writeFeature(t, verified, "demo",
+		"# Progress: demo\n\n## Milestones\n\n### M1: Work\n- [v] P1-M1-1: verified\n- [x] P1-M1-2: not verified\n")
+	vf := listFeatures(filepath.Join(verified, ".belmont", "features"), 50)[0]
+	if vf.TasksDone != 2 {
+		t.Errorf("TasksDone = %d, want 2 (done + verified) — the #30 listing warning is computed from it", vf.TasksDone)
+	}
+	if vf.TasksVerified != 1 {
+		t.Errorf("TasksVerified = %d, want 1", vf.TasksVerified)
+	}
+}
+
+// The order of the withdrawn and blocked cases in resolveProgressConflict is
+// load-bearing: withdrawn is checked FIRST, so a withdrawal beats a blocker.
+// Swapping them flips that precedence, and nothing else in the suite notices.
+func TestMergeConflictChecksWithdrawnBeforeBlocked(t *testing.T) {
+	for _, tc := range []struct{ ours, theirs, want string }{
+		{"-", "!", "-"}, // a blocker on the other side must not un-withdraw it
+		{"!", "-", "-"}, // …and a withdrawal recorded elsewhere still wins
+	} {
+		root := t.TempDir()
+		gitRun(t, root, "init", "-q", "-b", "main")
+		gitRun(t, root, "config", "user.email", "t@t.t")
+		gitRun(t, root, "config", "user.name", "t")
+		rel := "PROGRESS.md"
+		doc := func(marker string) string {
+			return "### M1: Work\n- [" + marker + "] P1-M1-1: retry logic\n- [ ] P1-M1-2: other\n"
+		}
+		write := func(content, msg string) {
+			t.Helper()
+			if err := os.WriteFile(filepath.Join(root, rel), []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+			gitRun(t, root, "add", "-A")
+			gitRun(t, root, "commit", "-q", "-m", msg)
+		}
+		write("### M1: Work\n- [>] P1-M1-1: retry logic, as first written\n- [ ] P1-M1-2: other\n", "base")
+		gitRun(t, root, "checkout", "-q", "-b", "sib")
+		write(doc(tc.theirs), "sibling side")
+		gitRun(t, root, "checkout", "-q", "main")
+		write(doc(tc.ours), "main side")
+
+		merge := exec.Command("git", "merge", "--no-commit", "sib")
+		merge.Dir = root
+		if out, err := merge.CombinedOutput(); err == nil {
+			t.Fatalf("ours=%s theirs=%s merged cleanly — the resolver never ran\n%s", tc.ours, tc.theirs, out)
+		}
+		if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+			t.Errorf("ours=[%s] theirs=[%s]: the resolver declined", tc.ours, tc.theirs)
+			continue
+		}
+		if got := readFile(t, filepath.Join(root, rel)); !strings.Contains(got, "- ["+tc.want+"] P1-M1-1") {
+			t.Errorf("ours=[%s] theirs=[%s] resolved to something other than [%s] — "+
+				"withdrawn must be checked before blocked:\n%s", tc.ours, tc.theirs, tc.want, got)
+		}
+	}
+}
+
+// mergeProgressState refuses to place a task whose milestone this document does
+// not contain, and says so. Dropping that warning loses the task in silence —
+// and `.belmont/` moves home only by this copy.
+func TestMergeWarnsWhenAMilestoneIsMissingEntirely(t *testing.T) {
+	master := "### M1: A\n- [x] P1-M1-1: a\n\n### M9: Added by a sibling\n- [x] P1-M9-1: new work\n"
+	worktree := "### M1: A\n- [ ] P1-M1-1: a\n"
+
+	got, warnings := mergeProgressState(master, worktree)
+	if strings.Contains(got, "P1-M9-1") {
+		t.Errorf("a task was spliced into a milestone this document does not have:\n%s", got)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("master's task was dropped without a warning — it exists in no commit anywhere")
+	}
+	joined := strings.Join(warnings, " | ")
+	if !strings.Contains(joined, "P1-M9-1") || !strings.Contains(joined, "M9") {
+		t.Errorf("the warning does not name the lost task and its milestone: %v", warnings)
+	}
+}
+
+// captureStderr runs fn with os.Stderr redirected and returns what it wrote.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	done := make(chan string, 1)
+	go func() {
+		var sb strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, err := r.Read(buf)
+			sb.Write(buf[:n])
+			if err != nil {
+				break
+			}
+		}
+		done <- sb.String()
+	}()
+	fn()
+	w.Close()
+	os.Stderr = orig
+	return <-done
+}
+
+// The auto dry-run is the other place that labels a milestone, and it said
+// "done" for one where nothing was built. Driven through runAutoCmd because the
+// label lives inside it — asserting milestoneAllWithdrawn alone leaves this
+// call site free.
+func TestAutoDryRunLabelsAnAllWithdrawnMilestone(t *testing.T) {
+	root := writeValidateFixture(t, "# Progress\n\n## Milestones\n\n"+
+		"### M1: Dropped\n- [-] P1-M1-1: a\n- [-] P1-M1-2: b\n\n"+
+		"### M2: Real\n- [x] P1-M2-1: shipped\n")
+
+	var err error
+	out := captureStderr(t, func() {
+		err = runAutoCmd([]string{"--root", root, "--tool", "claude", "--feature", "demo",
+			"--from", "M1", "--to", "M2", "--dry-run"})
+	})
+	if err != nil {
+		t.Fatalf("auto --dry-run: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "M1 — Dropped [withdrawn]") {
+		t.Errorf("the dry-run calls an all-withdrawn milestone something other than withdrawn:\n%s", out)
+	}
+	if strings.Contains(out, "M1 — Dropped [done]") || strings.Contains(out, "M1 — Dropped [verified]") {
+		t.Errorf("the dry-run claims work happened in a milestone where none did:\n%s", out)
+	}
+	// Control: a genuinely done milestone still reads done.
+	if !strings.Contains(out, "M2 — Real [done]") {
+		t.Errorf("a real done milestone lost its label:\n%s", out)
+	}
+}
+
+// The interactive range picker is the third place that labels a milestone, and
+// it drew [x] for one where nothing was built. It reads stdin, so the test
+// hands it a closed pipe — the list is printed before the read either way.
+func TestMilestonePickerMarksAnAllWithdrawnMilestone(t *testing.T) {
+	ms := parseMilestones("### M1: Dropped\n- [-] P1-M1-1: a\n- [-] P1-M1-2: b\n\n" +
+		"### M2: Real\n- [x] P1-M2-1: shipped\n\n### M3: Todo\n- [ ] P1-M3-1: later\n")
+	if len(ms) != 3 {
+		t.Fatalf("fixture: %d milestones, want 3", len(ms))
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Close() // immediate EOF: the picker gives up after printing the list
+	origIn := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = origIn }()
+
+	out := captureStderr(t, func() { interactiveMilestoneSelect(ms) })
+
+	if !strings.Contains(out, "[-] M1: Dropped") {
+		t.Errorf("the picker does not mark an all-withdrawn milestone as withdrawn:\n%s", out)
+	}
+	if strings.Contains(out, "[x] M1: Dropped") {
+		t.Errorf("the picker claims work happened in a milestone where none did:\n%s", out)
+	}
+	// Controls: the other two still read as they did.
+	if !strings.Contains(out, "[x] M2: Real") {
+		t.Errorf("a genuinely done milestone lost its marker:\n%s", out)
+	}
+	if !strings.Contains(out, "[ ] M3: Todo") {
+		t.Errorf("an outstanding milestone lost its marker:\n%s", out)
+	}
+}
