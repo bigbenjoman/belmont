@@ -9,6 +9,7 @@
 - **Fixtures are inert content, never nested git repos.** `git add -A` on a repo inside `testdata/` stages a gitlink (mode 160000); a fresh clone yields empty directories. Fixtures store `PRD.md` / `PROGRESS.md` / `TECH_PLAN.md` plus a `commits.txt` script, and `materialiseFixture` builds a real repo in `t.TempDir()`.
 - **Every fixture's `PROGRESS.md` must pass `belmont validate`.** `belmont auto` lints at startup, so a fixture that fails validation could never run in practice.
 - **A suite with no negative fixture cannot fail meaningfully.** On a clean-pass milestone a rigorous verify and a lazy one produce identical `PROGRESS.md` bytes. `failing-acceptance` is what makes the suite able to detect a *worse* agent.
+- **A verify fixture must have a real fork point, or its assertion is vacuous.** `findMergeBaseRef` runs `git merge-base HEAD main`. In a single-branch fixture that returns HEAD, so `runEvidenceCheck` searches the empty range `HEAD..HEAD`, `taskHasCommit` reports "no evidence" for every task, and the guard reverts **every** `[v]` flip — whatever the agent did. `materialiseFixture` therefore commits a base on the default branch and replays the fixture on `belmont/<name>`.
 - **Tier 2 fixtures must have a skill surface.** A bare `t.TempDir()` repo has no `.agents/skills/`, so a live agent would read no prose and the test would pass while measuring nothing. `materialiseLiveFixture` runs the source-mode installer and then asserts the directory exists.
 
 ## How it's enforced
@@ -26,7 +27,7 @@ BELMONT_EVAL_LIVE=1 go test -tags eval -timeout 0 \
 - **Tier 1 runs in CI** (`.github/workflows/ci.yml`, *Eval harness (Tier 1)*), plus a `go vet -tags eval` step — the plain `go vet ./...` never type-checks a build-tagged file, so without it the harness can rot silently.
 - **Tier 2 never runs in CI.** It needs credentials and spends money per run.
 
-### The five fixtures
+### The seven fixtures
 
 | Fixture | Pins | Live |
 |---|---|---|
@@ -35,6 +36,8 @@ BELMONT_EVAL_LIVE=1 go test -tags eval -timeout 0 \
 | `blocked-task` | `[!]` → `PAUSE` via hard guardrail, before any AI call | no |
 | `multi-milestone-deps` | wave ordering: `[M1]` then `[M2, M3]` | no |
 | `failing-acceptance` | a milestone whose code violates its own PRD | yes |
+| `loop-two-milestones` | two independent milestones; drives the manual `/belmont:loop` before/after comparison. Deliberately design-free | no |
+| `ui-no-figma` | a UI milestone that meets every acceptance criterion and breaches its Design Contract | yes |
 
 ### What Tier 1 actually asserts
 
@@ -51,6 +54,8 @@ That makes a nil result meaningful in its own right: **a fixture that stops reso
 - **Skip the installer in Tier 2 setup.** Live tests pass while the agent reads no skill prose. Worse than no test: it reports safety it never measured.
 - **Let Tier 1 license a prose change.** The most tempting shortcut, because Tier 1 is free. It cannot: nothing in Tier 1 reads a `SKILL.md`.
 - **Run Tier 2 without `-timeout 0`.** Orphaned tool processes keep burning budget after the run dies.
+- **Build a verify fixture on a single branch.** Every `[v]` flip is reverted by the evidence guard, so the fixture reports the same `PROGRESS.md` for a rigorous agent and a lazy one. The suite stays green while measuring nothing. `TestEvalFixturesHaveCommitEvidence` locks this.
+- **Edit skill prose while a Tier 2 run is in flight.** `materialiseLiveFixture` calls `runInstall --source` *inside* the per-run loop, so each run installs whatever prose is in the repo at that moment. Editing mid-run compares new prose against itself and silently voids the N>=3 property. Freeze and commit the tree before starting a run.
 
 ## Don't re-do
 
@@ -77,4 +82,5 @@ The second row is the one worth remembering: the control did not fail at first, 
 
 ## Revisions
 
+- 2026-08-08 — found that **every live verify assertion was vacuous**. `findMergeBaseRef` returned HEAD on the single-branch fixtures, so `runEvidenceCheck` reverted every `[v]` flip regardless of agent quality — including `failing-acceptance`'s, the assertion this entry called the one that gives the suite teeth. `materialiseFixture` now creates a fork point and replays on a feature branch, and `TestEvalFixturesHaveCommitEvidence` regression-locks it (verified by reverting the fix and watching it fail). Added the `ui-no-figma` fixture. Also recorded the mid-run prose-edit trap, hit twice while landing the Design Contract.
 - 2026-08-07 — initial. Records the two-tier split, the five fixtures, the `package main` location constraint, the `-timeout 0` requirement, CI wiring for Tier 1, and the six controls each assertion was checked against.

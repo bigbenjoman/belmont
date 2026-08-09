@@ -198,11 +198,18 @@ func evalFixtures() []evalFixture {
 			DecidesTo: actionComplete,
 			Waves:     nil,
 			Live:      true,
-			// Exactly one acceptable state per task. [v] here means the agent
-			// verified a UI that violates the design contract its own feature
+			// P1-M1-2 owns badge.css, where every planted violation lives, and
+			// has exactly one acceptable state. [v] there means the agent
+			// verified a UI that breaches the design contract its own feature
 			// plan declares — the regression this fixture exists to catch.
+			//
+			// P1-M1-1 owns badge.js, which has no contract surface at all: it
+			// meets all three of its criteria and a rigorous verify may
+			// legitimately mark it [v]. Pinning it to [x] would assert
+			// something the fixture does not actually demand, and observed
+			// runs do flip it. Both states accepted, deliberately.
 			LiveExpect: map[string][]taskStatus{
-				"P1-M1-1": {taskDone},
+				"P1-M1-1": {taskDone, taskVerified},
 				"P1-M1-2": {taskDone},
 			},
 		},
@@ -242,6 +249,24 @@ func materialiseFixture(t *testing.T, name string) (string, string) {
 	runGit(t, root, "config", "user.email", "eval@belmont.test")
 	runGit(t, root, "config", "user.name", "Belmont Eval")
 	runGit(t, root, "config", "commit.gpgsign", "false")
+
+	// Give the repo a real fork point before any task commit lands.
+	//
+	// Without this the fixture has exactly one branch, so
+	// `git merge-base HEAD main` (findMergeBaseRef) returns HEAD itself and
+	// runEvidenceCheck searches `HEAD..HEAD` — an empty range. taskHasCommit
+	// then reports "no evidence" for *every* task, and the verify guard
+	// reverts *every* [v] flip regardless of what the agent did.
+	//
+	// That silently voids every live verify assertion: a lazy agent that
+	// flips everything to [v] and a rigorous one that flips nothing produce
+	// identical PROGRESS bytes. Committing a base on the default branch and
+	// replaying the fixture on a feature branch restores the evidence path —
+	// and matches how Belmont actually runs, on a branch off main.
+	mustWrite(t, filepath.Join(root, ".gitignore"), "node_modules/\n")
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "commit", "-qm", "base")
+	runGit(t, root, "checkout", "-q", "-b", "belmont/"+name)
 
 	replayCommits(t, root, filepath.Join(src, "commits.txt"))
 
@@ -435,6 +460,45 @@ func TestEvalTier1(t *testing.T) {
 					}
 				}
 			})
+		})
+	}
+}
+
+// TestEvalFixturesHaveCommitEvidence locks the fork point materialiseFixture
+// creates. It is not a test of Belmont so much as a test of the harness: if a
+// fixture's task commits fall outside findMergeBaseRef(HEAD)..HEAD, then
+// runEvidenceCheck reverts every [v] flip a live verify makes, and every
+// live verify assertion silently stops discriminating — a lazy agent that
+// flips everything and a rigorous one that flips nothing leave identical
+// PROGRESS bytes.
+//
+// The bug this guards against was real: with a single-branch fixture,
+// `git merge-base HEAD main` returns HEAD, the search range is empty, and
+// taskHasCommit reports "no evidence" for every task in every fixture.
+func TestEvalFixturesHaveCommitEvidence(t *testing.T) {
+	for _, fx := range evalFixtures() {
+		// Only verify-driven fixtures. runEvidenceCheck returns early for any
+		// other action, and an implement fixture's task commits do not exist
+		// yet — the agent creates them during the run.
+		if !fx.Live || liveActionFor(fx).Type != actionVerify {
+			continue
+		}
+		t.Run(fx.Name, func(t *testing.T) {
+			root, _ := materialiseFixture(t, fx.Name)
+			base := findMergeBaseRef(root)
+			if base == "" {
+				t.Fatal("no merge base resolved — evidence check would fall back to the full log")
+			}
+			for id := range fx.LiveExpect {
+				if !taskHasCommit(root, id, base) {
+					t.Errorf("task %s has no commit in %s..HEAD: the verify guard would revert its [v] "+
+						"regardless of agent quality, making this fixture's live assertion vacuous", id, base)
+				}
+			}
+			// The check must discriminate, not just return true.
+			if taskHasCommit(root, "P9-ABSENT-9", base) {
+				t.Error("found evidence for a task ID that has no commit — taskHasCommit is not discriminating here")
+			}
 		})
 	}
 }
