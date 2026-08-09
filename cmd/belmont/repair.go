@@ -82,6 +82,11 @@ type repairFinding struct {
 	// NamedMilestone is the milestone the task ID itself names — "M2" for
 	// P3-M2-1. Empty when the ID names none.
 	NamedMilestone string `json:"named_milestone,omitempty"`
+	// AlsoUnverified marks a parse finding whose line is ALSO a
+	// verified-without-evidence audit finding. One line, one finding, one
+	// action — so the second fact travels on the first finding rather than as a
+	// second entry the gate would refuse.
+	AlsoUnverified bool   `json:"also_verified_without_evidence,omitempty"`
 	Marker         string `json:"marker"`
 	Text           string `json:"text"`
 	Line           int    `json:"line"`
@@ -233,23 +238,40 @@ const ruleVerifiedWithoutEvidence = "verified_without_evidence"
 //
 // Returns nil when the log cannot be read: "could not look" must not print as
 // "no evidence", which is the same rule the mechanical tier follows.
-func auditVerifiedWithoutEvidence(root, progress string) []repairFinding {
+//
+// And it applies the SAME cross-feature rule the mechanical tier does. Task IDs
+// are feature-local, the commit log is not, so a sibling feature's commit for
+// its own P1-M1-1 is not evidence about this feature's P1-M1-1 — clearing the
+// audit on it silences the finding for every feature that shares the ID, which
+// under the shipped template is every feature. That is the same acceptance
+// `taskIDsClaimedElsewhere` was written to refuse one commit earlier, pointed
+// the other way: there it wrote a state nobody could justify, here it withholds
+// a question nobody else will ask. Reported as ambiguous, never as proof.
+func auditVerifiedWithoutEvidence(root, slug, progress string) []repairFinding {
 	named, ok := commitNamedTaskIDs(root)
 	if !ok {
 		return nil
 	}
+	shared, _ := taskIDsClaimedElsewhere(root, slug)
 	lines := strings.Split(progress, "\n")
 	var out []repairFinding
 	for _, m := range parseMilestones(progress) {
 		for _, t := range m.Tasks {
-			if t.Status != taskVerified || t.ID == "" || named[t.ID] {
+			if t.Status != taskVerified || t.ID == "" {
+				continue
+			}
+			ev, hasCommit := named[t.ID]
+			// A commit names it AND no other feature claims the ID: settled.
+			if hasCommit && !shared[t.ID] {
 				continue
 			}
 			raw := ""
 			if t.Line-1 >= 0 && t.Line-1 < len(lines) {
 				raw = lines[t.Line-1]
 			}
-			named, _ := taskIDNamedMilestone(t.ID)
+			ev.Checked = true
+			ev.Ambiguous = hasCommit
+			namedMS, _ := taskIDNamedMilestone(t.ID)
 			out = append(out, repairFinding{
 				Rule:      ruleVerifiedWithoutEvidence,
 				TaskID:    t.ID,
@@ -259,12 +281,12 @@ func auditVerifiedWithoutEvidence(root, progress string) []repairFinding {
 				// under the wrong milestone that no commit names is both — and
 				// whichever of the two the gate looks up has to hold enough to
 				// validate a move.
-				NamedMilestone: named,
+				NamedMilestone: namedMS,
 				Marker:         t.Marker,
 				Text:           t.Name,
 				Line:           t.Line,
 				Raw:            raw,
-				Evidence:       commitEvidence{Checked: true},
+				Evidence:       ev,
 			})
 		}
 	}
@@ -297,9 +319,14 @@ func attachCommitEvidence(root, slug string, findings []repairFinding) ([]repair
 	// every applied change names the commit it relied on, and why `--dry-run`
 	// exists.
 	const since = ""
-	shared := taskIDsClaimedElsewhere(root, slug)
+	shared, _ := taskIDsClaimedElsewhere(root, slug)
 	cache := map[string]commitEvidence{}
-	available := false
+	// Availability is a property of the REPOSITORY, not of the findings. Setting
+	// it inside the loop made "no finding carried a task ID" indistinguishable
+	// from "the log could not be read", and the second is what every caller
+	// prints — including the brief, which then tells the review tier that
+	// nothing has been checked against a log it read perfectly well.
+	available := commitLogReadable(root)
 	for i := range findings {
 		id := findings[i].TaskID
 		if id == "" {
@@ -312,9 +339,6 @@ func attachCommitEvidence(root, slug string, findings []repairFinding) ([]repair
 		}
 		ev.Ambiguous = shared[id]
 		findings[i].Evidence = ev
-		if ev.Checked {
-			available = true
-		}
 	}
 	return findings, available
 }
@@ -339,12 +363,20 @@ func attachCommitEvidence(root, slug string, findings []repairFinding) ([]repair
 // "ambiguous structure is refused, not guessed" rule this codebase already
 // applies to duplicate milestone IDs and duplicate task IDs. The finding still
 // goes to the review tier, which reads the code and can tell them apart.
-func taskIDsClaimedElsewhere(root, slug string) map[string]bool {
+//
+// It FAILS OPEN, which is worth saying out loud rather than leaving to be
+// discovered. It sees only the IDs in sibling PROGRESS.md files that still
+// exist, while the commits stay in the log for ever — so a feature archived by
+// `/belmont:cleanup`, whose files are replaced by a slim ARCHIVE.md, stops
+// claiming its IDs and the ambiguity goes invisible again. `unreadable` names
+// those directories so the caller can say the check was partial rather than
+// imply it was complete.
+func taskIDsClaimedElsewhere(root, slug string) (claimed map[string]bool, unreadable []string) {
 	out := map[string]bool{}
 	featuresDir := filepath.Join(root, ".belmont", "features")
 	entries, err := os.ReadDir(featuresDir)
 	if err != nil {
-		return out
+		return out, nil
 	}
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() == slug || strings.HasPrefix(e.Name(), ".") {
@@ -352,6 +384,7 @@ func taskIDsClaimedElsewhere(root, slug string) map[string]bool {
 		}
 		data, err := os.ReadFile(filepath.Join(featuresDir, e.Name(), "PROGRESS.md"))
 		if err != nil {
+			unreadable = append(unreadable, e.Name())
 			continue
 		}
 		// Every task line, in region or not: a sibling's stray copy of the ID
@@ -360,7 +393,8 @@ func taskIDsClaimedElsewhere(root, slug string) map[string]bool {
 			out[m[1]] = true
 		}
 	}
-	return out
+	sort.Strings(unreadable)
+	return out, unreadable
 }
 
 // repairAnyTaskIDRe matches the task ID on any checkbox line.
@@ -565,6 +599,17 @@ func validateRepairPlans(content string, findings []repairFinding, actions []rep
 				reject(a, "withdrawal needs a reason — a marker cannot carry why, which is what ## Decisions Log is for")
 				continue
 			}
+			// The mirror of the `[v]` cap. Repair may not WRITE a verified
+			// marker, and it may not take one away in a single step either:
+			// nothing in this codebase can put a `[v]` back — `belmont reverify`
+			// only ever promotes `[x]` — so `[v]` → `[-]` is irreversible by
+			// tooling, and the evidence that reaches this gate for a verified
+			// task is explicitly a question rather than a verdict. Demote to
+			// `[x]` first; withdrawing from there is unrestricted.
+			if st, known := canonicalMarker(f.Marker); known && st == taskVerified {
+				reject(a, "this task is marked [v] and nothing can write that marker back — demote it with set_marker \"x\" first, then withdraw if the work really was dropped")
+				continue
+			}
 		case repairLeave, repairEscalate:
 			// No edit. Recorded so the report can say what happened.
 		default:
@@ -575,6 +620,46 @@ func validateRepairPlans(content string, findings []repairFinding, actions []rep
 		plans = append(plans, repairPlan{Finding: f, Action: a})
 	}
 	return plans, rejected
+}
+
+// markAlsoUnverified flags every parse finding whose line is also an unproven
+// `[v]`. `needs_review` is what the interactive skill builds its proposal from,
+// so the flag has to be on that list too, not only on the copy handed to the
+// CLI-dispatched tier.
+func markAlsoUnverified(parse, unearned []repairFinding) {
+	audited := map[int]bool{}
+	for _, f := range unearned {
+		audited[f.Line] = true
+	}
+	for i := range parse {
+		parse[i].AlsoUnverified = audited[parse[i].Line]
+	}
+}
+
+// reviewableFindings is what the review tier is shown: ONE entry per line.
+//
+// A line can be both a parse finding and an audit finding — a `[v]` filed under
+// a milestone its ID does not name that no commit names is both. Two entries
+// asked the tier for two actions on a line `validateRepairPlans` accepts exactly
+// one action for, so an agent obeying "one entry per finding" earned "line N
+// already has an action", and which of the two the gate happened to keep decided
+// user-visible wording. The parse finding survives because it carries the
+// structural problem; `markAlsoUnverified` has already flagged it, so nothing
+// downstream has to guess the line is two problems.
+func reviewableFindings(parse, unearned []repairFinding) []repairFinding {
+	out := make([]repairFinding, 0, len(parse)+len(unearned))
+	onLine := map[int]bool{}
+	for _, f := range parse {
+		onLine[f.Line] = true
+		out = append(out, f)
+	}
+	for _, f := range unearned {
+		if onLine[f.Line] {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 func repairActionNames() []string {
@@ -881,6 +966,24 @@ Everything except "verified_without_evidence" is a line Belmont cannot act on as
 written — an unreadable marker, a task outside every milestone, a task filed
 under the wrong one. Decide those by the table below.
 
+READING THE EVIDENCE on a finding. These fields decide how much the commit log
+has already told you, and one of them is a trap:
+
+  "checked": false     the commit log could not be read at all. Nothing below
+                       applies; weigh the code alone.
+  "found": true        a commit names this task ID.
+  "ambiguous": true    ...but ANOTHER feature's PROGRESS.md claims the same task
+                       ID. Task IDs are feature-local and the commit log is not,
+                       so that commit may be about entirely different work.
+                       TREAT IT AS NO EVIDENCE and read the code. This is why
+                       the finding reached you with a SHA attached instead of
+                       being settled without you.
+  "also_verified_without_evidence": true
+                       this line is BOTH the parse problem named by "rule" AND a
+                       verified marker no commit proves. You get one action for
+                       it. Decide the parse problem, and say in your reason
+                       whether the verified claim still stands.
+
 "verified_without_evidence" is different: the line parses, the counts are right,
 and the only thing in question is the CLAIM. The task is marked verified and no
 commit in this repository names it. Nothing audits that — the commit-evidence
@@ -935,6 +1038,9 @@ that breaks them, so proposing one only wastes the run:
   - Withdrawal is the withdraw action, not set_marker "-", because the reason
     has to reach ## Decisions Log. Never express it by deleting the line: a
     deletion does not survive a sibling worktree merge and the task comes back.
+  - A task currently marked [v] cannot be withdrawn in one step. Nothing in
+    Belmont can write that marker back, so demote it with set_marker "x" first;
+    withdrawing from there is unrestricted.
   - move_milestone only ever targets a milestone that ALREADY exists, and never
     one that already holds that task ID. Repair does not create, rename or
     remove milestones — that is /belmont:tech-plan's job alone.
@@ -1064,7 +1170,7 @@ func runRepairCmd(args []string) error {
 
 	findings := collectRepairFindings(string(content))
 	findings, evidenceAvailable := attachCommitEvidence(root, slug, findings)
-	unearned := auditVerifiedWithoutEvidence(root, string(content))
+	unearned := auditVerifiedWithoutEvidence(root, slug, string(content))
 
 	out := repairJSON{
 		Feature:           slug,
@@ -1109,6 +1215,16 @@ func runRepairCmd(args []string) error {
 		// this command exists to remove.
 		out.Applied = append(out.Applied, applied...)
 		out.Warnings = append(out.Warnings, warnings...)
+		// The ambiguity check is only as complete as the sibling PROGRESS.md
+		// files it can read, and an archived feature keeps its commits while
+		// losing its task IDs. Said once, and only when the tier actually wrote
+		// something on commit evidence — the only case where the gap can have
+		// cost anything.
+		if _, blind := taskIDsClaimedElsewhere(root, slug); len(blind) > 0 && len(applied) > 0 {
+			out.Warnings = append(out.Warnings, fmt.Sprintf(
+				"%s has no PROGRESS.md, so its task IDs were not checked against this feature's — an archived feature keeps its commits. Confirm the commit(s) above belong to %s.",
+				strings.Join(blind, ", "), slug))
+		}
 		if !jsonOut {
 			fmt.Fprintf(os.Stderr, "\033[1mBelmont Repair\033[0m — %s\n\n", slug)
 			fmt.Fprintf(os.Stderr, "\033[1mCommit evidence\033[0m — applied %d change(s), no tokens spent:\n", len(applied))
@@ -1144,23 +1260,51 @@ func runRepairCmd(args []string) error {
 	}
 
 	// Re-scan: the applied changes moved line numbers if anything was moved,
-	// and a finding that has been fixed is no longer a finding. On a dry run
-	// nothing was written, so exclude what the mechanical tier settled instead —
-	// otherwise the preview and the real run report different work.
-	remaining := needsReview(collectRepairFindings(string(content)), plans)
+	// and a finding that has been fixed is no longer a finding.
+	//
+	// The line-keyed exclusion applies to the DRY RUN ONLY. There, nothing was
+	// written, so what the mechanical tier settled has to be subtracted by hand
+	// or the preview and the real run report different work. On the real path
+	// the file has already been rewritten, so anything `collectRepairFindings`
+	// still returns is still true of the file — and subtracting by line there
+	// hid a finding repair had just CREATED. `collectRepairFindings` reports one
+	// finding per line (an unreadable marker `continue`s before the
+	// cross-milestone check), so a `[?] P1-M2-7` filed under M1 is only ever the
+	// marker problem; flipping it to `[x]` makes it a cross-milestone problem on
+	// the same line, and that line was in `plans`. The report said "nothing left
+	// needs a code read" and `belmont validate` then exited 1 on it.
+	remaining := collectRepairFindings(string(content))
+	if dryRun {
+		remaining = needsReview(remaining, plans)
+	}
 	remaining, _ = attachCommitEvidence(root, slug, remaining)
+	// Mark the lines that are ALSO an unproven `[v]` before anything reads the
+	// list. `needs_review` is what the interactive skill builds its proposal
+	// from, so the flag has to be there too, not only on the copy handed to the
+	// CLI-dispatched tier.
+	markAlsoUnverified(remaining, unearned)
 	out.NeedsReview = remaining
 
 	if !jsonOut {
 		renderRepairFindings(os.Stderr, slug, remaining, evidenceAvailable)
-		renderUnearnedVerified(os.Stderr, unearned)
+		renderUnearnedVerified(os.Stderr, unearned, isShallowClone(root))
 	}
 
 	// The audit rides along to the review tier. It is not in `remaining` —
 	// `remaining` is re-derived from the file and drives "nothing left needs a
 	// code read" — but an agent can settle these, and the gate has to know
 	// about a line before it will act on it.
-	reviewable := append(append([]repairFinding{}, remaining...), unearned...)
+	//
+	// ONE ENTRY PER LINE. A line can be both a parse finding and an audit
+	// finding — a `[v]` filed under a milestone its ID does not name that no
+	// commit names is both. Handing the review tier two entries for one line
+	// asked it for two actions on a line the gate accepts exactly one action
+	// for: an agent obeying "one entry per finding" earned a rejection reading
+	// "line N already has an action", and which of the two the gate happened to
+	// keep decided user-visible wording. The parse finding survives because it
+	// carries the structural problem, and it carries a flag so nothing
+	// downstream has to guess that the line is also an unproven claim.
+	reviewable := reviewableFindings(remaining, unearned)
 
 	if len(reviewable) == 0 {
 		if jsonOut {
@@ -1290,13 +1434,29 @@ func runRepairCmd(args []string) error {
 	for _, w := range out.Warnings {
 		fmt.Fprintf(os.Stderr, "  \033[33m⚠\033[0m %s\n", w)
 	}
-	// Re-scan the file as it now stands rather than reasoning from the plans.
-	// A "leave" verdict resolves an orphan and does NOT resolve an unreadable
-	// marker, and an escalation resolves nothing — the only measure that cannot
-	// drift from those distinctions is what the file still reports.
+	// Re-scan the file as it now stands rather than reasoning from the plans:
+	// an escalation resolves nothing, and a plan that did not apply left the
+	// finding exactly where it was, so what the file still reports is the only
+	// measure that cannot drift.
+	//
+	// Then subtract the orphans the review tier ruled are not tasks. A `leave`
+	// verdict DOES resolve an orphan — `task_outside_milestone` is a warning,
+	// `belmont validate` exits 0 on it, and nothing needs editing — while the
+	// same verdict on an unreadable marker or a cross-milestone ID resolves
+	// nothing, because those still block the loop whatever anyone calls them.
+	// Counting the re-scan alone ended the run with "1 finding(s) unresolved —
+	// edit those lines by hand" directly under "left as written (not a task)"
+	// for the same line, which is the contradiction this measure exists to
+	// avoid. A `leave` writes nothing, so every left orphan is still in the
+	// re-scan and the subtraction is exact.
 	unresolved := 0
 	if final, err := os.ReadFile(progressPath); err == nil {
 		unresolved = len(collectRepairFindings(string(final)))
+	}
+	for _, p := range reviewPlans {
+		if p.Action.Action == repairLeave && p.Finding.Rule == ruleTaskOutsideMilestone && unresolved > 0 {
+			unresolved--
+		}
 	}
 	renderRepairNextSteps(os.Stderr, slug, out.Changed, unresolved)
 	return nil
@@ -1304,13 +1464,19 @@ func runRepairCmd(args []string) error {
 
 func emitJSON(v any) error {
 	// A nil slice marshals to `null`, and the interactive skill iterates these
-	// straight out of the JSON. Empty list, not null.
+	// straight out of the JSON. Empty list, not null — for ALL THREE lists
+	// declared without `omitempty`. `applied` was missed the first time and
+	// emitted `null` on every dry run, which is the first command the skill
+	// runs.
 	if r, ok := v.(repairJSON); ok {
 		if r.Findings == nil {
 			r.Findings = []repairFinding{}
 		}
 		if r.NeedsReview == nil {
 			r.NeedsReview = []repairFinding{}
+		}
+		if r.Applied == nil {
+			r.Applied = []repairPlan{}
 		}
 		v = r
 	}
@@ -1379,11 +1545,11 @@ func repairEvidenceLine(f repairFinding) string {
 // Worded as a question, not a verdict, because it is one: a commit-less task
 // can be genuinely verified. Overstating it here is how the block gets ignored,
 // and an ignored audit is worse than none — it looks like coverage.
-func renderUnearnedVerified(w io.Writer, findings []repairFinding) {
+func renderUnearnedVerified(w io.Writer, findings []repairFinding, shallow bool) {
 	if len(findings) == 0 {
 		return
 	}
-	fmt.Fprintf(w, "\033[33m%d task(s) marked [v] that no commit names:\033[0m\n", len(findings))
+	fmt.Fprintf(w, "\033[33m%d task(s) marked [v] that the commit log does not settle:\033[0m\n", len(findings))
 	for i, f := range findings {
 		if i == diagnosticListCap {
 			fmt.Fprintf(w, "  … and %d more\n", len(findings)-diagnosticListCap)
@@ -1393,11 +1559,25 @@ func renderUnearnedVerified(w io.Writer, findings []repairFinding) {
 		if len([]rune(text)) > 56 {
 			text = string([]rune(text)[:55]) + "…"
 		}
-		fmt.Fprintf(w, "  [v] PROGRESS.md:%-4d %s — %s\n", f.Line, f.TaskID, text)
+		// The marker AS WRITTEN, like renderRepairFindings. `[V]` is what made
+		// this gap visible in the first place; printing it as `[v]` hides the
+		// spelling the reader has to go and find.
+		fmt.Fprintf(w, "  [%s] PROGRESS.md:%-4d %s — %s\n", f.Marker, f.Line, f.TaskID, text)
+		// The evidence line, because "no commit names it" is not true of all of
+		// them: an ID another feature also claims is listed here precisely
+		// BECAUSE a commit names it and the match may be about that feature.
+		fmt.Fprintf(w, "        %s\n", repairEvidenceLine(f))
 	}
 	fmt.Fprintln(w, "  Nothing audits a [v] that was already on disk when a run started — the commit-evidence")
 	fmt.Fprintln(w, "  guard only ever compares one phase's before and after. A commit-less task can still be")
 	fmt.Fprintln(w, "  genuinely verified (docs- or config-only work), so this is a question, not a verdict.")
+	if shallow {
+		// `git log` succeeds in a shallow clone and returns what it has, so
+		// without this the report turns a history it could only partly read
+		// into an accusation against work committed before the cut.
+		fmt.Fprintln(w, "  \033[33mThis clone is shallow, so most of the history was not searched — expect false alarms.\033[0m")
+		fmt.Fprintln(w, "  `git fetch --unshallow` first if you intend to act on this.")
+	}
 	fmt.Fprintln(w)
 }
 
@@ -1517,7 +1697,7 @@ func describeRepairPlan(p repairPlan) string {
 		// "not a task" is right for a stray bullet and wrong for a verified
 		// task whose work is genuinely there — the reviewer would read it as
 		// the tool having misunderstood its own finding.
-		if p.Finding.Rule == ruleVerifiedWithoutEvidence {
+		if p.Finding.Rule == ruleVerifiedWithoutEvidence || p.Finding.AlsoUnverified {
 			return fmt.Sprintf("%s  left verified — %s", label, p.Action.Reason)
 		}
 		return fmt.Sprintf("%s  left as written (not a task) — %s", label, p.Action.Reason)

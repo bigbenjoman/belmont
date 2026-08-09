@@ -60,6 +60,20 @@ The rest follows from that:
   rough edge — so this reports and the review tier reads the code. The action
   that follows is `set_marker "x"`, handing the flip back to `belmont reverify`
   and its own contract.
+- **…and it applies the same cross-feature rule the mechanical tier does.** Task
+  IDs are feature-local, the commit log is not, so a sibling's commit for its own
+  `P1-M1-1` is not evidence about this feature's. Clearing the audit on it
+  silenced the finding for every feature sharing the ID — which, under the
+  shipped template, is every feature. `auditVerifiedWithoutEvidence` takes the
+  slug and consults `taskIDsClaimedElsewhere`; a shared ID is reported with
+  `Ambiguous` set and the commit named, never treated as proof.
+- **One line, one finding, one action.** A `[v]` filed under a milestone its ID
+  does not name that no commit names is both a parse finding and an audit
+  finding. `reviewable` carries ONE entry per line — the parse finding, flagged
+  `AlsoUnverified` — because the gate accepts exactly one action per line, so two
+  entries asked an agent obeying "one entry per finding" for an action that would
+  then be refused, and left which entry `byLine` kept deciding user-visible
+  wording.
 
 ## How it's enforced
 
@@ -92,8 +106,27 @@ to clear them. A `[v]` with no commit parses perfectly, counts correctly, and
 breaks nothing downstream — only the claim is wrong. Keeping it out of
 `collectRepairFindings` is also what keeps "nothing to repair" and the unresolved
 count meaningful: fold a permanent audit in there and a clean file never reads
-clean, which is how a warning becomes wallpaper. `commitNamedTaskIDs` answers it
-in one `git log` for the whole file rather than one per task.
+clean, which is how a warning becomes wallpaper. `commitNamedTaskIDs` answers
+presence in one `git log` for the whole file rather than one per task;
+`lookupCommitEvidence` is then called only for the IDs another feature also
+claims, because those are the ones whose commit has to be named in the report.
+
+**The unresolved count is the file, minus the orphans the review tier ruled are
+not tasks.** Reasoning from the plans alone counted findings repair had since
+fixed; re-scanning alone ended the run with "N finding(s) unresolved — edit those
+lines by hand" printed directly under "left as written (not a task)" for the same
+line. A `leave` resolves an orphan — `task_outside_milestone` is a warning and
+`belmont validate` exits 0 on it — and resolves nothing on an unreadable marker
+or a cross-milestone ID, which still block the loop whatever anyone calls them.
+
+**On the real run, `remaining` is the file, not the file minus what the
+mechanical tier settled.** That subtraction is keyed by line and belongs to the
+dry run alone, where nothing was written. `collectRepairFindings` reports one
+finding per line (an unreadable marker `continue`s before the cross-milestone
+check), so settling the marker on a `[?] P1-M2-7` filed under M1 CREATES a
+cross-milestone finding on that same line — and subtracting by line hid the
+finding repair had just written. The report said "Nothing left needs a code read"
+and `belmont validate` exited 1.
 
 **Two scoping decisions that look like bugs and are not:**
 
@@ -184,6 +217,8 @@ and proves nothing in either direction.
   repair proposes nothing without git, and `taskHasCommit` still returns true.
 
 ## Revisions
+
+- 2026-08-09 — round seven: the `[v]` audit applies the cross-feature ambiguity rule; `reviewable` carries one finding per line; the unresolved count subtracts orphans the review tier ruled are not tasks; `remaining` stops subtracting by line on the real run, which had hidden a cross-milestone finding the mechanical tier itself created; `evidence_available` reports the repository rather than the findings.
 
 - 2026-08-09 — added the `[v]`-without-evidence audit: the mirror of
   `runEvidenceCheck` for markers already on disk, reported and never applied,
