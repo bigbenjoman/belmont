@@ -1027,3 +1027,43 @@ func TestVerifiedAuditCanBeSettledByAProposal(t *testing.T) {
 		t.Errorf("repair minted a verified marker:\n%s", got)
 	}
 }
+
+// One line can produce two findings: a `[v]` filed under the wrong milestone
+// that no commit names is both a cross-milestone parse finding and a
+// verified-without-evidence audit finding. The gate keys findings by line, so
+// the second silently replaced the first — and then refused a legitimate move
+// because the audit entry it kept carried no destination.
+func TestRepairHandlesALineThatIsBothFindings(t *testing.T) {
+	root := gitFixture(t, "### M2: Surface\n- [v] P1-M3-9: filed wrong, never committed\n\n### M3: Later\n- [ ] P1-M3-1: other\n")
+	doc := progressOf(t, root)
+
+	parse, _ := attachCommitEvidence(root, "demo", collectRepairFindings(doc))
+	audit := auditVerifiedWithoutEvidence(root, doc)
+	if len(parse) != 1 || len(audit) != 1 || parse[0].Line != audit[0].Line {
+		t.Fatalf("fixture: want one of each on the same line, got parse=%+v audit=%+v", parse, audit)
+	}
+
+	reviewable := append(append([]repairFinding{}, parse...), audit...)
+	plans, rejected := validateRepairPlans(doc, reviewable,
+		[]repairAction{{Line: parse[0].Line, TaskID: "P1-M3-9", Action: repairMoveMilestone, Reason: "belongs to M3"}})
+	if len(plans) != 1 {
+		t.Fatalf("a legitimate move was refused: %+v", rejected)
+	}
+	got, applied, warnings := applyRepairPlans(doc, plans, "2026-08-09")
+	if len(applied) != 1 || len(warnings) != 0 {
+		t.Fatalf("applied=%d warnings=%v", len(applied), warnings)
+	}
+	for _, m := range parseMilestones(got) {
+		if m.ID == "M3" && len(m.Tasks) != 2 {
+			t.Errorf("M3 = %+v, want its own task plus the moved one:\n%s", m.Tasks, got)
+		}
+		if m.ID == "M2" && len(m.Tasks) != 0 {
+			t.Errorf("M2 still holds the moved task: %+v\n%s", m.Tasks, got)
+		}
+	}
+	// The audit finding alone must still carry enough to validate a move, in
+	// case it is the one the gate keeps.
+	if audit[0].NamedMilestone != "M3" {
+		t.Errorf("audit finding NamedMilestone = %q, want M3", audit[0].NamedMilestone)
+	}
+}
