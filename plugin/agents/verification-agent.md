@@ -147,11 +147,11 @@ Run this whenever a contract is present, **whether or not** design references al
 
 Read the six contract sections from `{base}/TECH_PLAN.md` and check each row below against the **running UI**.
 
-> **Never take an `Actual` value from the file the contract's `**Source**` names.** If `**Source**` is `tailwind.config.ts`, then reading `tailwind.config.ts` back is circular — it is what the contract was derived *from*, so the check agrees with itself and can never fail. This is the rule; it is about circularity, not about file type.
+> **Never take an `Actual` value from anything the contract's `**Source**` names.** If `**Source**` is `tailwind.config.ts`, then reading `tailwind.config.ts` back is circular — it is what the contract was derived *from*, so the check agrees with itself and can never fail. This is the rule; it is about circularity, not about file type. `**Source**` may name a file, a directory of story files, a URL, or several of these at once (one per family of values) — **every** entry is excluded, not just the first and not just the ones that are files.
 >
 > **Prefer the running UI.** Drive it with the browser tools above and read computed styles — that measures what a user actually gets, including cascade, inheritance and overrides.
 >
-> **Where no server can be started** (a component library with no app shell, a fixture, a build that will not boot), static analysis of the implementation's *own* newly-written source is an acceptable degraded mechanism, **provided it is not the `**Source**` file**. Record it honestly in the Mechanism column — e.g. `static read of badge.css (no dev server available)` — so the reader knows the cascade was not exercised. Do not silently present it as a computed-style measurement.
+> **Where no server can be started** (a component library with no app shell, a fixture, a build that will not boot), static analysis of the implementation's *own* newly-written source is an acceptable degraded mechanism, **provided it is nothing `**Source**` names**. Record it honestly in the Mechanism column — e.g. `static read of badge.css (no dev server available)` — so the reader knows the cascade was not exercised. Do not silently present it as a computed-style measurement.
 >
 > **A check whose mechanism is unavailable is recorded `UNVERIFIABLE`, never `PASS`** — and per the fourth enforcement rule, a required check recorded `UNVERIFIABLE` means Visual Verification is FAIL or INCOMPLETE, not PASS. An unmeasured gate is not a passed one.
 

@@ -85,9 +85,29 @@ the standard once, per feature, interactively, where a human is already reviewin
   server, so the planning-session prohibition on build commands does not apply.
   Its `entries` give component titles (the reuse inventory) and story names
   (`Empty`, `Loading`, `Pending`, `Declined`) which **are** the State Inventory,
-  written by the team that built the component. Phase 3.5 must *ask* whether one
-  exists — it is the one rung that cannot be discovered by reading the repo.
-  Skip `type: "docs"` entries; they are generated, not states.
+  written by the team that built the component. Phase 3.5 *asks* whether one
+  exists — it is the one rung that cannot be discovered by reading the repo —
+  but **only interactively**. A headless replan may fill an absent subsection,
+  which walks the same ladder, so the ask needs its own carve-out: headless uses
+  only a URL already in the master plan, the PRD or `package.json`, and skips the
+  rung otherwise. Skip `type: "docs"` entries; they are generated, not states.
+- **A story index supplies components and states, never tokens — so `**Source**`
+  names more than one rung.** The ladder stops at the first rung supplying a
+  *token family*, and `index.json` supplies none, so the walk continues to rung 2
+  while rung 1 still owns the inventory. `**Source**` therefore records one rung
+  per family (`storybook (<url>) — components & states; tailwind.config.ts —
+  tokens`). Naming a rung the tokens did not come from is not cosmetic:
+  `verification-agent.md`'s anti-circularity rule is keyed on `**Source**`, so a
+  token file that goes unnamed becomes legal to read back as an `Actual` value,
+  and the check agrees with itself. For the same reason that rule is scoped to
+  *anything* `**Source**` names — file, directory or URL — not to "the file".
+- **Identify a URL as a Storybook before fetching it, and validate what comes
+  back.** `homepage` and `repository` in `package.json` are the product site and
+  the source repo; appending `/index.json` to either fetches something that is
+  not a story index. And a fetch has succeeded only when the body parses as JSON
+  carrying an `entries` (7+) or `stories` (6.x) object — a 200 alone proves
+  nothing, exactly as with the client-rendered download links higher in the same
+  file. Anything else falls through to local story files or project config.
 - **A contract is never a fallback for a *failed* Figma load.** Mode is keyed on
   URL *presence*, never on load outcome. The NO FALLBACK rule stands untouched.
 
@@ -236,6 +256,17 @@ ever ran on.
 
 ## Revisions
 
+- 2026-08-09 — hardened the deployed-Storybook rung after a second red-team (140
+  agents, 8 lenses, 44 findings, 41 refuted). One survivor and two convergences
+  fixed: `**Source**` was told to name rung 1a even though a story index supplies
+  no token family, which wrote false provenance *and* unkeyed the verifier's
+  anti-circularity rule — `**Source**` now names one rung per family and the rule
+  is scoped to anything it names, not to "the file". The Storybook ask gained an
+  explicit interactive-only carve-out in both Phase 3.5 and the ladder (three
+  lenses independently read the headless path as reachable; the refuters were
+  right that an existing rule covers it, but only by inference). Detection no
+  longer treats `homepage`/`repository` as Storybook URLs, and a fetch now has a
+  positive shape test rather than a two-item failure list.
 - 2026-08-08 — rung 1 extended to deployed Storybooks after a real one
   (storybook.studia.io) exposed the gap: detection was local-files-only, so a
   project that ships Storybook as a deployment had its richest design source

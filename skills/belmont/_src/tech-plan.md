@@ -279,13 +279,16 @@ Neither `N/A` value is "a contract". Only `derived — UI, no Figma` is.
    ladder (which design skills enrich which section), the derivation order
    (reuse before invention — master contract, sibling contract, Storybook,
    project config, then baseline defaults), and the tier-2 baseline rules.
-2. **Ask whether the project has a deployed Storybook**, unless you already found
-   a URL in the master `TECH_PLAN.md`, the PRD, or `package.json`. A hosted
-   Storybook is the single most valuable input to this phase — its `index.json`
-   enumerates every component *and every state the team actually built* — and it
-   is the one rung you cannot discover by reading the repo. One question is cheap;
-   deriving a State Inventory by guesswork when the real one was a fetch away is
-   not.
+2. **Ask whether the project has a deployed Storybook** — *interactively only*,
+   and only if you have not already found a URL identified as a Storybook in the
+   master `TECH_PLAN.md`, the PRD, or `package.json`. A hosted Storybook is the
+   single most valuable input to this phase — its `index.json` enumerates every
+   component *and every state the team actually built* — and it is the one rung
+   you cannot discover by reading the repo. One question is cheap; deriving a
+   State Inventory by guesswork when the real one was a fetch away is not.
+   **Headless: do not ask this.** Use only a URL already in those files, and if
+   there is none, skip the deployed rung and carry on at step 3. See *Running
+   headlessly* below.
 3. Derive all six subsections — Token Contract, Accessibility Floor, UX Strategy,
    State Inventory, Microcopy Rules, Motion Contract — using the Phase 3 answers
    about design system details, existing components to reuse, and animation
@@ -338,6 +341,12 @@ you MUST:
   rule exists to prevent.
 - **Preserve an existing contract verbatim.** Derive only *subsections* that are
   absent from a contract that already exists. Never regenerate an approved one.
+- **Ask nothing — including step 2's Storybook question.** The no-questions rule
+  above is the whole phase, not just the approval gate. When you fill an absent
+  subsection you still walk the derivation ladder, so state it plainly: use only
+  a Storybook URL already present in the master `TECH_PLAN.md`, the PRD or
+  `package.json`, and where there is none, skip the deployed rung rather than
+  asking for it.
 - **Only if you filled in a previously-absent subsection**, set `**Approval**:
   unreviewed (headless replan <ISO date>)`. If you changed nothing, leave the
   `**Approval**` line exactly as you found it — a headless run that touched

@@ -52,7 +52,10 @@ src/
 **Mode**: [derived — UI, no Figma | N/A — no UI | N/A — Figma present]
 **Source**: [storybook (<url>) | storybook (local) | tailwind.config.ts | globals.css |
              components.json | master TECH_PLAN | sibling feature <slug> |
-             none — established here]
+             none — established here. Name EVERY rung you took content from, one
+             per family where they differ — a story index gives components and
+             states but no tokens, so that case reads
+             `storybook (<url>) — components & states; tailwind.config.ts — tokens`]
 **Authorities**: baseline[; ui-designer (tokens); ux-designer (strategy, states); ux-copywriter (microcopy);
              ux-motion (motion); frontend-design:frontend-design (aesthetic)]
 **Approval**: [approved <ISO date> | unreviewed (headless replan <ISO date>)]

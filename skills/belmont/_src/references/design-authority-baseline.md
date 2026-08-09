@@ -124,8 +124,14 @@ directory per skill under `~/.claude/skills/`.
 ## Derivation order — reuse before invention
 
 Walk this ladder in order. **Stop at the first rung that supplies a token
-family, and name that rung in the contract's `**Source**` field.** Never invent
-a competing scale where one already exists.
+family**, and name in the contract's `**Source**` field every rung you actually
+took content from. Never invent a competing scale where one already exists.
+
+Rung 1 routinely supplies components and states while supplying **no** token
+family — a story index carries component and story *names*, not colours or
+spacing. That is not a reason to stop there for tokens: keep walking, and name
+both rungs, one per family — e.g.
+`storybook (<url>) — components & states; tailwind.config.ts — tokens`.
 
 0. **Master contract** — a `## Design Contract` in `.belmont/TECH_PLAN.md`.
 0b. **Sibling contract** — an approved `## Design Contract` in another
@@ -136,20 +142,23 @@ a competing scale where one already exists.
    stories enumerate components *and their states*, which is exactly what State
    Inventory needs. It comes in two forms and **the hosted one is better**:
 
-   **1a. A deployed Storybook.** Detect from a URL in the master `TECH_PLAN.md`,
-   the feature PRD, `package.json` (`homepage`, `repository`, or a `storybook`
-   script's `--url`), or simply because the user named one during the interview —
-   ask if the project has one and you have not found it. Then fetch:
+   **1a. A deployed Storybook.** Use only a URL you can *identify as a Storybook*:
+   one named as such in the master `TECH_PLAN.md` or the feature PRD, a
+   Storybook-named field or script in `package.json`, or one the user gives you
+   during the interview. **`homepage` and `repository` are not Storybook URLs** —
+   they are the product site and the source repo, and appending `/index.json` to
+   either fetches something that is not a story index. If you have found no URL you
+   can identify, ask — but see *Asking is interactive-only* below. Then fetch:
 
    ```
    <storybook-url>/index.json      # the story index — components and their stories
-   <storybook-url>/project.json    # framework and addon metadata (optional)
    ```
 
    `index.json` is a **static build artifact**. Fetching it runs nothing, needs no
    port, and starts no server — so `forbidden-actions`' prohibition on build and
-   package-manager commands does not apply. Use `WebFetch`, which this skill is
-   already permitted to use.
+   package-manager commands does not apply. Use whatever single-URL fetch your tool
+   provides (`WebFetch` on Claude Code, which this skill's ALLOWED ACTIONS already
+   permit for a user-provided URL). If your tool has none, skip to 1b.
 
    Its `entries` map is the richest inventory available anywhere: each entry has a
    `title` (the component path, e.g. `Bookings/BookingPicker`) and a `name` (the
@@ -159,9 +168,21 @@ a competing scale where one already exists.
    states that component actually has, which is strictly better than your guess.
    Ignore `Docs` entries (`type: "docs"`); they are generated, not states.
 
-   If the URL 404s or the JSON will not parse, say so and fall through to 1b or
-   rung 2 — never invent an inventory and never claim a Storybook source you could
-   not read.
+   **You have read a story index only if** the response body parses as JSON *and*
+   carries an `entries` object (Storybook 7+) or a `stories` object (6.x) whose
+   values have `title` and `name` fields. Anything else is **not** one: a 404, a
+   redirect to a login or marketing page, an HTML error page or SPA shell, a
+   deployment-protection interstitial, JSON of some other shape, or a fetch you
+   could not make. **A 200 proves nothing** — the same client-rendered trap as the
+   download links above. On any of those, say which happened and fall through to 1b
+   or rung 2. Never invent an inventory, and never write a `storybook` `**Source**`
+   you could not read.
+
+   **Asking is interactive-only.** A deployed Storybook is the one rung you cannot
+   discover by reading the repo, so ask for it while the interview is live. When
+   you are running headlessly — see Phase 3.5's *Running headlessly* — do **not**
+   ask: use only a URL already present in the files above, and if there is none, go
+   straight to 1b.
 
    **1b. Local story files.** Detect via `.storybook/`, a `storybook` entry in the
    package manifest, or `*.stories.@(js|jsx|ts|tsx|mdx)` files. **Read the story
@@ -172,8 +193,14 @@ a competing scale where one already exists.
 
    Either way: record the component inventory into the feature template's
    `## Existing Components to Reuse`, treat those components as **LAW** — the
-   contract records them, it does not redesign them — and set `**Source**` to
-   `storybook (<url>)` or `storybook (local)` so a reader knows which you used.
+   contract records them, it does not redesign them — and add
+   `storybook (<url>)` or `storybook (local)` to `**Source**` so a reader knows
+   which you used. **Adding, not replacing**: a story index supplies components
+   and states, not tokens, so keep walking to rung 2 for the Token Contract and
+   name that rung too. `**Source**` must always name the artifact each family of
+   values actually came from — `verification-agent.md`'s anti-circularity rule is
+   keyed on it, and a rung named there but not read from, or read from but not
+   named, disarms it.
 2. **Project config** — `tailwind.config.*`, CSS custom properties in
    `globals.css`, `components.json`, theme files.
 3. **Nothing exists** → establish the tier-2 defaults below and set
