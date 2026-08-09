@@ -52,6 +52,14 @@ The rest follows from that:
   byte-for-byte what it scanned.
 - **Ambiguous structure is refused, not guessed** — a repeated `### M<n>:`
   heading, same policy as both runtime guards.
+- **The `[v]`-without-evidence audit is reported, never applied.** It is the
+  mirror of `runEvidenceCheck` for the half that guard cannot see: it compares a
+  phase's before and after, so a `[v]` already on disk when a run started is
+  never a flip and is audited by nothing, ever. No commit is not proof of no
+  work — `auto-mode/verify-evidence.md` records commit-less tasks as a known
+  rough edge — so this reports and the review tier reads the code. The action
+  that follows is `set_marker "x"`, handing the flip back to `belmont reverify`
+  and its own contract.
 
 ## How it's enforced
 
@@ -77,6 +85,15 @@ The rest follows from that:
   header when it holds no tasks yet.
 - The skill (`skills/belmont/_src/repair.md`) carries the same rules for the
   interactive path, where nothing mechanical enforces them.
+
+**The audit is deliberately NOT a fourth parse finding.** The three findings are
+lines Belmont cannot act on; `belmont validate` exits 1 on them and repair exists
+to clear them. A `[v]` with no commit parses perfectly, counts correctly, and
+breaks nothing downstream — only the claim is wrong. Keeping it out of
+`collectRepairFindings` is also what keeps "nothing to repair" and the unresolved
+count meaningful: fold a permanent audit in there and a clean file never reads
+clean, which is how a warning becomes wallpaper. `commitNamedTaskIDs` answers it
+in one `git log` for the whole file rather than one per task.
 
 **Two scoping decisions that look like bugs and are not:**
 
@@ -141,6 +158,14 @@ and proves nothing in either direction.
   review tier's conclusions are presented for confirmation, and the milestone-move
   action is only safe because the scope guard is not running. An auto-mode repair
   would need both properties re-derived.
+- **Auto-demoting a `[v]` that no commit names.** The obvious next step once the
+  audit exists, and wrong: a documentation-only or configuration-only task is
+  routinely verified with nothing in the log naming it, so demoting on absence
+  alone re-opens finished work — this command's own failure mode, pointed the
+  other way. `leave` is a first-class verdict there.
+- **Making the audit a `belmont validate` violation.** It would fail CI on files
+  that parse and are correct, and `validate` is on `belmont auto`'s startup path.
+  The audit belongs to the command you run when you are already looking.
 - **A "safe to just fix it" violation class in `belmont validate`.** Considered
   and dropped when the remedies were designed: every remaining case turns on what
   a marker MEANT. Repair is the answer to that, and it answers it with evidence
@@ -160,6 +185,10 @@ and proves nothing in either direction.
 
 ## Revisions
 
+- 2026-08-09 — added the `[v]`-without-evidence audit: the mirror of
+  `runEvidenceCheck` for markers already on disk, reported and never applied,
+  kept out of the parse findings so a clean file still reads clean. Records why
+  auto-demotion and a `validate` violation are both rejected.
 - 2026-08-09 — initial. Records the two-tier design, the evidence-first
   invariant and why the interrogating alternative is rejected, the closed action
   set, the `[x]` cap, the two scoping decisions that differ deliberately from

@@ -59,6 +59,15 @@ checkbox marker outside `[ ] [>] [x] [v] [!] [-]`, a task line sitting outside
 every milestone (below a column-zero `## ` heading), and a task whose ID names a
 different milestone from the one it is filed under.
 
+It also runs one **audit** that is not a repair: every task marked `[v]` that no
+commit in the repository names. Nothing else checks that — the commit-evidence
+guard only ever compares one phase's before and after, so a `[v]` already on disk
+when a run started was never audited by anything. It is reported separately, never
+acted on mechanically, and `leave` is a legitimate answer: documentation-only and
+configuration-only tasks routinely leave no commit naming them. When the claim
+does not hold, the move is `set_marker "x"` — `belmont reverify` then re-earns
+the `[v]` under its own contract.
+
 It works in two tiers, the same shape as `belmont reverify`:
 
 | Tier | What it does | Cost |

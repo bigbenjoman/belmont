@@ -197,6 +197,73 @@ func collectRepairFindings(progress string) []repairFinding {
 	return out
 }
 
+// ruleVerifiedWithoutEvidence is the audit, and it is deliberately NOT one of
+// the three parse findings above.
+//
+// Those three are lines Belmont cannot act on: it says so, `belmont validate`
+// exits 1, and repair exists to clear them. A `[v]` with no commit behind it is
+// a different animal — the file parses perfectly, every count is right, and
+// nothing downstream is broken. What is wrong is the CLAIM.
+//
+// Keeping it separate matters for a practical reason as well as a conceptual
+// one. Repair reports "nothing to repair" and counts what is left unresolved by
+// re-reading the file through collectRepairFindings; folding a permanent
+// audit finding into that would mean a clean file never reads clean, which is
+// how a warning becomes wallpaper.
+const ruleVerifiedWithoutEvidence = "verified_without_evidence"
+
+// auditVerifiedWithoutEvidence returns every `[v]` task that no commit names.
+//
+// This is the mirror of runEvidenceCheck, for the half it cannot see. That
+// guard compares a phase's before and after, so it only ever audits a flip
+// written WHILE it was watching; a `[v]` already on disk when the run starts is
+// never a flip and is never checked, by anything, ever. `[V]` made that gap
+// visible — it used to be an unrecognised marker that blocked the loop and now
+// reads as the terminal state — but the gap is older than that and is exactly
+// the same for a hand-written lowercase `[v]`.
+//
+// NEVER MECHANICAL, in either direction. No commit means no commit; it does not
+// mean the work is absent. `knowledge/auto-mode/verify-evidence.md` records
+// commit-less tasks as a known rough edge — a documentation-only or
+// configuration-only task can be genuinely verified with nothing in the log
+// naming it. So this reports, and the review tier reads the code. The action
+// that follows is `set_marker "x"`, which the existing gate already permits and
+// which hands the `[v]` back to `belmont reverify` and its own evidence
+// contract. Repair still never writes a `[v]`.
+//
+// Returns nil when the log cannot be read: "could not look" must not print as
+// "no evidence", which is the same rule the mechanical tier follows.
+func auditVerifiedWithoutEvidence(root, progress string) []repairFinding {
+	named, ok := commitNamedTaskIDs(root)
+	if !ok {
+		return nil
+	}
+	lines := strings.Split(progress, "\n")
+	var out []repairFinding
+	for _, m := range parseMilestones(progress) {
+		for _, t := range m.Tasks {
+			if t.Status != taskVerified || t.ID == "" || named[t.ID] {
+				continue
+			}
+			raw := ""
+			if t.Line-1 >= 0 && t.Line-1 < len(lines) {
+				raw = lines[t.Line-1]
+			}
+			out = append(out, repairFinding{
+				Rule:      ruleVerifiedWithoutEvidence,
+				TaskID:    t.ID,
+				Milestone: m.ID,
+				Marker:    t.Marker,
+				Text:      t.Name,
+				Line:      t.Line,
+				Raw:       raw,
+				Evidence:  commitEvidence{Checked: true},
+			})
+		}
+	}
+	return out
+}
+
 // attachCommitEvidence fills in the Evidence field of every finding that
 // carries a task ID. The second return value reports whether the commit log
 // could be read at all — false means the mechanical tier has no answers to
@@ -792,7 +859,32 @@ func buildRepairBrief(feature, proposalPath string, findings []repairFinding, ev
 // tool's own skill discovery is bypassed), and the interactive path reads the
 // skill. Both must state the same bounds. See
 // knowledge/cross-cutting/dual-invocation-paths.md.
-const repairAgentRules = `HOW TO DECIDE — evidence, never memory:
+const repairAgentRules = `TWO KINDS OF FINDING. Check the "rule" field.
+
+Everything except "verified_without_evidence" is a line Belmont cannot act on as
+written — an unreadable marker, a task outside every milestone, a task filed
+under the wrong one. Decide those by the table below.
+
+"verified_without_evidence" is different: the line parses, the counts are right,
+and the only thing in question is the CLAIM. The task is marked verified and no
+commit in this repository names it. Nothing audits that — the commit-evidence
+guard only ever compares one phase's before and after, so a verified marker
+already on disk when a run started was never checked by anything. For each of
+these, look for the work in the code and decide:
+
+  - the work is there, and a test or the code plainly demonstrates it — the task
+    is verified, the commit convention was just not followed (docs-only and
+    config-only tasks routinely leave no commit naming them)  -> leave
+  - the work is there but nothing shows it was verified                -> set_marker "x"
+  - the work is not there at all                                        -> set_marker " "
+  - you cannot tell                                                     -> escalate
+
+Never set_marker "v" — the CLI refuses it. Demoting to "x" is the useful move:
+` + "`belmont reverify`" + ` then re-earns the flip under its own evidence
+contract. "leave" is a real and common answer here; do not treat a missing
+commit as proof of missing work.
+
+HOW TO DECIDE the other three — evidence, never memory:
 
 For each finding, read the task text and then look for what it names in the
 CURRENT code: the route, component, table, endpoint, flag, test. You are
@@ -903,11 +995,15 @@ type repairJSON struct {
 	// because this is a --dry-run. Separate from Applied so a consumer — the
 	// interactive skill runs `--dry-run --format json` first — can never mistake
 	// a preview for a change on disk. Changed is false throughout a dry run.
-	WouldApply  []repairPlan      `json:"would_apply,omitempty"`
-	NeedsReview []repairFinding   `json:"needs_review"`
-	Rejected    []repairRejection `json:"rejected,omitempty"`
-	Warnings    []string          `json:"warnings,omitempty"`
-	Changed     bool              `json:"changed"`
+	WouldApply  []repairPlan    `json:"would_apply,omitempty"`
+	NeedsReview []repairFinding `json:"needs_review"`
+	// UnearnedVerified is the audit, kept out of Findings and NeedsReview on
+	// purpose: these lines parse, so `belmont validate` is happy with them and
+	// "nothing to repair" stays meaningful. They still reach the review tier.
+	UnearnedVerified []repairFinding   `json:"verified_without_evidence,omitempty"`
+	Rejected         []repairRejection `json:"rejected,omitempty"`
+	Warnings         []string          `json:"warnings,omitempty"`
+	Changed          bool              `json:"changed"`
 }
 
 // runRepairCmd handles `belmont repair`.
@@ -952,11 +1048,17 @@ func runRepairCmd(args []string) error {
 
 	findings := collectRepairFindings(string(content))
 	findings, evidenceAvailable := attachCommitEvidence(root, slug, findings)
+	unearned := auditVerifiedWithoutEvidence(root, string(content))
 
-	out := repairJSON{Feature: slug, EvidenceAvailable: evidenceAvailable, Findings: findings}
+	out := repairJSON{
+		Feature:           slug,
+		EvidenceAvailable: evidenceAvailable,
+		Findings:          findings,
+		UnearnedVerified:  unearned,
+	}
 	jsonOut := strings.EqualFold(format, "json")
 
-	if len(findings) == 0 {
+	if len(findings) == 0 && len(unearned) == 0 {
 		if jsonOut {
 			return emitJSON(out)
 		}
@@ -1005,6 +1107,11 @@ func runRepairCmd(args []string) error {
 		}
 		if !jsonOut {
 			fmt.Fprintf(os.Stderr, "\033[1mBelmont Repair\033[0m — %s\n\n", slug)
+			// Nothing to repair, but something to look at. Reaching the audit
+			// block with no preamble reads as though repair had failed to run.
+			if len(findings) == 0 && len(unearned) > 0 {
+				fmt.Fprintf(os.Stderr, "\033[32m✓ Every task line parses and sits under a milestone.\033[0m\n\n")
+			}
 			// A dry run must still say what the mechanical tier WOULD settle.
 			// Without this the preview lists every finding as needing a code
 			// read, including the ones a commit already answers — which is both
@@ -1030,9 +1137,16 @@ func runRepairCmd(args []string) error {
 
 	if !jsonOut {
 		renderRepairFindings(os.Stderr, slug, remaining, evidenceAvailable)
+		renderUnearnedVerified(os.Stderr, unearned)
 	}
 
-	if len(remaining) == 0 {
+	// The audit rides along to the review tier. It is not in `remaining` —
+	// `remaining` is re-derived from the file and drives "nothing left needs a
+	// code read" — but an agent can settle these, and the gate has to know
+	// about a line before it will act on it.
+	reviewable := append(append([]repairFinding{}, remaining...), unearned...)
+
+	if len(reviewable) == 0 {
 		if jsonOut {
 			return emitJSON(out)
 		}
@@ -1076,9 +1190,9 @@ func runRepairCmd(args []string) error {
 		}
 		tiers, _ := parseModelTiers(filepath.Join(root, ".belmont", "features", slug, "models.yaml"))
 		if !jsonOut {
-			fmt.Fprintf(os.Stderr, "\033[1mReview tier\033[0m — asking %s to read %d finding(s) against the code…\n\n", tool, len(remaining))
+			fmt.Fprintf(os.Stderr, "\033[1mReview tier\033[0m — asking %s to read %d finding(s) against the code…\n\n", tool, len(reviewable))
 		}
-		p, err := runRepairAgent(root, slug, tool, tiers, remaining, evidenceAvailable)
+		p, err := runRepairAgent(root, slug, tool, tiers, reviewable, evidenceAvailable)
 		// Arm the cleanup on the path RETURNED, before checking the error and
 		// before parsing. Every failure below — the agent exiting non-zero,
 		// writing prose instead of JSON, writing an empty repairs array —
@@ -1117,7 +1231,7 @@ func runRepairCmd(args []string) error {
 	}
 	content = fresh
 
-	reviewPlans, reviewRejected := validateRepairPlans(string(content), remaining, proposal.Repairs)
+	reviewPlans, reviewRejected := validateRepairPlans(string(content), reviewable, proposal.Repairs)
 	out.Rejected = append(out.Rejected, reviewRejected...)
 	if !jsonOut {
 		// "leave" and "escalate" are answers, not silences — they are the two
@@ -1173,6 +1287,17 @@ func runRepairCmd(args []string) error {
 }
 
 func emitJSON(v any) error {
+	// A nil slice marshals to `null`, and the interactive skill iterates these
+	// straight out of the JSON. Empty list, not null.
+	if r, ok := v.(repairJSON); ok {
+		if r.Findings == nil {
+			r.Findings = []repairFinding{}
+		}
+		if r.NeedsReview == nil {
+			r.NeedsReview = []repairFinding{}
+		}
+		v = r
+	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
@@ -1233,6 +1358,33 @@ func repairEvidenceLine(f repairFinding) string {
 }
 
 // renderRepairNonEdits prints the review tier's "no change" verdicts.
+// renderUnearnedVerified prints the audit block.
+//
+// Worded as a question, not a verdict, because it is one: a commit-less task
+// can be genuinely verified. Overstating it here is how the block gets ignored,
+// and an ignored audit is worse than none — it looks like coverage.
+func renderUnearnedVerified(w io.Writer, findings []repairFinding) {
+	if len(findings) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\033[33m%d task(s) marked [v] that no commit names:\033[0m\n", len(findings))
+	for i, f := range findings {
+		if i == diagnosticListCap {
+			fmt.Fprintf(w, "  … and %d more\n", len(findings)-diagnosticListCap)
+			break
+		}
+		text := f.Text
+		if len([]rune(text)) > 56 {
+			text = string([]rune(text)[:55]) + "…"
+		}
+		fmt.Fprintf(w, "  [v] PROGRESS.md:%-4d %s — %s\n", f.Line, f.TaskID, text)
+	}
+	fmt.Fprintln(w, "  Nothing audits a [v] that was already on disk when a run started — the commit-evidence")
+	fmt.Fprintln(w, "  guard only ever compares one phase's before and after. A commit-less task can still be")
+	fmt.Fprintln(w, "  genuinely verified (docs- or config-only work), so this is a question, not a verdict.")
+	fmt.Fprintln(w)
+}
+
 func renderRepairNonEdits(w io.Writer, plans []repairPlan) {
 	var noted []repairPlan
 	for _, p := range plans {
@@ -1346,6 +1498,12 @@ func describeRepairPlan(p repairPlan) string {
 	case repairMoveMilestone:
 		return fmt.Sprintf("%s  move to %s — %s", label, p.Action.Milestone, p.Action.Reason)
 	case repairLeave:
+		// "not a task" is right for a stray bullet and wrong for a verified
+		// task whose work is genuinely there — the reviewer would read it as
+		// the tool having misunderstood its own finding.
+		if p.Finding.Rule == ruleVerifiedWithoutEvidence {
+			return fmt.Sprintf("%s  left verified — %s", label, p.Action.Reason)
+		}
 		return fmt.Sprintf("%s  left as written (not a task) — %s", label, p.Action.Reason)
 	case repairEscalate:
 		return fmt.Sprintf("%s  escalated — %s", label, p.Action.Reason)

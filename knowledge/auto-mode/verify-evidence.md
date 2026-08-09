@@ -24,6 +24,20 @@ In `cmd/belmont/guards.go`, called after `runScopeGuard`:
 - **Guard classifies markers differently from the parser.** `findEvidenceMissingFlips` and `revertEvidenceMissing` work on the *raw* marker byte read out of PROGRESS.md, not on a parsed `taskStatus`. If the parser learns a spelling of "verified" that the guard does not, every flip written that way counts as verified across the whole state model while being invisible here — and nothing prints, so it looks exactly like a clean run. This shipped for real in PR #28: `[V]` was added to the parser as verified while both guard sites still compared against a literal lowercase `"v"`. Both now route through `markerIsVerified` / `canonicalMarker`, and `TestEveryVerifiedMarkerIsVisibleToEvidenceGuard` enumerates every marker the parser calls verified and asserts the guard both flags it and actually rewrites the line.
 - **Evidence sourced from master log instead of branch log**: picks up task IDs from prior features or unrelated work. Merge-base scoping is what makes the check specific to this branch's work.
 
+## The half this guard cannot see
+
+`findEvidenceMissingFlips` compares a phase's PRE and POST snapshots, so it only
+ever audits a flip written while it was watching. A `[v]` that was already on
+disk when the run started is not a flip in any phase and is checked by nothing —
+permanently. That is independent of who wrote it: a hand-written `[v]`, a `[V]`,
+or one left by a run from before this guard existed are all equally invisible.
+
+`belmont repair` covers it, as an audit rather than a guard: it reports every
+verified task no commit names, never acts on it mechanically, and routes the
+judgement to an agent reading the code. Demotion to `[x]` is the remedy, which
+hands the flip back to `belmont reverify`. See
+[../cross-cutting/progress-repair.md](../cross-cutting/progress-repair.md).
+
 ## The other half of the contract
 
 This entry covers a `[v]` written **without** justification. The mirror — an earned `[v]` that never gets written at all — is [`cross-cutting/verified-flip-recording.md`](../cross-cutting/verified-flip-recording.md). Note the asymmetry that makes the pair necessary: this guard can only ever *demote*, and no Go code anywhere promotes a task to verified. A missing flip is therefore permanent until a human runs `belmont reverify`.
