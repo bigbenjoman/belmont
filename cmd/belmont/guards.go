@@ -972,6 +972,36 @@ func shortSHA(sha string) string {
 	return sha
 }
 
+// commitNamedTaskIDs returns every task ID mentioned by any commit reachable
+// from HEAD, plus whether the log could be read at all.
+//
+// One `git log` for the whole question, rather than one per task. The audit in
+// `belmont repair` asks it of every `[v]` in the file, and a project with three
+// hundred verified tasks would otherwise fork three hundred processes to learn
+// what a single pass already knows.
+//
+// It answers only presence. `lookupCommitEvidence` stays the per-ID primitive
+// because it also reports WHICH commit, and whether that commit is a revert —
+// facts the mechanical tier acts on and this audit does not need.
+func commitNamedTaskIDs(root string) (map[string]bool, bool) {
+	cmd := exec.Command("git", "log", "--format=%B%x1e")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, false
+	}
+	ids := map[string]bool{}
+	for _, m := range commitTaskIDRe.FindAllString(string(out), -1) {
+		ids[m] = true
+	}
+	return ids, true
+}
+
+// commitTaskIDRe matches a Belmont task ID appearing in prose, with the same
+// word boundaries lookupCommitEvidence uses so the two cannot disagree about
+// what counts as a mention.
+var commitTaskIDRe = regexp.MustCompile(`P\d+-[A-Za-z0-9][A-Za-z0-9-]*`)
+
 // logEvidenceRevert prints a one-line summary per verify-guard revert batch.
 func logEvidenceRevert(feature, milestoneID string, missing []evidenceMissing) {
 	prefix := ""

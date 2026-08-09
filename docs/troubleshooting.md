@@ -102,6 +102,13 @@ reads the remaining tasks against the current code, and only puts to you what
 neither settles. It stops at `[x]`; `belmont reverify --feature <slug>` earns
 the `[v]`. Nothing is committed, so review with `git diff` first.
 
+`belmont repair` also reports any task marked `[v]` that no commit names. That is
+an audit, not an error: nothing else checks it, because the commit-evidence guard
+only compares one phase's before and after. A docs-only or config-only task can
+be genuinely verified with nothing in the log naming it, so the report is a
+question. Where the claim does not hold, demote it to `[x]` and run
+`belmont reverify --feature <slug>` to earn the `[v]` back properly.
+
 If a task was deliberately dropped, the marker is `[-]` withdrawn, with the
 reason in `## Decisions Log`. **Do not delete the line** — a deletion does not
 survive a sibling worktree merge, so the task comes back as outstanding work.

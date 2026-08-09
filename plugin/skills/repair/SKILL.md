@@ -119,13 +119,19 @@ Finish by running `belmont validate --feature <slug>` and reporting the result.
 
 ## What counts as a finding
 
-Only these three, and only the lines that exhibit them:
+Three things Belmont cannot act on:
 
 | | What it looks like | Why Belmont cannot act on it |
 |---|---|---|
 | Unreadable marker | `- [?] P1-M2-3: …` — anything outside `[ ] [>] [x] [v] [!] [-]` | excluded from every count, never scheduled, and its milestone can never read complete |
 | Outside every milestone | a task line below a column-zero `## ` heading | counted by nothing, rendered nowhere, never scheduled |
 | Filed under the wrong milestone | `P1-M3-9` sitting under `### M2:` | a dependency-graph lie: the parallel scheduler believes the wrong thing about what blocks what |
+
+…and one **audit**, reported separately under `verified_without_evidence`:
+
+| | What it looks like | Why it is worth a look |
+|---|---|---|
+| Verified with nothing behind it | `- [v] P1-M2-3: …` and no commit in the repository names `P1-M2-3` | nothing audits this. The commit-evidence guard only compares one phase's before and after, so a `[v]` already on disk when a run started was never checked by anything |
 
 Nothing else. A task that is merely old, or wrong, or badly worded is not a
 repair finding.
@@ -156,6 +162,26 @@ justify. A wrong state here is the exact bug this command exists to fix.
 **A commit naming the task ID proves the work happened.** That is what tier 1
 already used. It cannot prove the reverse — no commit means no commit, not "not
 done" — so a task with no commit still needs the code read.
+
+### The `verified_without_evidence` audit decides differently
+
+These lines parse; only the *claim* is in question. Look for the work, then:
+
+| What you find | Action |
+|---|---|
+| The work is there and the code or a test plainly shows it — the commit convention just was not followed | `leave` |
+| The work is there but nothing shows it was verified | `set_marker` `"x"` |
+| The work is not there at all | `set_marker` `" "` |
+| You cannot tell | `escalate` |
+
+`leave` is a **common and correct** answer here. Documentation-only and
+configuration-only tasks routinely leave no commit naming them, and treating a
+missing commit as proof of missing work would re-open finished work — which is
+the failure this whole command exists to prevent, pointed the other way.
+
+Demoting to `[x]` is the useful move when the claim does not hold: `belmont
+reverify` then re-earns the `[v]` under its own evidence contract. Repair still
+never writes a `[v]`.
 
 ## Hard limits
 

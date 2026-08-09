@@ -919,3 +919,111 @@ func TestRepairMovesTwoTasksWhoseAnchorIsAlsoMoving(t *testing.T) {
 		t.Errorf("the move ate the region boundary:\n%s", got)
 	}
 }
+
+// ----------------------------------------------------------------------------
+// The verified-without-evidence audit
+// ----------------------------------------------------------------------------
+
+// The mirror of runEvidenceCheck, for the half it cannot see. That guard
+// compares a phase's before and after, so a `[v]` already on disk when the run
+// started is never a flip and is never audited — by anything, ever.
+func TestRepairAuditsVerifiedTasksNoCommitNames(t *testing.T) {
+	root := gitFixture(t,
+		"### M1: Work\n- [v] P1-M1-1: committed\n- [V] P1-M1-2: never committed\n- [x] P1-M1-3: only done\n",
+		"P1-M1-1: implement the committed thing")
+
+	got := auditVerifiedWithoutEvidence(root, progressOf(t, root))
+	if len(got) != 1 {
+		t.Fatalf("audit = %+v, want only P1-M1-2", got)
+	}
+	if got[0].TaskID != "P1-M1-2" {
+		t.Errorf("audited %s, want P1-M1-2", got[0].TaskID)
+	}
+	if got[0].Rule != ruleVerifiedWithoutEvidence {
+		t.Errorf("rule = %q", got[0].Rule)
+	}
+	// Case-insensitivity is the whole reason this gap became visible: `[V]` used
+	// to be an unrecognised marker that blocked the loop.
+	if got[0].Marker != "V" {
+		t.Errorf("marker = %q — the audit must see the capital form", got[0].Marker)
+	}
+}
+
+// It is an audit, not a parse finding, and the difference is load-bearing:
+// these lines parse, `belmont validate` is happy with them, and folding them
+// into collectRepairFindings would mean a clean file never reads clean.
+func TestVerifiedAuditIsNotAParseFinding(t *testing.T) {
+	doc := "### M1: Work\n- [v] P1-M1-1: never committed\n"
+	if f := collectRepairFindings(doc); len(f) != 0 {
+		t.Errorf("the audit leaked into the parse findings: %+v", f)
+	}
+	root := writeValidateFixture(t, "# Progress\n\n"+doc)
+	if err := runValidateCmd([]string{"--root", root}); err != nil {
+		t.Errorf("validate now fails on a file that parses perfectly: %v", err)
+	}
+}
+
+// NEVER MECHANICAL. No commit means no commit; it does not mean the work is
+// absent. verify-evidence.md records commit-less tasks as a known rough edge —
+// a docs- or config-only task can be genuinely verified with nothing naming it.
+func TestRepairNeverActsOnTheVerifiedAuditByItself(t *testing.T) {
+	root := gitFixture(t, "### M1: Work\n- [v] P1-M1-1: never committed\n")
+
+	unearned := auditVerifiedWithoutEvidence(root, progressOf(t, root))
+	if len(unearned) != 1 {
+		t.Fatalf("fixture: audit = %d, want 1", len(unearned))
+	}
+	if plans := mechanicalRepairs(unearned); len(plans) != 0 {
+		t.Errorf("repair demoted a verified task with no review: %+v", plans)
+	}
+	if err := runRepairCmd([]string{"--root", root, "--feature", "demo", "--mechanical-only"}); err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	if got := progressOf(t, root); !strings.Contains(got, "- [v] P1-M1-1") {
+		t.Errorf("the mechanical tier changed a verified task:\n%s", got)
+	}
+}
+
+// "Could not look" must not print as "no evidence" — the same rule the
+// mechanical tier follows.
+func TestVerifiedAuditIsSilentWithoutAGitRepo(t *testing.T) {
+	root := t.TempDir()
+	writeFeature(t, root, "demo", "### M1: Work\n- [v] P1-M1-1: verified\n")
+	if got := auditVerifiedWithoutEvidence(root, progressOf(t, root)); len(got) != 0 {
+		t.Errorf("the audit accused a task in a directory with no git history: %+v", got)
+	}
+}
+
+// The audit reaches the review tier even though it is not in `remaining` — the
+// gate refuses to act on a line it was not shown.
+func TestVerifiedAuditCanBeSettledByAProposal(t *testing.T) {
+	root := gitFixture(t, "### M1: Work\n- [v] P1-M1-1: never committed\n- [v] P1-M1-2: also never committed\n")
+	proposal := filepath.Join(root, "p.json")
+	if err := os.WriteFile(proposal, []byte(`{"repairs":[
+		{"line":2,"task_id":"P1-M1-1","action":"set_marker","marker":"x","reason":"the handler does not exist"},
+		{"line":3,"task_id":"P1-M1-2","action":"leave","reason":"docs-only; the page is there"}]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runRepairCmd([]string{"--root", root, "--feature", "demo", "--apply-proposal", proposal, "--yes"}); err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	got := progressOf(t, root)
+	if !strings.Contains(got, "- [x] P1-M1-1") {
+		t.Errorf("the demote was not applied:\n%s", got)
+	}
+	if !strings.Contains(got, "- [v] P1-M1-2") {
+		t.Errorf("a `leave` verdict changed the line:\n%s", got)
+	}
+
+	// …and repair still refuses to write a [v], including back onto a task it
+	// just demoted. `belmont reverify` is the only thing that may.
+	back := filepath.Join(root, "back.json")
+	if err := os.WriteFile(back, []byte(`{"repairs":[
+		{"line":2,"task_id":"P1-M1-1","action":"set_marker","marker":"v","reason":"putting it back"}]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_ = runRepairCmd([]string{"--root", root, "--feature", "demo", "--apply-proposal", back, "--yes"})
+	if got := progressOf(t, root); strings.Contains(got, "- [v] P1-M1-1") {
+		t.Errorf("repair minted a verified marker:\n%s", got)
+	}
+}
