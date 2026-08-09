@@ -595,6 +595,21 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		// pauses on blocked tasks, so it is loud), whereas dropping a live one
 		// means work is silently treated as fine. Rank alone would clear it —
 		// taskBlocked sorts below todo, so literally anything outranks it.
+		// Withdrawal is a decision, and it wins from either side for the same
+		// reason `[!]` does — with one extra: a withdrawn task that loses a merge
+		// comes back as outstanding work, which is exactly what pushes people to
+		// delete the line instead, and deletion does not survive this function at
+		// all (master's copy is carried back in below). A stale sibling must never
+		// silently revive dropped work; reviving it is a deliberate edit.
+		wtState, _ := canonicalMarker(wtMarker)
+		msState, _ := canonicalMarker(mt.marker)
+		if wtState == taskWithdrawn {
+			continue // already withdrawn here; leave the line as written
+		}
+		if msState == taskWithdrawn {
+			out[i] = tm[1] + "[" + mt.marker + "]" + tm[3] + tm[4] + tm[5]
+			continue
+		}
 		if wtMarker == "!" {
 			continue // already blocked here; leave the line as written
 		}

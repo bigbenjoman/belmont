@@ -141,6 +141,24 @@ All task and milestone state lives in PROGRESS.md. PRD.md is a pure specificatio
 | `[x]` | done | Implemented, not yet verified |
 | `[v]` | verified | Implemented and passed verification |
 | `[!]` | blocked | Cannot proceed |
+| `[-]` | withdrawn | Planned, then deliberately dropped |
+
+The letter markers are **case-insensitive** — `[X]`/`[V]` parse the same as
+`[x]`/`[v]`. One rule, and it removes a whole class of "why did this error".
+
+**`[-]` withdrawn is a state, not a deletion.** It covers work that was
+superseded, duplicated by another task, relocated to another feature, or
+descoped. It is neither outstanding nor done: excluded from both counts, never
+offered as next work, and it does not stop a milestone reading complete. Record
+*why* in `## Decisions Log` — a marker cannot carry a reason.
+
+Do **not** express withdrawal by deleting the line. `mergeProgressState` takes
+the worktree as base and carries master's missing lines back in, so a deleted
+task is resurrected by the next sibling sync in **either** direction. A marker
+survives, and withdrawal wins from either side of a merge (like `[!]`), so a
+stale worktree cannot silently revive dropped work. This state exists because
+its absence *is* issue #27: with no way to say "we decided not to do this", a
+user invented `[-]`, and every unrecognised marker then parsed as todo.
 
 **One definition per structural concept — see [`knowledge/cross-cutting/progress-md-parsing.md`](knowledge/cross-cutting/progress-md-parsing.md).** PROGRESS.md is read by ~8 independent code paths. Two shipped bugs (#27, #31) came from each path inlining its own answer to "what does this marker mean?" and "where does the milestones region end?", and in both cases every copy was wrong identically. Marker semantics live in `canonicalMarker`; the region boundary lives in `isSectionBreak`, which matches a level-2 heading **at column zero only** — never trim before testing, because `  ## Foo` indented under a list item is that item's body. Anything unplaceable is surfaced, never dropped: unreadable markers become `taskUnknown`, and task lines outside every milestone are reported by `orphanedTaskLines`.
 

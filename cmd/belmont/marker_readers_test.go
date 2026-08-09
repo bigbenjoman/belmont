@@ -36,9 +36,10 @@ func TestCanonicalMarkerContract(t *testing.T) {
 			t.Errorf("canonicalMarker(%q) = (%v, %v), want (%v, true)", m, got, ok, want)
 		}
 	}
-	// [V] is deliberately absent: no external convention emits it, and
+	// [V] and [-] are now recognised (verified / withdrawn); what remains here
+	// is genuinely unreadable, and
 	// accepting it cost enforcement. See canonicalMarker's doc comment.
-	for _, m := range []string{"V", "?", "-", "~", "→", "", "y"} {
+	for _, m := range []string{"?", "~", "→", "", "y"} {
 		got, ok := canonicalMarker(m)
 		if ok || got != taskUnknown {
 			t.Errorf("canonicalMarker(%q) = (%v, %v), want (taskUnknown, false)", m, got, ok)
@@ -178,7 +179,7 @@ func TestMergeRefusesToResolveUnrecognisedMarker(t *testing.T) {
 	for _, c := range []struct{ ours, theirs string }{
 		{"?", "x"}, // unrecognised on ours
 		{"x", "?"}, // unrecognised on theirs
-		{"V", "x"}, // the capital-V case specifically
+		{"~", "x"}, // a genuinely unreadable marker
 	} {
 		if resolveConflictResolved(t, "- ["+c.ours+"] P1-M1-1: alpha", "- ["+c.theirs+"] P1-M1-1: alpha") {
 			t.Errorf("ours=[%s] theirs=[%s]: resolver reported success — it must bail out so the "+
@@ -206,7 +207,7 @@ func TestBuildStatusExposesUnknownMarkers(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "PRD.md"), []byte("# PRD: Demo\n"), 0644)
 	os.WriteFile(filepath.Join(dir, "PROGRESS.md"), []byte(
 		"# Progress: Demo\n\n## Milestones\n\n### M1: M\n"+
-			"- [x] P1-M1-1: done\n- [?] P1-M1-2: withdrawn\n- [-] P1-M1-3: cancelled\n"), 0644)
+			"- [x] P1-M1-1: done\n- [?] P1-M1-2: unreadable\n- [~] P1-M1-3: also unreadable\n"), 0644)
 
 	report, err := buildStatus(root, 0, "demo")
 	if err != nil {

@@ -85,10 +85,11 @@ func colorStatus(status string, color bool) string {
 
 func statusLegend(color bool) string {
 	if !color {
-		return "\nLegend: [v] verified  [x] done  [>] in progress  [!] blocked  [ ] todo\n"
+		return "\nLegend: [v] verified  [x] done  [>] in progress  [!] blocked  [ ] todo  [-] withdrawn\n"
 	}
-	return fmt.Sprintf("\nLegend: %s[v]%s verified  %s[x]%s done  %s[>]%s in progress  %s[!]%s blocked  %s[ ]%s todo\n",
-		ansiGreen, ansiReset, ansiCyan, ansiReset, ansiYellow, ansiReset, ansiRed, ansiReset, ansiDim, ansiReset)
+	return fmt.Sprintf("\nLegend: %s[v]%s verified  %s[x]%s done  %s[>]%s in progress  %s[!]%s blocked  %s[ ]%s todo  %s[-]%s withdrawn\n",
+		ansiGreen, ansiReset, ansiCyan, ansiReset, ansiYellow, ansiReset, ansiRed, ansiReset,
+		ansiDim, ansiReset, ansiDim, ansiReset)
 }
 
 func featureStatusIcon(status string, color bool) string {
@@ -151,6 +152,11 @@ func taskStatusIcon(status taskStatus, color bool) string {
 			return ansiRed + "[!]" + ansiReset
 		}
 		return "[!]"
+	case taskWithdrawn:
+		if color {
+			return ansiDim + "[-]" + ansiReset
+		}
+		return "[-]"
 	case taskUnknown:
 		// Render as `[?]` rather than `[ ]`. Showing an unparsed entry as todo
 		// is how issue #27 stayed invisible: the output looked like ordinary

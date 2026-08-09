@@ -75,7 +75,7 @@ Features:
 Use /belmont:status with a feature name for details.
 Use /belmont:product-plan to add a new feature.
 
-Legend: [v] verified  [x] done  [>] in progress  [!] blocked  [ ] todo
+Legend: [v] verified  [x] done  [>] in progress  [!] blocked  [ ] todo  [-] withdrawn
 ```
 
 Feature status indicators:
@@ -128,7 +128,7 @@ Last completed: [Task ID] - [Task name]
 Recent decisions:
   - [Last 3 decisions from Decisions Log]
 
-Legend: [v] verified  [x] done  [>] in progress  [!] blocked  [ ] todo
+Legend: [v] verified  [x] done  [>] in progress  [!] blocked  [ ] todo  [-] withdrawn
 ```
 
 ## How to Determine Status
