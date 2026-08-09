@@ -6,7 +6,8 @@ import "testing"
 // The entry was counted in the totals, rendered as `[ ]`, and — the part that
 // actually cost real work — handed to an agent as "Next Individual Task".
 //
-// These tests pin all four halves of the fix: capital [X]/[V] are recognised,
+// These tests pin all four halves of the fix: the letter markers are
+// case-insensitive ([X] and [V] parse), `[-]` is the canonical withdrawn state,
 // anything else becomes taskUnknown, unknown is never scheduled, and
 // `belmont validate` treats it as a hard violation so `belmont auto` refuses
 // to start against a file it cannot read.
@@ -21,10 +22,10 @@ const markerProgress = `# Progress: Demo
 - [x] P1-M1-3: done lower
 - [X] P1-M1-4: done capital
 - [v] P1-M1-5: verified lower
-- [V] P1-M1-6: capital V, not a state
+- [V] P1-M1-6: verified capital
 - [!] P1-M1-7: blocked
-- [?] P1-M1-8: withdrawn
-- [-] P1-M1-9: cancelled
+- [-] P1-M1-8: withdrawn
+- [?] P1-M1-9: unreadable
 - [~] P1-M1-10: partial
 `
 
@@ -48,9 +49,9 @@ func TestParseMilestonesMarkerStates(t *testing.T) {
 		"P1-M1-3":  taskDone,
 		"P1-M1-4":  taskDone, // capital X — GitHub renders it checked
 		"P1-M1-5":  taskVerified,
-		"P1-M1-6":  taskUnknown, // capital V — deliberately NOT verified, see canonicalMarker
+		"P1-M1-6":  taskVerified, // capital V — case-insensitive, see canonicalMarker
 		"P1-M1-7":  taskBlocked,
-		"P1-M1-8":  taskUnknown,
+		"P1-M1-8":  taskWithdrawn, // [-] — the canonical withdrawn state
 		"P1-M1-9":  taskUnknown,
 		"P1-M1-10": taskUnknown,
 	}
@@ -96,8 +97,8 @@ func TestUnknownMarkerNotCountedAsTodo(t *testing.T) {
 	if counts[taskTodo] != 1 {
 		t.Errorf("todo count = %d, want 1 — unknown markers must not inflate it", counts[taskTodo])
 	}
-	if counts[taskUnknown] != 4 {
-		t.Errorf("unknown count = %d, want 4 ([V] [?] [-] [~])", counts[taskUnknown])
+	if counts[taskUnknown] != 2 {
+		t.Errorf("unknown count = %d, want 2 ([?] [~])", counts[taskUnknown])
 	}
 }
 
@@ -115,13 +116,13 @@ func TestUnknownMarkerBlocksMilestoneCompletion(t *testing.T) {
 
 func TestUnknownMarkerRecordsMarkerAndLine(t *testing.T) {
 	ms := parseMilestones(markerProgress)
-	tk := taskByID(ms, "P1-M1-8")
+	tk := taskByID(ms, "P1-M1-9")
 	if tk.Marker != "?" {
 		t.Errorf("marker = %q, want %q", tk.Marker, "?")
 	}
-	// Line 13 of markerProgress (1-based): the `[?]` entry.
-	if tk.Line != 13 {
-		t.Errorf("line = %d, want 13", tk.Line)
+	// Line 14 of markerProgress (1-based): the `[?]` entry.
+	if tk.Line != 14 {
+		t.Errorf("line = %d, want 14", tk.Line)
 	}
 }
 
@@ -137,8 +138,8 @@ func TestValidateFlagsUnrecognisedMarkers(t *testing.T) {
 			found = append(found, v.TaskID)
 		}
 	}
-	if len(found) != 4 {
-		t.Fatalf("unrecognised_task_marker violations = %d (%v), want 4", len(found), found)
+	if len(found) != 2 {
+		t.Fatalf("unrecognised_task_marker violations = %d (%v), want 2", len(found), found)
 	}
 	for _, v := range violations {
 		if v.Rule != "unrecognised_task_marker" {
@@ -163,11 +164,11 @@ func TestValidateSilentOnRecognisedMarkers(t *testing.T) {
 
 func TestUnknownMarkerTasksHelper(t *testing.T) {
 	got := unknownMarkerTasks(parseMilestones(markerProgress))
-	if len(got) != 4 {
-		t.Fatalf("unknownMarkerTasks returned %d, want 4", len(got))
+	if len(got) != 2 {
+		t.Fatalf("unknownMarkerTasks returned %d, want 2", len(got))
 	}
 	// Document order, so diagnostics read top-to-bottom like the file.
-	wantOrder := []string{"P1-M1-6", "P1-M1-8", "P1-M1-9", "P1-M1-10"}
+	wantOrder := []string{"P1-M1-9", "P1-M1-10"}
 	for i, w := range wantOrder {
 		if got[i].ID != w {
 			t.Errorf("position %d = %s, want %s", i, got[i].ID, w)

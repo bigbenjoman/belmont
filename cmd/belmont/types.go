@@ -11,6 +11,30 @@ const (
 	taskVerified   taskStatus = "verified"
 	taskBlocked    taskStatus = "blocked"
 
+	// taskWithdrawn is work that was planned and then deliberately dropped —
+	// superseded by a design change, duplicated by another task, relocated to
+	// another feature, or descoped.
+	//
+	// It exists because its absence caused issue #27. Belmont's marker set had
+	// no way to say "we decided not to do this", so a user invented `[-]` for
+	// it; every unrecognised marker then parsed as todo, and cancelled work was
+	// offered to an agent as the next thing to build. Repair tooling does not
+	// fix that on its own — without a legal way to express withdrawal, the next
+	// person invents a marker too.
+	//
+	// Withdrawal is a STATE, not a deletion. Deleting the line does not survive
+	// Belmont's own merge model: `mergeProgressState` takes the worktree as base
+	// and carries master's missing lines back in, so a deleted task is
+	// resurrected by the next sibling sync in either direction. A marker
+	// survives, and — like taskBlocked — withdrawal wins from either side of a
+	// merge, so a stale worktree cannot silently revive dropped work.
+	//
+	// A withdrawn task is not outstanding and not done: it is excluded from the
+	// counts of both, never offered as next work, and does not stop a milestone
+	// reading complete. The reason it was dropped belongs in `## Decisions Log`;
+	// a marker cannot carry why.
+	taskWithdrawn taskStatus = "withdrawn"
+
 	// taskUnknown is a checkbox whose marker Belmont does not recognise.
 	//
 	// It exists because the alternative — silently defaulting to taskTodo — is

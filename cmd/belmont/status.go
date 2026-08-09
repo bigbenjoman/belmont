@@ -152,6 +152,10 @@ func buildStatus(root string, maxName int, feature string) (statusReport, error)
 				report.TaskCounts["in_progress"]++
 			case taskTodo:
 				report.TaskCounts["todo"]++
+			case taskWithdrawn:
+				// Its own bucket: withdrawn is neither outstanding nor done,
+				// and folding it into either would misreport the feature.
+				report.TaskCounts["withdrawn"]++
 			case taskUnknown:
 				// Counted separately, never folded into todo. The whole point
 				// of issue #27 is that an unreadable entry must not be given a
@@ -237,6 +241,11 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 		report.TaskCounts["todo"],
 		report.TaskCounts["total"],
 	)
+	// Only mentioned when non-zero: every project would otherwise carry a
+	// permanent ", 0 withdrawn" for a state most features never use.
+	if n := report.TaskCounts["withdrawn"]; n > 0 {
+		taskLine += fmt.Sprintf("\n  %d withdrawn — deliberately dropped; see ## Decisions Log for why", n)
+	}
 
 	bold := func(s string) string {
 		if color {
@@ -308,7 +317,7 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 			}
 			sb.WriteString(fmt.Sprintf("  [%s] PROGRESS.md:%d — %s\n", t.Marker, t.Line, label))
 		}
-		sb.WriteString("  Expected one of [ ] [>] [x] [v] [!]. Fix the marker, or delete the line if the work no longer exists.\n")
+		sb.WriteString("  Expected one of [ ] [>] [x] [v] [!] [-] (letters are case-insensitive). Deliberately dropped work is [-] withdrawn, with the reason in ## Decisions Log.\n")
 		sb.WriteString("\n")
 	}
 

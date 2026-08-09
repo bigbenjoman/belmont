@@ -41,7 +41,7 @@ func TestOrphanedTaskLinesAreWarningsNotErrors(t *testing.T) {
 }
 
 func TestUnrecognisedMarkerStaysBlocking(t *testing.T) {
-	ms := parseMilestones("### M1: Work\n- [-] P1-M1-1: withdrawn\n")
+	ms := parseMilestones("### M1: Work\n- [?] P1-M1-1: unreadable\n")
 	v := detectViolations("demo", ms)
 	if len(v) == 0 {
 		t.Fatal("no violation for an unrecognised marker")
@@ -64,7 +64,7 @@ func TestUnrecognisedMarkerStaysBlocking(t *testing.T) {
 // one as blocking, so a forgotten field fails loudly rather than silently
 // downgrading a real error to advice — but it should never get that far.
 func TestEveryViolationCarriesASeverity(t *testing.T) {
-	doc := "### M1: Polish and cleanup\n- [-] P1-M1-1: withdrawn\n- [ ] P2-M2-1: wrong milestone\n\n" +
+	doc := "### M1: Polish and cleanup\n- [?] P1-M1-1: unreadable\n- [ ] P2-M2-1: wrong milestone\n\n" +
 		"### M1: duplicate heading\n- [ ] P1-M1-9: x\n\n## Session History\n- [ ] a stray bullet\n"
 	v := append(detectViolations("demo", parseMilestones(doc)), detectOrphanViolations("demo", doc)...)
 	if len(v) < 4 {
@@ -115,7 +115,7 @@ func TestAutoGateBySeverity(t *testing.T) {
 		t.Errorf("auto refused a run over a warning-only file: %v — this is the upgrade break", err)
 	}
 
-	blocked := writeValidateFixture(t, "# Progress\n\n### M1: Work\n- [-] P1-M1-1: withdrawn\n")
+	blocked := writeValidateFixture(t, "# Progress\n\n### M1: Work\n- [?] P1-M1-1: unreadable\n")
 	if err := runAutoCmd([]string{"--root", blocked, "--feature", "demo", "--from", "M1", "--to", "M1", "--dry-run"}); err == nil {
 		t.Error("auto started against an unrecognised marker; that is issue #27's gate")
 	}
@@ -145,7 +145,7 @@ func TestAutoPreflightRefusesDuplicateMilestoneOnBothPaths(t *testing.T) {
 // build-time source path `belmont install` never writes, so the line that used
 // to promise "the canonical rule" was dangling in every consuming project.
 func TestReportTeachesConformance(t *testing.T) {
-	doc := "### M1: Polish and cleanup\n- [-] P1-M1-1: withdrawn\n- [ ] P2-M2-1: wrong milestone\n\n" +
+	doc := "### M1: Polish and cleanup\n- [?] P1-M1-1: unreadable\n- [ ] P2-M2-1: wrong milestone\n\n" +
 		"### M1: duplicate heading\n- [ ] P1-M1-9: x\n\n## Session History\n- [ ] a stray bullet\n"
 	v := append(detectViolations("demo", parseMilestones(doc)), detectOrphanViolations("demo", doc)...)
 
@@ -246,7 +246,7 @@ func TestValidateExitCodesBySeverity(t *testing.T) {
 		t.Error("validate --strict returned nil on a warning-only file; CI has no way to fail on warnings")
 	}
 
-	blockingRoot := writeValidateFixture(t, "# Progress\n\n### M1: Work\n- [-] P1-M1-1: withdrawn\n")
+	blockingRoot := writeValidateFixture(t, "# Progress\n\n### M1: Work\n- [?] P1-M1-1: unreadable\n")
 	if err := runValidateCmd([]string{"--root", blockingRoot}); err == nil {
 		t.Error("validate returned nil on an unrecognised marker; that is issue #27's gate")
 	}

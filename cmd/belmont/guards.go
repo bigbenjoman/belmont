@@ -368,7 +368,7 @@ func detectViolations(slug string, milestones []milestone) []validationViolation
 				Severity:      severityError,
 				Remedy:        remedyNeedsEvidence,
 				Message: fmt.Sprintf(
-					"unrecognised task marker %q at PROGRESS.md:%d (%s) — expected one of [ ] [>] [x] [v] [!]. Belmont will not guess a state for it: it is excluded from the counts and never offered as the next task. Fix the marker, or delete the line if the work no longer exists.",
+					"unrecognised task marker %q at PROGRESS.md:%d (%s) — expected one of [ ] [>] [x] [v] [!] [-] (letters are case-insensitive). Belmont will not guess a state for it: it is excluded from the counts and never offered as the next task. If the work was deliberately dropped use [-] withdrawn and record why in ## Decisions Log; otherwise set the state the evidence supports.",
 					"["+t.Marker+"]", t.Line, label),
 			})
 		}
@@ -547,7 +547,9 @@ const (
 // agent needs in order to conform the file.
 const progressStructureHelp = `Expected structure:
   ### M<n>: Name           milestone header — level 3, column zero
-  - [ ] P<n>-<id>: Task    task line — marker is one of [ ] [>] [x] [v] [!]
+  - [ ] P<n>-<id>: Task    task line — marker is one of [ ] [>] [x] [v] [!] [-]
+                           (todo, in progress, done, verified, blocked,
+                            withdrawn); letters are case-insensitive
   ## Anything              a level-2 heading at column zero ENDS the
                            milestones region; task lines below it belong
                            to no milestone and are counted by nothing
@@ -781,7 +783,10 @@ func findEvidenceMissingFlips(root string, pre, post *progressSnapshot, targetMS
 			if existedPre {
 				preState = pre.Blocks[preIdx].TaskStates[taskID]
 			}
-			if preState == "v" {
+			// Routed, not compared. A raw `preState == "v"` here missed a
+			// capital V, so an already-verified task read as a fresh flip and
+			// this guard reverted it for lacking a commit it never needed.
+			if markerIsVerified(preState) {
 				continue // already verified, not a fresh flip this phase
 			}
 			if taskHasCommit(root, taskID, mergeBase) {

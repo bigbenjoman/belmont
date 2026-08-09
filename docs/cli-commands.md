@@ -53,7 +53,7 @@ belmont version                         # Show version, commit, build date
 
 - **Polish / follow-up milestone names.** Milestones whose name matches `polish`, `follow-ups`, `cleanup`, `verification fixes`, `deviations from M<N>`, `from M<N> implementation`, `fwlup(s)`. These violate the rule that follow-ups stay in the milestone that discovered them.
 - **Cross-milestone task IDs.** Task IDs like `P3-FWLUP-M2-1` that embed a milestone number should live under that milestone; when they're found under a different one, the milestone structure is lying about ownership and parallel merges will collide.
-- **Unrecognised task markers.** Anything outside `[ ] [>] [x] [v] [!]`. Belmont will not guess a state, so the milestone can never read as complete.
+- **Unrecognised task markers.** Anything outside `[ ] [>] [x] [v] [!] [-]` (letters are case-insensitive, so `[X]` and `[V]` are fine). Belmont will not guess a state, so the milestone can never read as complete. Work that was deliberately dropped is `[-]` withdrawn, with the reason recorded in `## Decisions Log`.
 - **Duplicate milestone IDs.** Two `### M<n>:` headings sharing a number — including a session note written in that shape. Milestones are keyed by ID throughout, so a collision makes the scope guard and the evidence guard switch off.
 
 **Warnings** (exit code `0`, auto continues):

@@ -10,11 +10,18 @@ import (
 	"strings"
 )
 
+// A withdrawn task is resolved, so it neither counts as done nor stops the
+// milestone reading done. A milestone whose tasks were ALL withdrawn has
+// nothing outstanding either — treating it as unfinished would stall the loop
+// on work somebody deliberately cancelled.
 func milestoneAllDone(m milestone) bool {
 	if len(m.Tasks) == 0 {
 		return false
 	}
 	for _, t := range m.Tasks {
+		if t.Status == taskWithdrawn {
+			continue
+		}
 		if t.Status != taskDone && t.Status != taskVerified {
 			return false
 		}
@@ -27,6 +34,9 @@ func milestoneAllVerified(m milestone) bool {
 		return false
 	}
 	for _, t := range m.Tasks {
+		if t.Status == taskWithdrawn {
+			continue
+		}
 		if t.Status != taskVerified {
 			return false
 		}
@@ -43,13 +53,21 @@ func milestoneHasBlockers(m milestone) bool {
 	return false
 }
 
+// "Not started" means every task still to do is todo. All-withdrawn is not
+// "not started" — nothing is going to start — so it needs at least one live
+// task to qualify.
 func milestoneNotStarted(m milestone) bool {
+	live := 0
 	for _, t := range m.Tasks {
+		if t.Status == taskWithdrawn {
+			continue
+		}
+		live++
 		if t.Status != taskTodo {
 			return false
 		}
 	}
-	return true
+	return live > 0
 }
 
 // parseMasterDeps reads the master PROGRESS.md and extracts feature slug → dependency slugs mapping
@@ -157,19 +175,23 @@ func flattenTasks(milestones []milestone, maxName int) []task {
 // unrecognised marker yields (taskUnknown, false): Belmont does not guess a
 // state for a checkbox it cannot read. See issue #27.
 //
-// Case handling is deliberately asymmetric:
+// The letter markers are case-insensitive: `[x]`/`[X]` and `[v]`/`[V]` are the
+// same state. One rule, easy to state and easy for an agent to remember.
 //
-//   - `[X]` is accepted as done. A capital X is a universal Markdown
-//     convention and is what GitHub itself renders as checked, so reading it
-//     as anything else silently resurrects finished work.
-//   - `[V]` is NOT accepted as verified. Unlike X it has no external
-//     convention behind it — `[v]` is Belmont's own invention, nothing else
-//     emits it, and no skill, agent, prompt or template in this repo writes a
-//     capital one. Accepting it bought nothing and cost enforcement: the
-//     commit-evidence guard compares the raw marker, so a `[V]` flip counted
-//     as verified everywhere while being invisible to `runEvidenceCheck` —
-//     a silent bypass of the invariant in knowledge/auto-mode/verify-evidence.md.
-//     A capital V now parses to taskUnknown and fails loudly instead.
+// `[V]` was rejected for a while, and the reason was real at the time: the
+// commit-evidence guard compared raw marker bytes, so a `[V]` flip counted as
+// verified everywhere while being invisible to `runEvidenceCheck` — a silent
+// bypass of knowledge/auto-mode/verify-evidence.md. That objection died when
+// every reader was routed through this function. Keeping the asymmetry after
+// the fix bought nothing and cost real confusion: `[X]` worked, `[V]` errored,
+// and nobody could remember which. If a state is reachable by a shift key it
+// has to parse.
+//
+// The one thing that still matters: a marker's meaning may only be read
+// through here. Two raw comparisons survived the original conversion
+// (`preState == "v"` in findEvidenceMissingFlips was the last), and each was a
+// live trap — with `[V]` accepted, an already-verified task read as a fresh
+// flip and the guard reverted it for lacking a commit.
 //
 // If you add a state here, every caller of canonicalMarker picks it up. That
 // is the point: the previous design spread marker literals across four files
@@ -182,8 +204,10 @@ func canonicalMarker(marker string) (taskStatus, bool) {
 		return taskInProgress, true
 	case "x", "X":
 		return taskDone, true
-	case "v":
+	case "v", "V":
 		return taskVerified, true
+	case "-":
+		return taskWithdrawn, true
 	case "!":
 		return taskBlocked, true
 	default:
@@ -204,6 +228,7 @@ var taskStatePriority = map[taskStatus]int{
 	taskDone:       2,
 	taskVerified:   3,
 	taskBlocked:    -1,
+	taskWithdrawn:  -2,
 }
 
 // markerRank returns how advanced a raw marker is, and whether it was
@@ -623,8 +648,15 @@ func computeOverallStatus(tasks []task) string {
 	allDone := true
 	anyProgress := false
 	allBlocked := true
+	live := 0
 
 	for _, t := range tasks {
+		// Withdrawn work is resolved: it must not drag the feature out of a
+		// terminal state, and it must not prop one up either.
+		if t.Status == taskWithdrawn {
+			continue
+		}
+		live++
 		if t.Status != taskVerified {
 			allVerified = false
 		}
@@ -637,6 +669,9 @@ func computeOverallStatus(tasks []task) string {
 		if t.Status != taskBlocked {
 			allBlocked = false
 		}
+	}
+	if live == 0 {
+		return "Complete" // every task withdrawn — nothing outstanding
 	}
 
 	if allVerified {
