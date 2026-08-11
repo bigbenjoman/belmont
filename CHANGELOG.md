@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.10.17
+
+**Released:** 2026-08-11
+
+### Changes since v0.10.16
+
+- Add the loop-two-milestones eval fixture
+- Skip the design agent when a milestone has no design input
+- Regenerate plugin/ for the lazy Setup changes
+- Fix contradiction in the MILESTONE template
+- Cut the per-iteration cost of /belmont:loop
+- Optimisation A: make skill Setup blocks lazy
+- Add a two-tier eval harness
+- Anchor carries past task bodies; refuse duplicate headings in the merge
+- Round seven: the four commits nobody but me had read
+- Fix a line that is two findings at once
+- Audit the [v] flips nothing has ever checked
+- Round six: refuse evidence another feature could own
+- Close three controls the mutation battery found missing
+- Round five: a crash, a stale write, and six narrower holes
+- Add belmont repair, the healer
+- Fix what [-] and [V] broke in files that already exist
+- Add [-] withdrawn, and make the letter markers case-insensitive
+- Make a violation report enough to conform the file
+- Don't let an upgrade refuse a run that worked yesterday
+- Correct the reader count: 8d7f82b converted four of five, not two
+- Fix a state loss the previous commit introduced, and refuse ambiguous milestones
+- Finish the #31 conversion: six readers still had their own region boundary
+- Make mergeProgressState honour isSectionBreak
+- Surface the #27 and #31 diagnostics in listing mode too
+- Guard TestReverifyResetsEveryVerifiedMarker against a vacuous pass
+- Fix three regressions the red team found in the worktree fixes
+- Stop a quoted heading inside a task body from deleting the rest of the file
+- Stop treating done as verified when the [v] flip never happened
+- Stop worktree state sync and resume from destroying completions
+- Route every marker reader through canonicalMarker; drop [V]
+- Stop silently treating unrecognised task markers as todo
+
+
+
 ## v0.10.16
 
 **Released:** 2026-08-07
