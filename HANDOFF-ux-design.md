@@ -68,20 +68,37 @@ behaviour change needing its own Tier-2 eval. Separate PR.
 
 ## Still to do
 
-1. **Fix red-team survivors** (above), re-run the check suite.
-2. **Rebuild the test kit** at `~/belmont-pr32-test` — it is STALE. Its four fixtures assert against
-   `TECH_PLAN.md § Design Contract` and exercise a two-step pipeline that no longer exists.
-   - Repoint `bin/assert-contract.sh` to `UX_DESIGN.md`; add assertions for `## Screens`,
-     `## Flows`, per-surface State Inventory, and `ux-flows.html` self-containment.
-   - Add a **fifth fixture**: a feature whose `TECH_PLAN.md` already carries an approved contract,
-     to exercise the migration prompt (approval stamp must survive byte-for-byte; must never end up
-     with two contracts).
-   - **Re-run the mutation battery.** The grader was broken the first time and four defects escaped,
-     including a fully fabricated Storybook inventory that scored identical to a correct contract.
-     Root cause each time: an assertion scoped to the whole file instead of the section it claimed to
-     prove. Do not trust a new assertion until a deliberate defect has failed it.
-   - `bin/doctor.sh` and `bin/reset-fixture.sh` still work. `bin/headless-negative.sh` needs
-     repointing at ux-design (which must refuse headlessly and write nothing).
+1. ~~**Fix red-team survivors**~~ — DONE, commit `b90d8db`. All nine verified independently first;
+   all nine were real. Full check suite green afterwards (build, vet, test, eval, both generators
+   `--check`, gofmt, `GOOS=windows go vet`, staticcheck). No version-stamp dirt.
+   - S7's fix gates Migration on `**Mode**` per-mode, with a table: only `derived — UI, no Figma` may
+     be moved *or deleted*; `N/A — Figma present` is left in place because it is the parent of
+     `### Design Tokens (from Figma)`; an unrecognised/absent mode asks rather than guesses.
+   - S6 (SIGINT bypass) was **not fixed** — recorded as a known gap in
+     `knowledge/cross-cutting/design-authority.md` beside the guard. It hits all three guards
+     equally (scope, evidence, design), the snapshot is a local in `executeLoopAction`, and fixing
+     it from the signal handler means plumbing per-worktree snapshots onto `worktreeTracker` while a
+     process-group kill is in flight. Wants its own change with its own tests.
+2. ~~**Rebuild the test kit**~~ — DONE. `~/belmont-pr32-test` now has **six** fixtures and a battery.
+   - Fixtures rebuilt against the branch (skills reinstalled, so `ux-design` exists in each).
+     `a-storybook` lost the pre-authored contract that was sitting in its baseline commit, so it
+     tests derivation again.
+   - **e-legacy** — the migration fixture the handoff asked for: an approved `derived — UI, no Figma`
+     contract already in `TECH_PLAN.md`. Graded on one-contract-only, `**Approval**` byte-for-byte,
+     and every subsection body identical to the baseline. Its pre-split per-component State
+     Inventory is deliberately exempt from the per-surface checks — that is what verbatim means.
+   - **f-legacy-figma** — added beyond the ask, because it is the S7 defect made testable: a legacy
+     `N/A — Figma present` section nesting `### Design Tokens (from Figma)`, three PRD tasks with
+     Figma URLs. Graded on the TECH_PLAN section surviving byte-for-byte with all seven extracted
+     colours.
+   - `bin/plant-golden.py` writes synthetic correct outputs; `bin/mutation-battery.py` runs **51
+     deliberate defects — 51 caught, 0 escapes**, and flags any defect caught by an assertion other
+     than the one it targets.
+   - **The battery caught the battery.** `reset-fixture.sh` used `${1:?usage: … {a|b|all}}`, whose
+     expansion ends at the first `}`, so every single-fixture reset failed with `no such fixture:
+     a-storybook}` and exit 2 that nothing checked. Defects had been accumulating across the run —
+     the first "51/51 caught" was worthless. Fixed in both scripts; the battery now hard-fails on a
+     bad reset or plant and verifies the golden landed before mutating it. Re-run clean afterwards.
 3. **Live Tier-2 run** — Blake's to execute. `BELMONT_EVAL_LIVE=1 go test -tags eval -timeout 0 -run TestEvalLive ./cmd/belmont`.
    Tier 1 **cannot** license this change: it never opens a `SKILL.md`, and this change is almost
    entirely skill prose.
