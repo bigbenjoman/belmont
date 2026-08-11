@@ -788,7 +788,8 @@ func repairLabel(f repairFinding) string {
 // milestone ID) under the destination milestone, preserving each line verbatim.
 //
 // Anchoring follows `mergeProgressState`: after the destination's last task
-// line, or after its header when it holds no tasks yet — otherwise the first
+// line (past its indented body, see taskBodyEnd), or after its header when it
+// holds no tasks yet — otherwise the first
 // task moved into an empty milestone has nowhere to land. Region boundaries are
 // `isSectionBreak`, like every other reader.
 //
@@ -837,6 +838,10 @@ func moveTaskLines(lines []string, moves map[int]string) ([]string, []string, []
 		anchor, ok := lastTaskIdx[dest]
 		if ok && moving[anchor] {
 			anchor, ok = lastHeaderIdx[dest]
+		} else if ok {
+			// Past the task's indented body, so the moved line cannot land
+			// between the anchor task and its own continuation lines.
+			anchor = taskBodyEnd(lines, anchor)
 		}
 		if !ok {
 			anchor, ok = lastHeaderIdx[dest]

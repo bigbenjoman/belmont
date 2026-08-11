@@ -416,6 +416,25 @@ func syncFeatureStateAfterMerge(mainRoot, wtPath, slug string) {
 	}
 }
 
+// taskBodyEnd returns the index of the last line belonging to the task line at
+// idx, extending past its indented continuation lines. An indented line under a
+// list item is that item's body — the same Markdown reading that fixed issue
+// #31 for `  ## ` headings — so splicing directly after the task line would
+// land between a task and its own body, re-attaching the body to the inserted
+// line. A blank or column-zero line ends the block.
+func taskBodyEnd(lines []string, idx int) int {
+	end := idx
+	for j := idx + 1; j < len(lines); j++ {
+		line := lines[j]
+		if strings.TrimSpace(line) == "" ||
+			(!strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t")) {
+			break
+		}
+		end = j
+	}
+	return end
+}
+
 // mergeProgressState reconciles master's PROGRESS.md with a worktree's copy,
 // keeping the most-advanced state for every task and every task line either
 // side has. Returns the merged content plus any warnings worth printing.
@@ -490,6 +509,37 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		}
 	}
 
+	// A duplicated milestone heading gets the same refusal as a duplicated task
+	// ID, for the same reason: lastTaskIdx/lastHeaderIdx are last-writer-wins
+	// per milestone, so a header-shaped session note — `### M1: retro notes`
+	// under `## Session History`, written mid-run after requireUnambiguousMilestones
+	// already passed — would anchor a carried task into the history section, and
+	// a task-shaped line quoted below the note would be rewritten as if it were
+	// the real task. Every other writer declines on this collision
+	// (runScopeGuard, runEvidenceCheck, repair); the merge must not be the one
+	// that guesses.
+	dupMS := map[string]bool{}
+	countMSHeadings := func(content string) map[string]int {
+		n := map[string]int{}
+		for _, line := range strings.Split(content, "\n") {
+			if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 2 {
+				n["M"+m[1]]++
+			}
+		}
+		return n
+	}
+	for _, counts := range []map[string]int{countMSHeadings(masterContent), countMSHeadings(worktreeContent)} {
+		for id, n := range counts {
+			if n > 1 {
+				dupMS[id] = true
+			}
+		}
+	}
+	for id := range dupMS {
+		warnings = append(warnings, fmt.Sprintf(
+			"milestone %s has more than one heading — ambiguous, so its tasks were not merged or carried; de-duplicate the heading", id))
+	}
+
 	masterTasks := map[string]masterTask{}
 	var masterOrder []string // document order, so the carry-over splice is deterministic
 	currentMS := ""
@@ -508,7 +558,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			continue
 		}
 		if tm := taskRe.FindStringSubmatch(line); len(tm) >= 6 {
-			if dupIDs[tm[4]] || currentMS == "" {
+			if dupIDs[tm[4]] || currentMS == "" || dupMS[currentMS] {
 				continue // orphans belong to no milestone; never carry them into one
 			}
 			if _, dup := masterTasks[tm[4]]; !dup {
@@ -567,6 +617,11 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		}
 		id := tm[4]
 		wtInRegionID[id] = true
+		if dupMS[currentMS] {
+			// Ambiguous heading: never rewrite a line whose milestone cannot be
+			// attributed, and never let it anchor a carry — warned above.
+			continue
+		}
 		lastTaskIdx[currentMS] = i
 		mt, ok := masterTasks[id]
 		if !ok {
@@ -675,12 +730,15 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			continue // reconciled in place by the walk above
 		}
 		mt := masterTasks[id]
-		// Anchor after the milestone's last task line, or after its header when
-		// the milestone exists here but holds no tasks yet — otherwise the first
-		// task a sibling adds to an empty milestone has nowhere to land and is
-		// dropped from the only copy that exists.
+		// Anchor after the milestone's last task line — past its indented body,
+		// so the carry cannot land between a task and its own continuation — or
+		// after its header when the milestone exists here but holds no tasks
+		// yet: otherwise the first task a sibling adds to an empty milestone
+		// has nowhere to land and is dropped from the only copy that exists.
 		at, ok := lastTaskIdx[mt.milestone]
-		if !ok {
+		if ok {
+			at = taskBodyEnd(out, at)
+		} else {
 			at, ok = lastHeaderIdx[mt.milestone]
 		}
 		if !ok {

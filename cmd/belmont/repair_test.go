@@ -1701,3 +1701,40 @@ func TestRepairRefusesToWithdrawAVerifiedTaskInOneStep(t *testing.T) {
 		t.Errorf("withdrawal of a non-verified finding was refused: plans=%+v rejected=%+v", plans, rejected)
 	}
 }
+
+// A moved line must land after the destination's last task AND its indented
+// body — not between the task and its own continuation lines, which would
+// re-attach the body to the moved task.
+func TestRepairMoveLandsAfterAnchorTaskBody(t *testing.T) {
+	doc := "### M2: Surface\n- [ ] P1-M2-1: stays\n- [ ] P1-M3-9: beta\n\n" +
+		"### M3: Later\n- [ ] P1-M3-1: stays\n  - Done when: baz holds\n\n## Session History\n"
+	findings := collectRepairFindings(doc)
+	if len(findings) != 1 {
+		t.Fatalf("fixture: %d findings, want 1: %+v", len(findings), findings)
+	}
+	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 3, TaskID: "P1-M3-9", Action: repairMoveMilestone, Reason: "belongs to M3"},
+	})
+	if len(rejected) != 0 || len(plans) != 1 {
+		t.Fatalf("plans=%d rejected=%+v", len(plans), rejected)
+	}
+	got, applied, warnings := applyRepairPlans(doc, plans, "2026-08-09")
+	if len(applied) != 1 || len(warnings) != 0 {
+		t.Fatalf("applied=%d warnings=%v", len(applied), warnings)
+	}
+	body := strings.Index(got, "Done when: baz holds")
+	moved := strings.Index(got, "P1-M3-9")
+	if moved < body {
+		t.Errorf("the moved line was spliced between P1-M3-1 and its body:\n%s", got)
+	}
+	byID := map[string][]string{}
+	for _, m := range parseMilestones(got) {
+		for _, task := range m.Tasks {
+			byID[m.ID] = append(byID[m.ID], task.ID)
+		}
+	}
+	want := []string{"P1-M3-1", "P1-M3-9"}
+	if strings.Join(byID["M3"], ",") != strings.Join(want, ",") {
+		t.Errorf("M3 tasks = %v, want %v:\n%s", byID["M3"], want, got)
+	}
+}
