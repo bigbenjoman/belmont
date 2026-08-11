@@ -28,7 +28,7 @@ The installer detects changes between the embedded (or source) files and your in
 - **Renamed/deleted files** are removed from the target (keeps installed tree exact)
 - **Unchanged files** are skipped
 - **Symlinks** are verified and updated if needed
-- `.belmont/` state files (PRD, PROGRESS, TECH_PLAN) are always preserved
+- `.belmont/` state files (PRD, PROGRESS, UX_DESIGN, TECH_PLAN) are always preserved
 
 ## Developer updates
 

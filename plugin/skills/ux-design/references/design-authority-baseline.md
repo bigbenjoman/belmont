@@ -1,8 +1,8 @@
 # Design Authority Baseline
 
-Read this when deriving a **Design Contract** in `/belmont:tech-plan` Phase 3.5 —
-that is, when the feature has a user interface and **no** task in its PRD carries
-a Figma URL.
+Read this when deriving a **Design Contract** in `/belmont:ux-design` — that is,
+when the feature has a user interface and **no** task in its PRD carries a Figma
+URL.
 
 Two things live here:
 
@@ -133,9 +133,10 @@ spacing. That is not a reason to stop there for tokens: keep walking, and name
 both rungs, one per family — e.g.
 `storybook (<url>) — components & states; tailwind.config.ts — tokens`.
 
-0. **Master contract** — a `## Design Contract` in `.belmont/TECH_PLAN.md`.
+0. **Master contract** — the Token Contract and Accessibility Floor in
+   `.belmont/UX_DESIGN.md`.
 0b. **Sibling contract** — an approved `## Design Contract` in another
-    `.belmont/features/*/TECH_PLAN.md`. Most recently approved wins; name which
+    `.belmont/features/*/UX_DESIGN.md`. Most recently approved wins; name which
     feature. *Without rungs 0 and 0b, feature 1 and feature 4 of a greenfield
     project mint different scales with nothing to reconcile them.*
 1. **Storybook, if present** — the strongest source below a contract, because
@@ -163,7 +164,7 @@ both rungs, one per family — e.g.
    Its `entries` map is the richest inventory available anywhere: each entry has a
    `title` (the component path, e.g. `Bookings/BookingPicker`) and a `name` (the
    story, e.g. `Empty`, `Loading`, `Pending`, `Declined`, `Long Headline`).
-   **Component titles give you `## Existing Components to Reuse`; story names give
+   **Component titles give you the `## Screens` table's surfaces; story names give
    you the State Inventory directly** — they are a real team's enumeration of the
    states that component actually has, which is strictly better than your guess.
    Ignore `Docs` entries (`type: "docs"`); they are generated, not states.
@@ -179,10 +180,10 @@ both rungs, one per family — e.g.
    you could not read.
 
    **Asking is interactive-only.** A deployed Storybook is the one rung you cannot
-   discover by reading the repo, so ask for it while the interview is live. When
-   you are running headlessly — see Phase 3.5's *Running headlessly* — do **not**
-   ask: use only a URL already present in the files above, and if there is none, go
-   straight to 1b.
+   discover by reading the repo, so ask for it while the interview is live.
+   `/belmont:ux-design` refuses to run headlessly at all, so this rung is never
+   reached non-interactively — never ask outside a live session: use only a URL
+   already present in the files above, and if there is none, go straight to 1b.
 
    **1b. Local story files.** Detect via `.storybook/`, a `storybook` entry in the
    package manifest, or `*.stories.@(js|jsx|ts|tsx|mdx)` files. **Read the story
@@ -191,11 +192,11 @@ both rungs, one per family — e.g.
    collide with worktree port isolation. A local build's `storybook-static/index.json`,
    if one is already committed, counts as 1a and is preferable to parsing sources.
 
-   Either way: record the component inventory into the feature template's
-   `## Existing Components to Reuse`, treat those components as **LAW** — the
-   contract records them, it does not redesign them — and add
-   `storybook (<url>)` or `storybook (local)` to `**Source**` so a reader knows
-   which you used. **Adding, not replacing**: a story index supplies components
+   Either way: record the component inventory into `{base}/UX_DESIGN.md`'s
+   `## Screens` table, under its *Surfaces it contains* column; treat those
+   components as **LAW** — the contract records them, it does not redesign them —
+   and add `storybook (<url>)` or `storybook (local)` to `**Source**` so a reader
+   knows which you used. **Adding, not replacing**: a story index supplies components
    and states, not tokens, so keep walking to rung 2 for the Token Contract and
    name that rung too. `**Source**` must always name the artifact each family of
    values actually came from — `verification-agent.md`'s anti-circularity rule is
@@ -205,6 +206,13 @@ both rungs, one per family — e.g.
    `globals.css`, `components.json`, theme files.
 3. **Nothing exists** → establish the tier-2 defaults below and set
    `**Source**: none — established here`.
+
+On a greenfield project rungs 0–2 may all be empty — `tailwind.config.*` and
+`globals.css` do not exist until code is written, and the styling approach is
+chosen later, in `/belmont:tech-plan`. That is the expected first-feature case:
+fall to rung 3 and set `**Source**: none — established here`. The contract
+records token **values**, not their expression, so nothing is lost by fixing them
+before the stack is chosen.
 
 ---
 
@@ -255,11 +263,13 @@ element · the primary action · the biggest UX risk.
 
 ### State Inventory
 
-Per interactive component the feature **builds**: default · hover · focus ·
-active · disabled · loading · empty · error, plus any gesture or transition state
-the interaction introduces (drag, swipe, long-press, optimistic update).
+Per interactive **surface** the feature introduces — a control or region the user
+acts on, named from the PRD's flows and the `## Screens` table, never from a file
+path or a component name: default · hover · focus · active · disabled · loading ·
+empty · error, plus any gesture or transition state the interaction introduces
+(drag, swipe, long-press, optimistic update).
 
-Components the feature only **consumes** get no entry. Any omission carries a
+A surface the feature **reuses unchanged** gets no entry. Any omission carries a
 one-line reason.
 
 ### Microcopy Rules

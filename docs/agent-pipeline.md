@@ -1,6 +1,6 @@
 # Agent Pipeline Details
 
-All implementation agents communicate through the **MILESTONE file** (`.belmont/MILESTONE.md`). The MILESTONE file is a **coordination document**: it lists the active task IDs and points sub-agents at the canonical PRD and TECH_PLAN. Each sub-agent reads the MILESTONE file, fetches the full task definitions from the PRD directly, and writes its output to a designated section of MILESTONE. The three sub-agent-written sections (`## Codebase Analysis`, `## Design Specifications`, `## Implementation Log`) remain the source of truth for the downstream agents in the pipeline.
+All implementation agents communicate through the **MILESTONE file** (`.belmont/MILESTONE.md`). The MILESTONE file is a **coordination document**: it lists the active task IDs and points sub-agents at the canonical PRD, UX_DESIGN and TECH_PLAN. Each sub-agent reads the MILESTONE file, fetches the full task definitions from the PRD directly, and writes its output to a designated section of MILESTONE. The three sub-agent-written sections (`## Codebase Analysis`, `## Design Specifications`, `## Implementation Log`) remain the source of truth for the downstream agents in the pipeline.
 
 **Important**: Do not edit `{base}/PRD.md` while `/belmont:implement` or `/belmont:verify` is running — sub-agents now read the PRD live rather than receiving a pinned copy embedded in MILESTONE, so mid-run edits can cause agents to see inconsistent versions.
 
@@ -31,12 +31,12 @@ Reads the MILESTONE file, then produces per-task design specs. It has **two mode
 - Identifies new components to create
 - Produces implementation-ready component code
 
-**Contract mode** (no Figma URLs, and the feature has an approved Design Contract):
-- Reads the `## Design Contract` from `{base}/TECH_PLAN.md` and the master TECH_PLAN
+**Contract mode** (no Figma URLs, and `{base}/UX_DESIGN.md` records `**Mode**: derived — UI, no Figma`):
+- Reads the `## Design Contract` from `{base}/UX_DESIGN.md` — path supplied by the MILESTONE file's `## File Paths` — and the master `.belmont/UX_DESIGN.md` where one exists
 - Picks values off the contract's declared scales — never mints new ones
-- Enumerates every State Inventory state for each component the task builds
+- Enumerates every State Inventory state for each surface the task builds
 - Applies the Accessibility Floor to each component spec
-- Writes the same per-task structure, with a `**Contract Source**` line in place of the Figma Sources table
+- Writes the same per-task structure, with a `**Contract Source**` line (`{base}/UX_DESIGN.md § Design Contract`) in place of the Figma Sources table
 
 A feature with neither — including the uncovered tasks of a mixed-Figma feature — keeps the older behaviour: follow existing component patterns and flag that no design was given.
 
@@ -64,9 +64,9 @@ Reads the complete MILESTONE file (all research phases' output):
 **File**: `.agents/belmont/verification-agent.md`
 
 Verifies implementations against requirements:
-- Reads PRD, TECH_PLAN, and archived MILESTONE files for context
+- Reads PRD, TECH_PLAN, and archived MILESTONE files for context, plus `{base}/UX_DESIGN.md` for the design authority
 - Acceptance criteria pass/fail
-- Visual verification, three-way: comparison against Figma/reference images where they exist, measurement against the Design Contract where one is approved, and acceptance criteria where neither exists. A contract's checks run *in addition to* a reference comparison, never instead of it
+- Visual verification, three-way: comparison against Figma/reference images where they exist, measurement against the Design Contract where `{base}/UX_DESIGN.md` records `**Mode**: derived — UI, no Figma`, and acceptance criteria where neither exists. A contract's checks run *in addition to* a reference comparison, never instead of it. `**Mode**` is the only signal — never the file existing, never a `## Design Contract` heading
 - i18n key verification
 - Functional testing (happy path, edge cases, accessibility)
 

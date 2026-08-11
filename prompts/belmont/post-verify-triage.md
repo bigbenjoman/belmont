@@ -42,7 +42,7 @@ Apply these rules in order:
 
 ### Design Contract violations — NEVER deferrable
 
-If `{{.FeatureBase}}/TECH_PLAN.md` carries a `## Design Contract` whose `**Mode**` is `derived — UI, no Figma`, these follow-ups are **always blocking**, regardless of how minor the wording makes them sound. They come from an accessibility floor a human approved, and deferring them defeats the gate:
+If `{{.FeatureBase}}/UX_DESIGN.md` carries a `## Design Contract` whose `**Mode**` is `derived — UI, no Figma`, these follow-ups are **always blocking**, regardless of how minor the wording makes them sound. They come from an accessibility floor a human approved, and deferring them defeats the gate:
 
 - Contrast below the contract's ratio (4.5:1 body, 3:1 large)
 - A missing or invisible focus indicator on any interactive element

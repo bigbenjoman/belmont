@@ -250,7 +250,7 @@ func copyBelmontStateToWorktree(root, wtPath, slug string) error {
 	}
 
 	// 2. Copy read-only context files (master PRD, PROGRESS, etc.)
-	contextFiles := []string{"PRD.md", "PROGRESS.md", "PR_FAQ.md", "TECH_PLAN.md", "worktree.json"}
+	contextFiles := []string{"PRD.md", "PROGRESS.md", "PR_FAQ.md", "TECH_PLAN.md", "UX_DESIGN.md", "worktree.json"}
 	for _, f := range contextFiles {
 		src := filepath.Join(srcBelmont, f)
 		if fileExists(src) {

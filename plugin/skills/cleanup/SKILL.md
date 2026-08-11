@@ -47,7 +47,7 @@ Read all state files and build a cleanup profile:
 3. Read `.belmont/PROGRESS.md` — cross-reference feature statuses (computed from task states)
 4. Scan `.belmont/features/` for each subdirectory:
    - Read `PROGRESS.md` — check if all tasks are `[v]` (verified) indicating the feature is complete
-   - Count all files: PRD.md, TECH_PLAN.md, PROGRESS.md, NOTES.md, MILESTONE.md, MILESTONE-*.done.md
+   - Count all files: PRD.md, TECH_PLAN.md, UX_DESIGN.md, design-preview.html, ux-flows.html, PROGRESS.md, NOTES.md, MILESTONE.md, MILESTONE-*.done.md
    - Estimate total size of the feature directory
    - Classify as: **Completed** (every live task `[v]`), **Active** (has `[>]` or `[x]` tasks), or **Not Started** (all tasks `[ ]`). `[-]` withdrawn tasks are resolved — ignore them in all three judgements
 5. Find all `MILESTONE-*.done.md` files across `.belmont/` root and all feature directories
@@ -103,7 +103,7 @@ For each feature where all tasks in PROGRESS.md are `[v]` (verified), present it
 ```
 Feature: [feature-name] ([slug])
   Status:   Complete
-  Files:    PRD.md, TECH_PLAN.md, PROGRESS.md, NOTES.md, N MILESTONE-*.done.md
+  Files:    PRD.md, TECH_PLAN.md, UX_DESIGN.md, design-preview.html, ux-flows.html, PROGRESS.md, NOTES.md, N MILESTONE-*.done.md
   Size:     ~X KB total
   Summary:  [2-3 sentence summary extracted from PRD.md overview]
 
@@ -137,7 +137,7 @@ Wait for user response for each feature.
 <List key files/directories from TECH_PLAN.md file structure section. If no tech plan, write "See git history.">
 ```
 
-2. Delete all other files in `.belmont/features/<slug>/`: PRD.md, TECH_PLAN.md, PROGRESS.md, NOTES.md, MILESTONE.md, all MILESTONE-*.done.md
+2. Delete all other files in `.belmont/features/<slug>/`: PRD.md, TECH_PLAN.md, UX_DESIGN.md, design-preview.html, ux-flows.html, PROGRESS.md, NOTES.md, MILESTONE.md, all MILESTONE-*.done.md
 3. Update the master `.belmont/PRD.md` features table — change the Status column for this feature to `Archived`
 4. Update the master `.belmont/PROGRESS.md` features table — change the Status column for this feature to `Archived`
 

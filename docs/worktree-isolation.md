@@ -25,7 +25,7 @@ This approach ensures:
 - **Clean git state** — the agent sees normal committed files, not symlinked/untracked files
 - **Automatic merge** — different features touch different paths, so no merge conflicts
 
-Master planning files (`PRD.md`, `PROGRESS.md`, etc.) are copied into the worktree for reference but excluded from git commits via `.git/info/exclude`.
+Master planning files (`PRD.md`, `PROGRESS.md`, `UX_DESIGN.md`, etc.) are copied into the worktree for reference but excluded from git commits via `.git/info/exclude`. The feature's own copy travels with the rest of its directory — including `UX_DESIGN.md` and its two HTML review pages, which is why the links between them are relative. Both `UX_DESIGN.md` files are read-only inside a worktree: a phase that edits either has the change reverted before the worktree merges back.
 
 ### Live Status
 

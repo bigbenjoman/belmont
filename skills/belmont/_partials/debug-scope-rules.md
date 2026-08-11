@@ -13,7 +13,7 @@ Interactive `/belmont:debug-manual` is the **only** Belmont skill that may edit 
 | File | What you may change |
 |---|---|
 | `{base}/PRD.md` | Acceptance criteria text, `**Solution**:` / `**Verification**:` field text, task descriptions, Overview / Problem Statement prose, Success Criteria, Out of Scope |
-| `{base}/TECH_PLAN.md` | Decision narrative, library choices, file-path references, API shapes — anything where reality has moved past the written record. **Except `## Design Contract`**, which is written only by `/belmont:tech-plan` and carries an approval stamp this flow cannot renew |
+| `{base}/TECH_PLAN.md` | Decision narrative, library choices, file-path references, API shapes — anything where reality has moved past the written record |
 | `.belmont/TECH_PLAN.md` | Cross-cutting decisions that the fix proved wrong or incomplete |
 | `.belmont/PR_FAQ.md` | Only with per-edit explicit approval. PR_FAQ is strategic — flag it for the user before proposing diffs |
 | `.belmont/PRD.md` | Master feature-catalog entries (status text, dependency notes) |
@@ -24,6 +24,7 @@ Interactive `/belmont:debug-manual` is the **only** Belmont skill that may edit 
 
 - **No new milestones using polish/follow-up/cleanup/FWLUP/"deviations from"/"verification fixes" naming patterns.** `belmont validate` will reject these on the next auto run and block startup. This anti-pattern stays banned (see `knowledge/cross-cutting/milestone-immutability.md` for the cascade it caused).
 - **No new `[ ]` follow-up tasks for unfixed drift.** If drift is real, fix it in place this session. If it's out of scope, log it in DEBUG.md's `## Spec Reconciliation Log` and surface in the final report — don't park it for `/belmont:implement` to find later.
+- **No edits to `{base}/UX_DESIGN.md` or `.belmont/UX_DESIGN.md`**, or to the `design-preview.html` / `ux-flows.html` artifacts beside them. The design authority is written only by `/belmont:ux-design` and carries an `**Approval**` stamp this flow cannot renew. If the fix proved it wrong, surface that to the user and point them at `/belmont:ux-design --feature <slug>`.
 - **No silent edits to other features' specs.** In multi-feature mode you got explicit approval to load multiple features; reconciliation still happens per-feature with separate approval gates.
 - **No restructuring**: no renaming milestone headings, no adding milestone headings of any kind, no removing milestones, no reordering tasks across milestones. Structural changes route through `/belmont:tech-plan`.
 - **No flipping a task to `[v]`.** Only `/belmont:verify` may mark verified. If the fix completed a follow-up, `[x]` is correct; verify will promote it later.

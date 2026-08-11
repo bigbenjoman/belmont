@@ -115,6 +115,8 @@ that cost is least justified.
 4. `{base}/TECH_PLAN.md` — if the task touches architecture it describes (if exists). Skip when the task is self-contained.
 5. `.belmont/TECH_PLAN.md` — only when the task is cross-cutting: it changes shared infrastructure or spans features (if in feature mode and exists).
 
+`{base}/UX_DESIGN.md` is deliberately **not** on this list. This path spawns no design agent, so it makes no design decision and needs no `**Mode**` check — unlike `/belmont:implement`, whose Phase 2 skip turns on one. Step 2 still names the file in `### File Paths`, so a `**Contract Source**` line carried forward from the archive resolves for the implementation agent.
+
 This is guidance for the common case, not a prohibition. If a file you skipped
 turns out to matter — the task is ambiguous, or an acceptance criterion refers
 to something you have not read — read it. A wrong implementation costs far more
@@ -167,6 +169,7 @@ Create `{base}/MILESTONE.md` with a focused, lightweight version of the mileston
 - **PRD**: {base}/PRD.md — authoritative task definition, acceptance criteria, Figma URLs
 - **TECH_PLAN**: {base}/TECH_PLAN.md — technical specs (if present)
 - **Master TECH_PLAN**: .belmont/TECH_PLAN.md — cross-cutting architecture (if present)
+- **UX_DESIGN**: {base}/UX_DESIGN.md — design authority, including its `## Design Contract` (if present)
 - **PROGRESS**: {base}/PROGRESS.md
 - **Feature Notes**: {base}/NOTES.md
 - **Global Notes**: .belmont/NOTES.md

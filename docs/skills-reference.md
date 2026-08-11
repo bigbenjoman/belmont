@@ -29,6 +29,24 @@ Interactive planning session. Creates the PRD and PROGRESS files. Supports multi
 
 **Output**: `.belmont/PRD.md`, `.belmont/PROGRESS.md` (master feature summary), `.belmont/features/<slug>/PRD.md`, `.belmont/features/<slug>/PROGRESS.md`
 
+## `ux-design`
+
+Interactive design session. Produces the feature's design authority — the Design Contract, its screens and its flows. Runs after `product-plan` and before `tech-plan`.
+
+- **Interactive only.** `belmont auto` never invokes it: a contract is an approval artifact and there is nobody to approve it headlessly. Invoked non-interactively, the skill reads nothing, writes nothing, prints one line and exits clean
+- Writes `{base}/UX_DESIGN.md` for **every** feature it is run against, in all three modes — an absent file means the skill never ran, never "no design needed"
+- Records `**Mode**` in the file's first section: `derived — UI, no Figma` (the only value that is a contract), `N/A — Figma present`, or `N/A — no UI`. This is the single machine-read signal every downstream consumer keys on — never file existence, never the presence of a heading
+- Derives the contract only when the feature has a UI, no PRD task carries a Figma URL, and no contract exists yet. Figma features record the mode and stop; token extraction stays in `tech-plan`
+- Walks the derivation ladder and stops at the first rung that supplies values — master `.belmont/UX_DESIGN.md`, a sibling feature's contract, a deployed or local Storybook, `tailwind.config.*` / CSS custom properties / `components.json`, then baseline defaults — and names every rung it used on `**Source**`
+- Asks only what no rung can answer: the deployed Storybook URL, unsupplied token values, which interactive surfaces are reused unchanged, whether motion is in scope, and the approval itself. Flows, copy content, edge cases and design intent are read out of the PRD and rendered, never re-elicited
+- Writes two **self-contained** review pages (no scripts, no external assets): `design-preview.html` for the contract's tokens, contrast and states, and `ux-flows.html` for the screens, their real microcopy, and a diagram per flow
+- On a project's first UI feature also writes the master `.belmont/UX_DESIGN.md` — Token Contract and Accessibility Floor only — so later features inherit one scale instead of minting competing ones
+- **Approval is a structured question**, taken before anything is written. An approved contract is never re-derived and its `**Approval**` stamp is never rewritten
+- **Migration**: on finding a `## Design Contract` left in `{base}/TECH_PLAN.md` by an older Belmont, offers to move it into `UX_DESIGN.md` verbatim (approval stamp byte-for-byte) and delete the old section. Declining leaves both files untouched — never two contracts
+- Does NOT write source code, milestone structure, PROGRESS state, or any other skill's document
+
+**Output**: `.belmont/features/<slug>/UX_DESIGN.md`, `design-preview.html` and `ux-flows.html` beside it, plus `.belmont/UX_DESIGN.md` on the first UI feature of a project
+
 ## `tech-plan`
 
 Technical planning session. Creates a detailed implementation specification.
@@ -37,24 +55,25 @@ Technical planning session. Creates a detailed implementation specification.
 - Acts as a senior architect reviewing and refining the plan
 - Calibrates silently from the PRD and existing master tech plan (no visible tier) and walks a fixed **Domains to Cover** checklist (rendering, data model, auth, observability, testing, CI/CD, migration, etc.) — skipping domains already settled by the master tech plan or prior answers
 - Runs as many rounds per domain as the work requires; digs on ambiguity and only exits when every relevant domain is resolved
-- Loads Figma designs and extracts exact design tokens
-- Derives a **Design Contract** with you when the feature has a UI but no Figma (Phase 3.5), and writes a reviewable `design-preview.html` alongside it
+- Loads Figma designs and extracts exact design tokens into `{base}/TECH_PLAN.md` under `## Design Tokens (from Figma)`
+- Reads `{base}/UX_DESIGN.md` as a **read-only** authority in every mode — never creates it, never edits it, never restamps its approval. Token values, the accessibility floor, states and motion bands are fixed there; tech-plan decides only how to express them. A technical constraint that contradicts the contract is reported, and you re-run `/belmont:ux-design` to change it
+- Says so and offers to stop when a feature with visible UI has no `UX_DESIGN.md` — advisory, never blocking, and it never derives one itself
 - Produces concrete file structures, component skeletons, API types
 - Maps PRD tasks to specific code sections
 - Delegates framework / library / version / migration / security research to `Explore` / `general-purpose` sub-agents, flags stale sources (>12 months), and cites URLs in the `## References` section
 - Interactive Q&A until the exit criteria are met (every relevant domain covered, user explicitly confirms no more open questions)
-- **Reconciles the PRD and PROGRESS** at the end of the session (Phase 4.5): fixes contradictions, removes leaked tech detail from the PRD, adds product-facing decisions to `## Clarifications`, and aligns PROGRESS dependency annotations with the TECH_PLAN's Implementation Order. Respects milestone sizing rules (3–5 tasks, soft ceiling 6) — new tasks become new milestones rather than inflating existing ones.
+- **Reconciles the PRD and PROGRESS** at the end of the session (Phase 4.5): fixes contradictions, removes leaked tech detail from the PRD, adds product-facing decisions to `## Clarifications`, and aligns PROGRESS dependency annotations with the TECH_PLAN's Implementation Order. Respects milestone sizing rules (3–5 tasks, soft ceiling 6) — new tasks become new milestones rather than inflating existing ones. Reconciliation also checks the plan against `{base}/UX_DESIGN.md` — every State Inventory surface must map to at least one component specification, and a conflict is **reported, never edited away**.
 
 **Output**: `.belmont/TECH_PLAN.md`, plus reconciliation edits to `{base}/PRD.md` and `{base}/PROGRESS.md`
 
 ## `codex-plan-apply`
 
-Codex-only compatibility skill for applying a `BELMONT_PLAN_PACKET` produced by a Codex plan-mode `product-plan` or `tech-plan` interview.
+Codex-only compatibility skill for applying a `BELMONT_PLAN_PACKET` produced by a Codex plan-mode `product-plan`, `ux-design`, or `tech-plan` interview.
 
 - Does not ask new planning questions
-- Writes only explicit `.belmont/` paths named in the packet
+- Writes only explicit `.belmont/` paths named in the packet — including a `ux-design` packet's `UX_DESIGN.md`, `design-preview.html` and `ux-flows.html`, which are planning artifacts under `.belmont/`, never source code
 - Refuses malformed packets, source-code paths, or missing operation details
-- Lets Claude Code, opencode, Cursor, Windsurf, Gemini, GitHub Copilot, and Pi keep using `product-plan` and `tech-plan` directly
+- Lets Claude Code, opencode, Cursor, Windsurf, Gemini, GitHub Copilot, and Pi keep using `product-plan`, `ux-design` and `tech-plan` directly
 
 **Output**: The `.belmont/` file writes already specified by the packet
 
@@ -66,7 +85,7 @@ Implements the next pending milestone from the PRD.
 - Creates a **MILESTONE file** (`.belmont/MILESTONE.md`) with orchestrator context
 - Runs 3 agents, each reading from and writing to the MILESTONE file:
   1. **Codebase Scan** (codebase-agent) -- Reads MILESTONE + codebase, writes `## Codebase Analysis` *(parallel with 2)*
-  2. **Design Analysis** (design-agent) -- Reads MILESTONE plus either Figma or the feature's Design Contract, writes `## Design Specifications` *(parallel with 1)*. Skipped entirely when the milestone has no design input at all and the feature has no contract
+  2. **Design Analysis** (design-agent) -- Reads MILESTONE plus either Figma or the feature's Design Contract in `{base}/UX_DESIGN.md`, writes `## Design Specifications` *(parallel with 1)*. Skipped entirely when the milestone has no design input at all and the feature's `**Mode**` is not `derived — UI, no Figma`
   3. **Implementation** (implementation-agent) -- Reads MILESTONE only, writes code + `## Implementation Log` *(after 1+2)*
 - After each task: marks it as `[x]` done in PROGRESS.md
 - After all milestone tasks: marks the milestone complete
@@ -94,7 +113,7 @@ Implements just the next single pending task — a lightweight alternative to th
 Runs verification and code review on all completed tasks.
 
 - Runs two agents **in parallel**:
-  - **Verification Agent** -- Checks acceptance criteria, visual verification (Figma pixel comparison, or measurement against the Design Contract, via a headless browser), i18n text keys, edge cases, accessibility
+  - **Verification Agent** -- Checks acceptance criteria, visual verification (Figma pixel comparison, or measurement against the Design Contract in `{base}/UX_DESIGN.md`, via a headless browser), i18n text keys, edge cases, accessibility
   - **Code Review Agent** -- Runs build and test commands (auto-detects package manager: npm, pnpm, yarn, or bun), reviews code against project patterns, checks PRD alignment
 - Both agents read the PRD, TECH_PLAN, and archived MILESTONE files for full context
 - Categorizes issues: Critical / Warnings / Suggestions
@@ -138,7 +157,7 @@ Auto debug loop — dispatches a verification agent to check each fix attempt.
 Manual debug loop with deep Belmont context and in-place spec reconciliation. The user verifies each fix, and after the fix is confirmed the skill walks the loaded specs to correct any drift the bug exposed — all in one atomic commit.
 
 - **Interactive only** — never invoked from `belmont auto` (which uses `debug-auto`)
-- **Step 0 deep context load**: master `.belmont/PR_FAQ.md`, `.belmont/PRD.md`, `.belmont/TECH_PLAN.md`, `.belmont/NOTES.md` + each selected feature's `PRD.md`, `TECH_PLAN.md`, `PROGRESS.md`, `NOTES.md`, and latest `MILESTONE-M*.done.md`. Optional reads skip silently when absent. Files > 500 lines get a `[y/N]` gate; total context > 50 KB on local-LLM CLIs prompts narrowing
+- **Step 0 deep context load**: master `.belmont/PR_FAQ.md`, `.belmont/PRD.md`, `.belmont/TECH_PLAN.md`, `.belmont/NOTES.md` + each selected feature's `PRD.md`, `UX_DESIGN.md`, `TECH_PLAN.md`, `PROGRESS.md`, `NOTES.md`, and latest `MILESTONE-M*.done.md`. Optional reads skip silently when absent. Files > 500 lines get a `[y/N]` gate; total context > 50 KB on local-LLM CLIs prompts narrowing
 - **Multi-feature mode** — supports debugging bugs that span two or more features in one session
 - Implementation agent adds strategic `[BELMONT-DEBUG]` logging (5-15 log points per iteration)
 - After each fix, presents summary and asks user to verify with debug log output
@@ -146,7 +165,7 @@ Manual debug loop with deep Belmont context and in-place spec reconciliation. Th
 - Max 3 iterations, regression handling, and user checkpoint match auto mode
 - **Spec Reconciliation phase** runs only on FIXED: walks the loaded specs, identifies drift (acceptance criteria mismatch, outdated Solution/Verification fields, contradicted TECH_PLAN decisions, completed follow-ups, root-cause patterns), presents unified diffs for `y/N/edit/skip` per-edit approval, edits in place, appends Five-Whys-style entry to NOTES.md
 - **Atomic commit** — code edits + spec edits land in a single `debug: <fix> + spec sync` commit; commit body includes task IDs whose state was flipped so `runEvidenceCheck` finds attribution on a future verify pass
-- **Structural prohibitions still apply**: never adds/renames/removes milestones; never uses polish/follow-up/cleanup naming; never flips a task to `[v]` (verify's job); never edits a feature's specs that wasn't selected; never adds `[ ]` follow-up tasks for unfixed drift (fix it or skip it)
+- **Structural prohibitions still apply**: never adds/renames/removes milestones; never uses polish/follow-up/cleanup naming; never flips a task to `[v]` (verify's job); never edits a feature's specs that wasn't selected; never adds `[ ]` follow-up tasks for unfixed drift (fix it or skip it); never edits `{base}/UX_DESIGN.md` — design drift is surfaced to you and fixed by re-running `/belmont:ux-design`
 
 **Best for**: UI bugs, visual issues, known reproduction steps, multi-feature debugging, **bugs that exist because the spec drifted from reality**.
 **Use `debug-auto` instead for**: Complex logic bugs, race conditions, narrow code-only fixes where you don't want spec edits.
@@ -162,6 +181,7 @@ Reviews alignment between planning documents and the codebase. Detects drift, co
 - Scans codebase for unplanned implementations or stale task statuses
 - Presents each finding interactively with resolution options
 - Can update PRDs, tech plans, PROGRESS files, and NOTES based on decisions
+- Treats `UX_DESIGN.md` and its two HTML artifacts as **read-only** — a design finding is reported and points you at `/belmont:ux-design`
 - Does NOT modify source code — planning audit only
 
 **When to use**: After implementation sessions, before major milestones, or periodically to keep plans aligned with reality.
@@ -186,10 +206,10 @@ Reset belmont state. In feature mode, choose to reset a specific feature, all fe
 - Shows a summary of current state (feature name, task/milestone counts, completion status)
 - Asks for explicit confirmation before resetting
 - Resets PRD.md and PROGRESS.md to blank templates
-- Deletes TECH_PLAN.md if it exists
+- Deletes TECH_PLAN.md, UX_DESIGN.md, `design-preview.html` and `ux-flows.html` if they exist — a reset that left an approved contract behind would orphan it against a fresh PRD
 - Does NOT touch agents, skills, or any source code
 
-**Resets**: `.belmont/PR_FAQ.md`, `.belmont/PRD.md`, `.belmont/PROGRESS.md`, `.belmont/TECH_PLAN.md`, `.belmont/MILESTONE.md`, `.belmont/MILESTONE-*.done.md`, `.belmont/features/`
+**Resets**: `.belmont/PR_FAQ.md`, `.belmont/PRD.md`, `.belmont/PROGRESS.md`, `.belmont/UX_DESIGN.md`, `.belmont/TECH_PLAN.md`, `.belmont/MILESTONE.md`, `.belmont/MILESTONE-*.done.md`, `.belmont/features/`
 
 ## `repair`
 
@@ -240,7 +260,7 @@ See [cli-commands.md](cli-commands.md) for the CLI half.
 
 ## `status`
 
-Read-only progress report. Does not modify any files.
+Read-only progress report. Does not modify any files. Reads `PROGRESS.md` in full, the PRD header for the feature name, and — for `TECH_PLAN.md` and `NOTES.md` — existence only. `UX_DESIGN.md` contributes exactly one line: its `**Mode**`, which becomes the report's `Design authority:` value.
 
 Example output (project-level):
 
@@ -274,6 +294,7 @@ Belmont Status
 Feature: Chat Application
 
 Tech Plan: Ready
+Design authority: Derived
 
 Tasks: 3 done, 1 in progress, 1 blocked, 2 todo (of 7 total)
 

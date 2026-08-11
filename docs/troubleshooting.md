@@ -70,7 +70,17 @@ If you need to manually refresh, restart Cursor or reload the window.
 
 ## PRD is empty / template only
 
-Run the product-plan skill first to create your PRD interactively. The tech-plan and implement skills require a populated PRD.
+Run the product-plan skill first to create your PRD interactively. The ux-design, tech-plan and implement skills all require a populated PRD.
+
+## Verification isn't measuring my UI against the Design Contract
+
+Check the `**Mode**` line at the top of `.belmont/features/<slug>/UX_DESIGN.md` — it is the only signal agents read, and only `derived — UI, no Figma` is a contract. `/belmont:status` reports it as `Design authority:`.
+
+- **No `UX_DESIGN.md` at all** — the skill never ran on this feature. Run `/belmont:ux-design --feature <slug>`. Features planned before contracts existed are deliberately left alone: the gate is not retroactive.
+- **`N/A — Figma present`** — any PRD task carrying a Figma URL makes the whole feature a Figma feature, and verification compares against the design instead. Remove the URLs, or accept Figma as the authority.
+- **`N/A — no UI`** — recorded deliberately; nothing to measure.
+- **Contract still in `TECH_PLAN.md`** — planned by an older Belmont. Run `/belmont:ux-design --feature <slug>` and accept the offer to migrate it verbatim.
+- **Mode is right but checks come back `UNVERIFIABLE`** — no browser MCP is available. Install [playwright-mcp](https://github.com/microsoft/playwright-mcp); a check whose tooling is missing is never recorded as a pass.
 
 ## Task marked as blocked
 
@@ -124,7 +134,7 @@ Remove the emoji and re-run.
 
 ## Want to start fresh
 
-Run the reset skill (`/belmont:reset` in Claude Code) to reset all state files. Alternatively, delete `.belmont/PRD.md`, `.belmont/PROGRESS.md`, `.belmont/TECH_PLAN.md`, `.belmont/MILESTONE.md`, and any `.belmont/MILESTONE-*.done.md` files manually, then re-run `belmont install` (or `belmont install --source /path/to/belmont`) to recreate templates.
+Run the reset skill (`/belmont:reset` in Claude Code) to reset all state files. Alternatively, delete `.belmont/PRD.md`, `.belmont/PROGRESS.md`, `.belmont/UX_DESIGN.md`, `.belmont/TECH_PLAN.md`, `.belmont/MILESTONE.md`, and any `.belmont/MILESTONE-*.done.md` files manually, then re-run `belmont install` (or `belmont install --source /path/to/belmont`) to recreate templates.
 
 ## `belmont auto` refuses to start: "working tree is not clean"
 

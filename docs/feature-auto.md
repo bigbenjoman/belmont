@@ -6,7 +6,7 @@ The `belmont auto` command automates the full implementation cycle for a Belmont
 
 ## Prerequisites
 
-- A feature directory at `.belmont/features/<slug>/` with `PRD.md`, `TECH_PLAN.md`, and `PROGRESS.md`
+- A feature directory at `.belmont/features/<slug>/` with `PRD.md`, `TECH_PLAN.md`, and `PROGRESS.md`. A `UX_DESIGN.md` is optional — auto reads it and never writes it; a feature without one runs exactly as it did before design contracts existed
 - The `belmont` CLI installed and on PATH
 - At least one supported AI tool CLI installed
 
@@ -268,6 +268,7 @@ Interactive prompt options for low-confidence conflicts:
 - **Max iterations**: Hard cap (default 20) prevents runaway loops
 - **Consecutive failures**: 3 failures in a row → stop
 - **Stuck detection**: Same state after 2 successful iterations → pause
+- **Design authority is read-only**: auto never invokes `/belmont:ux-design` — a Design Contract is an approval artifact and there is nobody to approve it headlessly. The loop snapshots `{base}/UX_DESIGN.md` and `.belmont/UX_DESIGN.md` before each agent shell-out and compares afterwards; a phase that edited either has the file restored, the agent's last commit amended where possible, and a pending `STEERING.md` entry explaining the revert. Change a contract by running `/belmont:ux-design` in a live session
 
 ## Multi-Feature Parallel Execution
 

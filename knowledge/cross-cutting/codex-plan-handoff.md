@@ -6,14 +6,14 @@ Domains: skills, cli
 
 Codex is the only supported tool with a hard split between its best *planning* surface and its *file-writing* surface:
 
-- Codex **plan mode** exposes keyboard-navigable structured pick-lists — the best interview UX of any Belmont tool. Outside plan mode the same `product-plan` / `tech-plan` interview degrades to long plain-text question dumps.
+- Codex **plan mode** exposes keyboard-navigable structured pick-lists — the best interview UX of any Belmont tool. Outside plan mode the same `product-plan` / `ux-design` / `tech-plan` interview degrades to long plain-text question dumps.
 - But inside plan mode the session is planning-oriented, so direct writes to `.belmont/` planning files are often unavailable or inappropriate.
 
 Every other tool (Claude Code, opencode, Cursor, Windsurf, Gemini, GitHub Copilot, Pi) asks structured questions **and** writes files in one session, so it has no such gap. Without a bridge, a Codex user is forced to choose between the good pick-list interview (but can't persist the plan) and direct writes (but loses the structured UX). `codex-plan-apply` is the bridge.
 
 ## Invariant
 
-- `product-plan` and `tech-plan` write `.belmont/` files **directly** for every tool. The packet path is a Codex-plan-mode-only fallback: emit a single fenced `BELMONT_PLAN_PACKET` *only* when running as Codex in plan mode **and** direct writes are unavailable. No other tool ever takes the packet path.
+- `product-plan`, `ux-design` and `tech-plan` write `.belmont/` files **directly** for every tool. The packet path is a Codex-plan-mode-only fallback: emit a single fenced `BELMONT_PLAN_PACKET` *only* when running as Codex in plan mode **and** direct writes are unavailable. No other tool ever takes the packet path.
 - `codex-plan-apply` is a pure applicator. It **never** re-opens the interview, never infers missing PRD/PROGRESS/TECH_PLAN/`models.yaml` content, never edits source code, and writes **only** the explicit `.belmont/` paths named in the packet. The planning decisions were already made and approved in plan mode; this skill just persists them.
 - The packet is self-contained: every target `.belmont/` path, each operation (`create` / `replace` / `update-section`), full content for creates/replacements, exact section content for updates, the commit message, and the next recommended Belmont prompt. Decisions must not be left only in chat.
 
@@ -40,11 +40,12 @@ Every other tool (Claude Code, opencode, Cursor, Windsurf, Gemini, GitHub Copilo
 
 ## Evidence
 
-- Skill source: `skills/belmont/_src/codex-plan-apply.md` (applicator + refusal cases); the "Codex write handoff" sections in `_src/product-plan.md` and `_src/tech-plan.md` (emit conditions).
+- Skill source: `skills/belmont/_src/codex-plan-apply.md` (applicator + refusal cases); the "Codex write handoff" sections in `_src/product-plan.md`, `_src/ux-design.md` and `_src/tech-plan.md` (emit conditions).
 - Generated/committed plugin output: `plugin/skills/codex-plan-apply/SKILL.md` (regenerated via `generate-plugin.sh`; the generated `skills/belmont/codex-plan-apply/` is gitignored).
 - Introduced by PR #19 ("Add Codex plan handoff apply skill", external contributor). Originally shipped as `plan-apply`; renamed to `codex-plan-apply` so the tool scope is legible at the shared install surface absent any mechanical gating.
 
 ## Revisions
 
 - 2026-06-09 — created when landing PR #19; renamed the skill `plan-apply` → `codex-plan-apply` and recorded the prose-only (un-gated) Codex scoping as a known interim, with mechanical per-tool skill visibility flagged as future work.
-- 2026-08-08 — the packet gained its first **non-Markdown payload**: `{base}/design-preview.html`, the Design Contract's review artifact. `codex-plan-apply` applies two gates — a path constraint (satisfied: it is under `.belmont/`) and a source-code content prohibition, which a self-contained `.html` would otherwise trip. The prohibition is now scoped to *project* source rather than file extension: any file under `.belmont/` is a planning artifact regardless of extension, and the same extension outside `.belmont/` is still refused.
+- 2026-08-08 — the packet gained its first **non-Markdown payloads**: the design authority's self-contained review artifacts, `{base}/design-preview.html` and (from 2026-08-11) `{base}/ux-flows.html`. `codex-plan-apply` applies two gates — a path constraint (satisfied: both are under `.belmont/`) and a source-code content prohibition, which a self-contained `.html` would otherwise trip. The prohibition is now scoped to *project* source rather than file extension: any file under `.belmont/` is a planning artifact regardless of extension, and the same extension outside `.belmont/` is still refused.
+- 2026-08-11 — the emitting skill changed. Design authority moved out of `tech-plan` into the new `/belmont:ux-design`, so `ux-design` is now the third packet producer alongside `product-plan` and `tech-plan`; its packet enumerates `{base}/UX_DESIGN.md`, `{base}/design-preview.html` and `{base}/ux-flows.html`, and `tech-plan`'s enumeration drops `design-preview.html` so a Codex tech-plan run cannot emit an artifact it no longer owns. `codex-plan-apply`'s `kind:` enum gains `ux-design`, and its example chain runs `product-plan` → `$belmont:ux-design` → `$belmont:tech-plan`. The Codex-only-by-convention position is unchanged.

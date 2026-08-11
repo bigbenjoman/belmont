@@ -21,6 +21,7 @@ Read the following files (if they exist) and collect a summary:
 - `.belmont/PR_FAQ.md` — Check if it exists and has real content
 - `.belmont/PRD.md` — Extract the product/feature name, check if it's a master feature catalog
 - `.belmont/TECH_PLAN.md` — Check if it exists and has content (master tech plan)
+- `.belmont/UX_DESIGN.md` — Check if it exists (master design authority; existence only, do not read the contents)
 - `.belmont/NOTES.md` — Check if global notes exist
 - `.belmont/features/` — Scan for feature subdirectories. For each, read its PRD.md for name and PROGRESS.md for task counts.
 
@@ -41,6 +42,7 @@ Product: [product name from master PRD]
 PR/FAQ:       [Has content / Empty]
 Master PRD:   [Has content / Empty]
 Master Tech:  [Exists / Does not exist]
+Master UX:    [Exists / Does not exist]
 Global Notes: [Exists / Does not exist]
 
 Features:
@@ -63,7 +65,7 @@ WARNING: This cannot be undone.
 
 **Option 1 — Reset specific feature:**
 1. Ask which feature to reset (by slug or number)
-2. Delete all files in `.belmont/features/<slug>/` (PRD.md, PROGRESS.md, TECH_PLAN.md, NOTES.md, MILESTONE.md, MILESTONE-*.done.md)
+2. Delete all files in `.belmont/features/<slug>/` (PRD.md, PROGRESS.md, TECH_PLAN.md, UX_DESIGN.md, design-preview.html, ux-flows.html, NOTES.md, MILESTONE.md, MILESTONE-*.done.md)
 3. Remove the feature directory
 4. Update the master PRD features table to remove/mark the feature
 5. Report what was reset
@@ -72,19 +74,21 @@ WARNING: This cannot be undone.
 1. Delete all subdirectories under `.belmont/features/`
 2. Reset `.belmont/PRD.md` to the master template (keep product name, clear features table)
 3. Delete `.belmont/TECH_PLAN.md` (master tech plan)
-4. Delete any root-level MILESTONE files
-5. Preserve `.belmont/PR_FAQ.md`
-6. Report what was reset
+4. Delete `.belmont/UX_DESIGN.md` (master design authority) — leaving it behind orphans an approved contract no feature inherits from
+5. Delete any root-level MILESTONE files
+6. Preserve `.belmont/PR_FAQ.md`
+7. Report what was reset
 
 **Option 3 — Full reset:**
 1. Delete all subdirectories under `.belmont/features/`
 2. Reset `.belmont/PR_FAQ.md` to template text: `"Run /belmont:working-backwards to create your PR/FAQ document.\n"`
 3. Reset `.belmont/PRD.md` to template text: `"Run the /belmont:product-plan skill to create a plan for your feature.\n"`
 4. Delete `.belmont/TECH_PLAN.md`
-5. Delete `.belmont/MILESTONE.md` (if exists at root)
-6. Delete all `.belmont/MILESTONE-*.done.md` (if any exist at root)
-7. Delete `.belmont/NOTES.md` (if exists)
-8. Report what was reset
+5. Delete `.belmont/UX_DESIGN.md` (master design authority)
+6. Delete `.belmont/MILESTONE.md` (if exists at root)
+7. Delete all `.belmont/MILESTONE-*.done.md` (if any exist at root)
+8. Delete `.belmont/NOTES.md` (if exists)
+9. Report what was reset
 
 **Option c — Cancel:**
 Report: `Cancelled. No files were changed.`

@@ -175,12 +175,13 @@ whole feature instead of for the tasks in front of you.
 **Always read:**
 1. `{base}/PROGRESS.md` — first. Identify the `[x]` tasks to verify before reading anything else.
 2. `{base}/models.yaml` — small, and needed up front to resolve tiers (if exists — see "Model Tiers" below).
+3. `{base}/UX_DESIGN.md` — **always check its `## Design Contract` section**. Step 1b needs to know whether one exists, and that is a cheap grep for the heading plus its `**Mode**` line, not a full read.
 
 **Then read, scoped to those tasks:**
-3. `{base}/PRD.md` — the sections defining those task IDs, including their acceptance criteria. Read the whole file if it has no per-task structure. **Never skip the acceptance criteria for a task you are verifying** — they are the thing being checked.
-4. `{base}/TECH_PLAN.md` — if the tasks touch architecture it describes (if exists). **Always check its `## Design Contract` section** regardless — Step 1b needs to know whether one exists, and that is a cheap grep for the heading plus its `**Mode**` line, not a full read.
-5. `.belmont/TECH_PLAN.md` — only when the tasks are cross-cutting: they change shared infrastructure or span features (if in feature mode and exists).
-6. Archived MILESTONE files (`{base}/MILESTONE-*.done.md`) — these carry implementation context from the milestone that produced the work. Prefer them over re-deriving that context from the specs, **but only when their sections are actually populated**: a lightweight run, or a milestone with no design input, archives `[Not populated — …]` placeholders. When you see those, fall back to the specs.
+4. `{base}/PRD.md` — the sections defining those task IDs, including their acceptance criteria. Read the whole file if it has no per-task structure. **Never skip the acceptance criteria for a task you are verifying** — they are the thing being checked.
+5. `{base}/TECH_PLAN.md` — if the tasks touch architecture it describes (if exists). Skip when the tasks are self-contained.
+6. `.belmont/TECH_PLAN.md` — only when the tasks are cross-cutting: they change shared infrastructure or span features (if in feature mode and exists).
+7. Archived MILESTONE files (`{base}/MILESTONE-*.done.md`) — these carry implementation context from the milestone that produced the work. Prefer them over re-deriving that context from the specs, **but only when their sections are actually populated**: a lightweight run, or a milestone with no design input, archives `[Not populated — …]` placeholders. When you see those, fall back to the specs.
 
 This is guidance for the common case, not a prohibition. If a file you skipped
 turns out to matter, read it. Verifying against an incomplete picture is worse
@@ -260,7 +261,7 @@ If the invoking prompt contains "FOCUSED RE-VERIFICATION" or similar instruction
    - Any previously-failing acceptance criteria
 3. **Do NOT** re-run Lighthouse audit unless a follow-up task specifically addressed performance
 4. **Do NOT** re-check visual specs against design references unless a follow-up task specifically addressed UI changes. Still include the Visual Comparison Attestation in the report, noting that comparison was skipped per focused re-verification scope.
-   - **Design Contract checks follow the same rule**, and this is the *only* exemption from them. If the follow-up tasks touched UI, contract checks are **required** and the attestation records `Contract checks performed: YES against {base}/TECH_PLAN.md`. If they did not, contract checks are **not required** and the attestation records `Contract checks performed: NO — focused re-verification, no UI follow-ups`. Pass that determination to the verification agent — it is what keeps its fourth enforcement rule satisfiable.
+   - **Design Contract checks follow the same rule**, and this is the *only* exemption from them. If the follow-up tasks touched UI, contract checks are **required** and the attestation records `Contract checks performed: YES against {base}/UX_DESIGN.md`. If they did not, contract checks are **not required** and the attestation records `Contract checks performed: NO — focused re-verification, no UI follow-ups`. Pass that determination to the verification agent — it is what keeps its fourth enforcement rule satisfiable.
 5. **Do NOT** create new Polish-level issues — only report Critical and Warning issues found during focused verification
 6. **Include the scoping instructions** when dispatching to the sub-agents so they also focus their review
 
@@ -288,9 +289,9 @@ Before spawning sub-agents, collect what the implementation should be measured a
 
 **The Design Contract** (an objective standard, no comparison image needed):
 
-4. Read `{base}/TECH_PLAN.md`'s `## Design Contract` section, if present. **A contract counts only when its `**Mode**` is `derived — UI, no Figma`.** Both `N/A` values — and an absent section — are "no contract", and you must not report one.
+4. Read `{base}/UX_DESIGN.md`'s `## Design Contract` section, if present. **A contract counts only when its `**Mode**` is `derived — UI, no Figma`.** Both `N/A` values — and an absent section — are "no contract", and you must not report one.
 
-   Do **not** key on the heading alone. The feature template carries `## Design Contract` unconditionally, so a Figma feature's plan has the heading too, holding its Figma-extracted tokens. Reporting that as a contract would demand contract checks on every Figma feature, find nothing to check, and fail the milestone.
+   Do **not** key on the heading alone. `/belmont:ux-design` writes UX_DESIGN.md for every feature it runs against, in all three modes, and the template carries `## Design Contract` unconditionally — so a Figma feature and a feature with no UI both have the heading, over an `N/A` mode. Reporting that as a contract would demand contract checks on every Figma feature, find nothing to check, and fail the milestone.
 
 Collect whatever you find — Figma `fileKey`/`nodeId` pairs, image paths, URLs, and whether a contract is present. You will pass all of it to the verification agent in Step 2.
 
@@ -449,7 +450,7 @@ Spawn these two sub-agents **simultaneously** (or sequentially if using the Sequ
 >
 > **Design Contract**:
 > [If Step 1b found a `## Design Contract` whose `**Mode**` is `derived — UI, no Figma`, write:
-> "Design Contract present at `{base}/TECH_PLAN.md` § Design Contract. Contract checks are REQUIRED."
+> "Design Contract present at `{base}/UX_DESIGN.md` § Design Contract. Contract checks are REQUIRED."
 > Otherwise write exactly: "No design contract." — including when the section exists with an `N/A` mode.]
 >
 > **Visual Verification**: For any task with visual output, you MUST use the browser MCP to take screenshots and verify the implementation. If design references are listed above, you MUST load them — call the Figma MCP's `get_screenshot` for Figma references, Read for local images, WebFetch for URLs — and perform structured side-by-side comparison (layout, spacing, typography, colors, component shapes, alignment). If a Design Contract is present, you MUST additionally run the contract checks in your Phase 2 branch 1 or 2 — a contract is orthogonal to a reference, and its accessibility floor applies either way. Include the Visual Comparison Attestation in your report. Do NOT silently skip an available design reference or contract.

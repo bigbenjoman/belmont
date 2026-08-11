@@ -2,7 +2,7 @@
 
 Use this template when creating `{base}/MILESTONE.md` in Step 2 of the implement skill.
 
-The MILESTONE file is a **coordination document**: it names the active tasks and points sub-agents at the canonical PRD and TECH_PLAN. Do NOT copy PRD/TECH_PLAN content into it — the pointers are enough, and duplicating content wastes context across every sub-agent invocation.
+The MILESTONE file is a **coordination document**: it names the active tasks and points sub-agents at the canonical PRD, TECH_PLAN and UX_DESIGN. Do NOT copy their content into it — the pointers are enough, and duplicating content wastes context across every sub-agent invocation.
 
 Fill in the `## Orchestrator Context` section using information from PROGRESS.md and the user's invocation context:
 
@@ -28,8 +28,10 @@ Fill in the `## Orchestrator Context` section using information from PROGRESS.md
 
 ### File Paths
 - **PRD**: {base}/PRD.md — authoritative task definitions, acceptance criteria, Figma URLs
-- **TECH_PLAN**: {base}/TECH_PLAN.md — technical specs (if present). Read when your task touches architecture it describes; skip for self-contained tasks. **The design-agent always reads its `## Design Contract` section**, self-contained or not — that section is its design authority when no Figma exists, and skipping it would leave the task with none.
-- **Master TECH_PLAN**: .belmont/TECH_PLAN.md — cross-cutting architecture (if present). Read only for cross-cutting work: shared infrastructure, or changes spanning features — **or when the design-agent is in contract mode**, since cross-cutting styling decisions and any master-level `## Design Contract` are routed here.
+- **TECH_PLAN**: {base}/TECH_PLAN.md — technical specs (if present). Read when your task touches architecture it describes; skip for self-contained tasks. The design-agent also reads it for design-adjacent technical constraints and, on a Figma feature, its `## Design Tokens (from Figma)` section.
+- **Master TECH_PLAN**: .belmont/TECH_PLAN.md — cross-cutting architecture (if present). Read only for cross-cutting work: shared infrastructure, or changes spanning features.
+- **UX_DESIGN**: {base}/UX_DESIGN.md — the feature's design authority (if present). **The design-agent always reads its `## Design Contract` section**, self-contained task or not — that section is its authority when no Figma exists, and skipping it would leave the task with none. Written only by `/belmont:ux-design`; no agent in this pipeline edits it.
+- **Master UX_DESIGN**: .belmont/UX_DESIGN.md — cross-cutting design authority (if present). Read **when the design-agent is in contract mode**, since cross-cutting styling decisions and any master-level `## Design Contract` the feature's contract inherits from are routed here.
 - **PROGRESS**: {base}/PROGRESS.md
 - **Feature Notes**: {base}/NOTES.md
 - **Global Notes**: .belmont/NOTES.md

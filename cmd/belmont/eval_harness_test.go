@@ -177,7 +177,7 @@ func evalFixtures() []evalFixture {
 			// third design state: visible UI with no Figma anywhere. The other
 			// five are either design-free or unconcerned with design.
 			//
-			// Its TECH_PLAN carries a Design Contract with
+			// Its UX_DESIGN.md carries a Design Contract with
 			// **Mode**: derived — UI, no Figma. badge.css satisfies every
 			// acceptance criterion in PRD.md while violating that contract
 			// (2.6:1 error text against a 4.5:1 floor; a semantic declaring a
@@ -279,6 +279,19 @@ func materialiseFixture(t *testing.T, name string) (string, string) {
 			t.Fatalf("fixture %s: read %s: %v", name, f, err)
 		}
 		mustWrite(t, filepath.Join(base, f), string(data))
+	}
+	// UX_DESIGN.md is the design authority, and only a fixture with a design
+	// surface has one — five of the six do not. Absent is a legitimate fixture
+	// shape, so it skips rather than fatals; any OTHER read error still fatals,
+	// because a fixture that has the file and cannot be read would silently
+	// become a fixture without a contract, and ui-no-figma's whole assertion
+	// rests on the contract being present.
+	uxSrc := filepath.Join(src, "UX_DESIGN.md")
+	switch data, err := os.ReadFile(uxSrc); {
+	case err == nil:
+		mustWrite(t, filepath.Join(base, "UX_DESIGN.md"), string(data))
+	case !os.IsNotExist(err):
+		t.Fatalf("fixture %s: read UX_DESIGN.md: %v", name, err)
 	}
 	runGit(t, root, "add", "-A")
 	runGit(t, root, "commit", "-qm", "belmont: feature state for "+name)
@@ -500,6 +513,44 @@ func TestEvalFixturesHaveCommitEvidence(t *testing.T) {
 				t.Error("found evidence for a task ID that has no commit — taskHasCommit is not discriminating here")
 			}
 		})
+	}
+}
+
+// TestEvalDesignContractIsMaterialised keeps ui-no-figma's live assertion from
+// going vacuous the same way an empty evidence range would.
+//
+// The whole fixture rests on the agent finding a Design Contract that badge.css
+// breaches. The contract now lives in UX_DESIGN.md, which materialiseFixture
+// copies conditionally — so a fixture that lost the file, or a harness that
+// stopped copying it, would leave the agent with nothing to breach and every
+// [x] would read as correct restraint. Assert the contract is on disk where the
+// skills look for it, and nowhere else.
+func TestEvalDesignContractIsMaterialised(t *testing.T) {
+	root, slug := materialiseFixture(t, "ui-no-figma")
+	base := filepath.Join(root, ".belmont", "features", slug)
+
+	ux, err := os.ReadFile(filepath.Join(base, "UX_DESIGN.md"))
+	if err != nil {
+		t.Fatalf("ui-no-figma has no UX_DESIGN.md in the materialised feature dir: %v", err)
+	}
+	for _, want := range []string{
+		"## Design Contract",
+		"**Mode**: derived — UI, no Figma",
+		"contrast ≥ 4.5:1 text",
+		"Each semantic (ok/warn/error) declares bg, border, text.",
+	} {
+		if !strings.Contains(string(ux), want) {
+			t.Errorf("UX_DESIGN.md is missing %q — the planted badge.css breach is no longer detectable", want)
+		}
+	}
+
+	tech, err := os.ReadFile(filepath.Join(base, "TECH_PLAN.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(tech), "## Design Contract") {
+		t.Error("TECH_PLAN.md still carries a Design Contract — the fixture would hold two, and an agent " +
+			"reading the stale one proves nothing about the file consumers actually read")
 	}
 }
 

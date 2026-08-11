@@ -51,7 +51,7 @@ Tasks may additionally use `[WEB]` / `[API]` prefixes (e.g. `[WEB] Render the ne
 **Verification**: Visual parity with Figma at all three breakpoints; sidebar collapses below md.
 ```
 
-**Figma is one design input among several, not the design source.** A `**Figma**:` field gives the design-agent an exact reference to extract from, and gives verification something to compare screenshots against. It is not required. Where a feature has a UI but no Figma URL on any task, `/belmont:tech-plan` derives a **Design Contract** into the feature's `TECH_PLAN.md` instead, and that becomes the design authority — see [workflow.md](workflow.md). Where a feature has no UI at all, neither applies.
+**Figma is one design input among several, not the design source.** A `**Figma**:` field gives the design-agent an exact reference to extract from, and gives verification something to compare screenshots against. It is not required. Where a feature has a UI but no Figma URL on any task, `/belmont:ux-design` derives a **Design Contract** into the feature's `UX_DESIGN.md` instead, and that becomes the design authority — see [workflow.md](workflow.md). Where a feature has no UI at all, neither applies, and `UX_DESIGN.md` records `**Mode**: N/A — no UI` so downstream agents can tell "not applicable" from "never run".
 
 Note the granularity: a feature counts as a Figma feature if **any** task carries a URL. Mixing covered and uncovered UI tasks in one feature means no contract is derived, because there is no single authority to reconcile the two against — so prefer either annotating every UI task or none.
 
@@ -59,7 +59,7 @@ Note the granularity: a feature counts as a Figma feature if **any** task carrie
 - No status markers (emoji) on task headers -- status lives in PROGRESS.md only
 - Follow-up tasks discovered during implementation are added as plain tasks (no special tag)
 - The `**Verification**:` field lists *criteria* for the task, not a separate task. Do not create standalone "Verification", "QA", or "Unit Tests" tasks — verification runs automatically via `/belmont:verify` after each milestone.
-- PRD tasks describe **WHAT** the user sees or experiences, not HOW it's implemented. Technical decisions (libraries, file paths, wrapper components, endpoint names, regex syntax) belong in `TECH_PLAN.md`. The tech-plan step reconciles PRD and TECH_PLAN at the end of its session — see `skills/belmont/_partials/plan-separation.md` for the boundary rules.
+- PRD tasks describe **WHAT** the user sees or experiences, not HOW it's implemented. Technical decisions (libraries, file paths, wrapper components, endpoint names, regex syntax) belong in `TECH_PLAN.md`; design values (token scales, contrast floors, state inventories, motion bands) belong in `UX_DESIGN.md`. The tech-plan step reconciles PRD, UX_DESIGN and TECH_PLAN at the end of its session — see `skills/belmont/_partials/plan-separation.md` for the boundary rules.
 
 ## Priority Levels
 
@@ -175,7 +175,8 @@ The master PROGRESS.md (at `.belmont/PROGRESS.md` in multi-feature projects) con
 
 Feature-level status is computed from task states. There is no separate status line.
 
-### Master PRD.md and TECH_PLAN.md
+### Master PRD.md, UX_DESIGN.md and TECH_PLAN.md
 
 - **Master PRD.md** -- Living global document covering vision, constraints, and cross-cutting decisions. No features table (that lives in master PROGRESS.md).
+- **Master UX_DESIGN.md** -- Cross-cutting design authority: Token Contract and Accessibility Floor only, written by `/belmont:ux-design` on a project's first UI feature so later features inherit one scale. No `**Mode**` line — mode is per-feature.
 - **Master TECH_PLAN.md** -- Living global document for cross-cutting architecture decisions.

@@ -1,5 +1,5 @@
 ---
-description: Apply a Codex-only Belmont planning handoff packet after a plan-mode product-plan or tech-plan interview; write only the explicit .belmont files named in the packet without asking new planning questions.
+description: Apply a Codex-only Belmont planning handoff packet after a plan-mode product-plan, ux-design or tech-plan interview; write only the explicit .belmont files named in the packet without asking new planning questions.
 alwaysApply: false
 ---
 
@@ -7,7 +7,7 @@ alwaysApply: false
 
 Use this skill only when the user provides a `BELMONT_PLAN_PACKET` produced by a Codex plan-mode Belmont planning session.
 
-This is a Codex compatibility adapter. Other agents that can ask structured questions and write files in the same session should keep using `product-plan` and `tech-plan` directly.
+This is a Codex compatibility adapter. Other agents that can ask structured questions and write files in the same session should keep using `product-plan`, `ux-design` and `tech-plan` directly.
 
 ## Purpose
 
@@ -16,8 +16,8 @@ Codex plan mode provides keyboard-navigable structured questions, but may not be
 ## Rules
 
 1. Do NOT ask product or technical planning questions.
-2. Do NOT infer missing PRD, PROGRESS, TECH_PLAN, or models.yaml content.
-3. Do NOT edit source code. **This prohibition is about project source, not file extension.** A planning artifact under `.belmont/` is in scope even when its extension looks like code — specifically `{base}/design-preview.html`, the self-contained review page for a Design Contract. Apply it like any other packet file. What remains forbidden is writing to the project's own `.tsx`/`.ts`/`.css`/etc. files, at any path outside `.belmont/`.
+2. Do NOT infer missing PRD, PROGRESS, TECH_PLAN, UX_DESIGN, or models.yaml content.
+3. Do NOT edit source code. **This prohibition is about project source, not file extension.** A planning artifact under `.belmont/` is in scope even when its extension looks like code — specifically `{base}/design-preview.html` and `{base}/ux-flows.html`, the self-contained review pages for the design authority in `{base}/UX_DESIGN.md`. Apply them like any other packet file. What remains forbidden is writing to the project's own `.tsx`/`.ts`/`.css`/etc. files, at any path outside `.belmont/`.
 4. Only write files under `.belmont/`.
 5. Only write, create, or update files explicitly listed in the packet.
 6. Preserve existing content unless the packet explicitly says a file should be replaced.
@@ -30,7 +30,7 @@ The packet is plain Markdown in a fenced block:
 
 ````markdown
 ```BELMONT_PLAN_PACKET
-kind: product-plan | tech-plan
+kind: product-plan | ux-design | tech-plan
 mode: create | update
 feature_slug: <slug or none>
 base_path: .belmont/features/<slug> | .belmont
@@ -47,7 +47,7 @@ files:
 
 post_apply:
   commit_message: belmont: update planning files after product planning
-  next_prompt: /plan $belmont:tech-plan <feature>
+  next_prompt: /plan $belmont:ux-design <feature>
 ```
 ````
 

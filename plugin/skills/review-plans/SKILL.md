@@ -49,8 +49,10 @@ Read all `.belmont/` files and build an inventory:
 6. For each feature directory, read:
    - `PRD.md` (feature requirements + tasks)
    - `TECH_PLAN.md` (feature technical plan)
+   - `UX_DESIGN.md` (design authority, if it exists — read-only here, see below)
    - `PROGRESS.md` (milestones + task tracking)
    - `NOTES.md` (if it exists)
+   - `design-preview.html` and `ux-flows.html` — note existence only, do not read or edit them
 
 If no features exist (no subdirectories under `.belmont/features/`), tell the user:
 
@@ -69,8 +71,8 @@ Loading planning documents...
   Master PRD:       Found (X features listed) / Not found
   Master Tech Plan: Found / Not found
   Features:         X directories found
-    - <slug>: PRD OK  Tech Plan OK  Progress OK  Notes OK
-    - <slug>: PRD OK  Tech Plan --  Progress OK  Notes --
+    - <slug>: PRD OK  Tech Plan OK  UX Design OK  Progress OK  Notes OK
+    - <slug>: PRD OK  Tech Plan --  UX Design --  Progress OK  Notes --
     ...
 ```
 
@@ -210,15 +212,15 @@ Present each finding with:
 2. Add to notes as discovery — append to NOTES.md
 3. Skip
 
-### `## Design Contract` is READ-ONLY
+### `UX_DESIGN.md` is READ-ONLY
 
-A feature TECH_PLAN's `## Design Contract` section carries an approval stamp from the `/belmont:tech-plan` session where a human reviewed it. This skill's per-finding flow does not renew that approval, so it must never rewrite the section.
+`{base}/UX_DESIGN.md` is the feature's design authority: it carries an `**Approval**` stamp from the `/belmont:ux-design` session where a human reviewed it. This skill's per-finding flow does not renew that approval, so it must never rewrite that file, `.belmont/UX_DESIGN.md`, or the `design-preview.html` / `ux-flows.html` artifacts beside them.
 
-- **Never** offer "update plan to match reality", "rewrite both", or any other option that edits `## Design Contract`. Drop those options for findings that touch it.
-- **Do** report the finding — a contract that has drifted from the code is worth knowing about. Emit it as a finding whose only resolution options are *Create follow-up task to realign the code*, *Add note as intentional deviation*, and *Skip*.
-- If the contract itself is genuinely wrong, the fix is to re-run `/belmont:tech-plan --feature <slug>` so the user re-approves it. Say that in the finding.
+- **Never** offer "update plan to match reality", "rewrite both", or any other option that edits `UX_DESIGN.md` or either HTML artifact. Drop those options for findings that touch them.
+- **Do** report the finding — a design authority that has drifted from the code is worth knowing about. Emit it as a finding whose only resolution options are *Create follow-up task to realign the code*, *Add note as intentional deviation*, and *Skip*.
+- If the design authority itself is genuinely wrong, the fix is to re-run `/belmont:ux-design --feature <slug>` so the user re-approves it. Say that in the finding.
 
-The rest of `TECH_PLAN.md` is editable as normal.
+`TECH_PLAN.md` is editable as normal.
 
 ### When Updating Documents
 
@@ -239,6 +241,7 @@ After all findings are resolved (or skipped), output a summary:
 - Master Tech Plan: [yes/no/not found]
 - Feature PRDs: [X/Y reviewed]
 - Feature Tech Plans: [X/Y reviewed]
+- Feature UX Designs: [X/Y reviewed, read-only]
 
 ## Findings
 - Gaps: X found, Y resolved
@@ -269,6 +272,7 @@ If actions were taken, suggest relevant follow-ups:
 ```
 Suggested next steps:
 - /belmont:product-plan to update PRDs with new scope
+- /belmont:ux-design to re-approve a feature's design authority
 - /belmont:tech-plan to update tech plans
 - /belmont:implement to address follow-up tasks
 - /belmont:next to quickly fix individual review tasks

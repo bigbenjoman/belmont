@@ -27,7 +27,7 @@ tiers:
 
 - **`tiers`** *(map of agent → tier)* — the core config. Each agent gets one of `low`, `medium`, or `high`. Unknown agents are ignored; missing agents inherit the session model (Belmont agent files pin no model). Recognized agents:
   - `codebase` — exploration / pattern scanning
-  - `design` — Figma extraction and token mapping where a design exists; **deriving per-task specs against the feature's Design Contract** where the feature has a UI but no Figma. The second mode is real design work, not a null pass — do not read "no Figma" as "no design agent"
+  - `design` — Figma extraction and token mapping where a design exists; **deriving per-task specs against the Design Contract in `{base}/UX_DESIGN.md`** where the feature has a UI but no Figma. The second mode is real design work, not a null pass — do not read "no Figma" as "no design agent"
   - `implementation` — code generation, acceptance validation
   - `verification` — test runs, visual diff, acceptance checking
   - `code-review` — diff review, lint / pattern validation
@@ -59,10 +59,10 @@ When assigning tiers, optimize **end-to-end cost, not per-token price**. A faile
 These are **illustrative heuristics only** — the planning model is expected to reason about the specific feature at hand, not pattern-match to a profile label.
 
 - **frontend-heavy** (rich interactive UI, lots of visual/Figma work): design=high, implementation=high, verification=high, codebase=high, code-review=medium, reconciliation=high.
-- **backend-heavy** (APIs, data-layer, migrations): design=low **only when the feature genuinely has no user interface** — check the TECH_PLAN's `## Design Contract` `**Mode**`, and if it reads `derived — UI, no Figma` this is not a backend-heavy feature for design purposes. implementation=high, verification=high (a false pass costs a full debug loop later), codebase=high, code-review=medium, reconciliation=high.
+- **backend-heavy** (APIs, data-layer, migrations): design=low **only when the feature genuinely has no user interface** — check the `**Mode**` line in `{base}/UX_DESIGN.md`, and if it reads `derived — UI, no Figma` this is not a backend-heavy feature for design purposes. implementation=high, verification=high (a false pass costs a full debug loop later), codebase=high, code-review=medium, reconciliation=high.
 - **infra** (config, CI, deployment, pipelines): implementation=high (config errors ship silently and surface as outages, not test failures), verification=high, codebase=medium, design=low, code-review=medium, reconciliation=high.
 
-> **Never set `design=low` because a feature has no Figma.** "No Figma" and "no UI" are different states. A feature whose contract `**Mode**` is `derived — UI, no Figma` gives the design agent a full derivation job — reading the contract, picking values off declared scales, enumerating every component state — and gives verification an objective standard to measure. `design=low` there produces exactly the sloppy per-task specs the contract exists to prevent. `design=low` is right only for `**Mode**: N/A — no UI`.
+> **Never set `design=low` because a feature has no Figma.** "No Figma" and "no UI" are different states. A feature whose `{base}/UX_DESIGN.md` records `**Mode**: derived — UI, no Figma` gives the design agent a full derivation job — reading the contract, picking values off declared scales, enumerating every component state — and gives verification an objective standard to measure. `design=low` there produces exactly the sloppy per-task specs the contract exists to prevent. `design=low` is right only for `**Mode**: N/A — no UI`.
 - **docs** (content-only changes, README refreshes, ADRs): everything low, reconciliation=medium.
 - **refactor** (no behavior change, lots of code movement): implementation=high (reasoning about preservation), verification=high, reconciliation=high (merge conflicts likely).
 - **research** (exploration, prototyping): codebase=high (pattern inference), implementation=low (throwaway code), verification=low.

@@ -43,7 +43,27 @@ Other:        Load skills/belmont/product-plan.md as context
 
 It is strongly recommended you read the PRD created yourself. You can manually make edits before tech plan/implementation or you can run `belmont:product-plan` again and tell it what to refine.
 
-## 3. Tech Plan (recommended)
+## 3. UX Design (recommended before the tech plan)
+
+Derive the feature's design authority before any technical decision is taken. This is the step that gives a UI feature with no Figma something for verification to measure against.
+
+```
+Claude Code:  /belmont:ux-design
+Cursor:       Enable the belmont ux-design rule, then: "Let's design the UX for this feature"
+Other:        Load .agents/skills/belmont/ux-design/SKILL.md as context
+```
+
+**What happens:**
+- AI reads the PRD — flows, copy, edge cases and design intent are already settled there and are rendered, never re-elicited
+- **If the feature has a UI and no Figma URLs anywhere in its PRD**, the AI walks a derivation ladder (master `.belmont/UX_DESIGN.md` → sibling contract → Storybook → `tailwind.config.*` / CSS custom properties / `components.json` → baseline defaults), asks only what no rung supplies, and presents a **Design Contract** for approval: design tokens, an accessibility floor, UX strategy, a state inventory per interactive surface, microcopy rules, and a motion contract
+- On approval it writes `.belmont/features/<slug>/UX_DESIGN.md`, plus two self-contained review pages beside it — `design-preview.html` (tokens, contrast, states) and `ux-flows.html` (screens, real microcopy, a diagram per flow)
+- The file is written for **every** feature the skill runs against. Features with Figma URLs record `**Mode**: N/A — Figma present`; features with no UI record `**Mode**: N/A — no UI`. Only `derived — UI, no Figma` is a contract, and `**Mode**` — never the file existing — is what downstream agents read
+- On a project's first UI feature it also writes the master `.belmont/UX_DESIGN.md` (Token Contract + Accessibility Floor only), so later features inherit one scale
+- **Interactive only.** `belmont auto` never invokes it — a contract is an approval artifact and there is nobody to approve it in a headless run. Run non-interactively, the skill writes nothing and says so
+- **Only `/belmont:ux-design` writes these files.** Tech-plan, implement, verify, next, debug and `review-plans` read them and never write them; inside an auto run, a phase that edits either file has the change reverted by the CLI and the next phase told why
+- **It is not retroactive.** A feature planned before contracts existed keeps its existing acceptance-criteria verification — applying a new quality standard to an already-approved plan would fail milestones on a bar their author never agreed to. To adopt it, run `/belmont:ux-design --feature <slug>`. If that feature carries a `## Design Contract` in its `TECH_PLAN.md` from an older Belmont, the skill offers to move it across verbatim, approval stamp untouched, and delete the old section — never two contracts
+
+## 4. Tech Plan (recommended)
 
 Have a senior architect agent review the PRD and produce a detailed technical plan. This step is optional but strongly recommended -- it produces the TECH_PLAN.md that guides the implementation agents.
 
@@ -58,14 +78,13 @@ Other:        Load skills/belmont/tech-plan.md as context
 **What happens:**
 - AI reads the PRD and explores the codebase
 - Interactive discussion about architecture, patterns, edge cases
-- **If the feature has a UI and no Figma URLs anywhere in its PRD**, the AI derives a **Design Contract** (Phase 3.5) and presents it to you for approval: design tokens, an accessibility floor, UX strategy, a component state inventory, microcopy rules, and a motion contract. On approval it is written into the feature's `TECH_PLAN.md` under `## Design Contract`, alongside a self-contained `design-preview.html` you can open to review it. Downstream agents implement against it and verification measures the running UI against it.
-  - Features with Figma URLs record `**Mode**: N/A — Figma present` and keep today's Figma-driven behaviour. Features with no UI record `**Mode**: N/A — no UI`. Only `derived — UI, no Figma` is a contract.
-  - **The gate is not retroactive.** A feature planned before contracts existed has no `## Design Contract` and keeps its existing acceptance-criteria verification — applying a new quality standard to an already-approved plan would fail milestones on a bar their author never agreed to. To adopt it, re-run `/belmont:tech-plan --feature <slug>` and approve the contract.
-  - **Only `/belmont:tech-plan` writes that section.** Implement, verify, next and debug read it and never write it; `review-plans` treats it as read-only. Under `belmont auto`, a headless replan preserves an existing contract verbatim and never creates one.
+- **Where the PRD carries Figma URLs**, the AI loads the designs and records the extracted values in the feature's `TECH_PLAN.md` under `## Design Tokens (from Figma)`. Figma extraction lives here, not in the UX design step.
+- **`{base}/UX_DESIGN.md` is read-only for this skill**, in every mode. Token values, the accessibility floor, the state inventory and the motion bands are fixed there; the tech plan decides only how to express them — theme layer, CSS variable naming, animation library. A technical constraint that contradicts the contract is reported, and you re-run `/belmont:ux-design` to change it.
+  - If the feature has visible UI and no `UX_DESIGN.md`, the AI says so and offers to stop so you can run `/belmont:ux-design` first. Advisory, never blocking — and it never derives a contract itself, in interactive or headless mode.
 - AI writes `.belmont/TECH_PLAN.md` with file structures, component specs, API types
 - AI assesses per-agent effort (codebase / design / implementation / verification / code-review / reconciliation) and proposes **model tiers** — `low` / `medium` / `high` per agent. You confirm or adjust; the choice is written to `.belmont/features/<slug>/models.yaml`. If you accept Belmont defaults, no file is written and each agent inherits the session model (auto mode forces the high tier only for planning and reconciliation). See `skills/belmont/references/models-yaml-format.md` for the schema and tier → model mapping per CLI.
 
-## 4. Implement
+## 5. Implement
 
 Run the implementation pipeline. The AI finds the next incomplete milestone and works through each task using the 4-phase agent pipeline.
 
@@ -78,7 +97,7 @@ Other:        Load skills/belmont/implement.md as context
 **What happens:**
 1. Orchestrator creates `.belmont/MILESTONE.md` with task list, PRD context, and TECH_PLAN context
 2. `codebase-agent` reads MILESTONE, scans codebase, writes patterns to MILESTONE *(parallel with 3)*
-3. `design-agent` reads MILESTONE and derives design specs — from Figma where it exists, otherwise against the feature's Design Contract — and writes them to MILESTONE *(parallel with 2)*
+3. `design-agent` reads MILESTONE and derives design specs — from Figma where it exists, otherwise against the feature's Design Contract in `{base}/UX_DESIGN.md` — and writes them to MILESTONE *(parallel with 2)*
 4. `implementation-agent` reads MILESTONE (only), writes code, tests, verification, commits
 5. PROGRESS.md task states are updated, follow-up tasks added as plain `[ ]` entries
 6. MILESTONE file is archived (`MILESTONE-M2.done.md`)
@@ -88,7 +107,7 @@ Other:        Load skills/belmont/implement.md as context
 - MILESTONE file is archived
 - Summary is reported
 
-## 5. Quick Fix (optional)
+## 6. Quick Fix (optional)
 
 If verification created follow-up tasks or there's a small task to knock out, use `next` to implement just one task without the full pipeline overhead.
 
@@ -106,7 +125,7 @@ Other:        Load skills/belmont/next.md as context
 - MILESTONE file is archived
 - Reports a brief summary
 
-## 6. Verify
+## 7. Verify
 
 Run comprehensive verification on all completed work.
 
@@ -122,7 +141,7 @@ Other:        Load skills/belmont/verify.md as context
 - Issues become follow-up tasks (plain `[ ]` entries) in PROGRESS.md
 - Combined report is produced
 
-## 7. Review Alignment (recommended periodically)
+## 8. Review Alignment (recommended periodically)
 
 After implementing milestones or making significant changes, review the alignment between your plans and the codebase.
 
@@ -142,7 +161,7 @@ Other:        Load skills/belmont/review-plans.md as context
   - Skip
 - Produces a summary of all findings and actions taken
 
-## 8. Check Progress
+## 9. Check Progress
 
 Check where things stand at any point.
 
@@ -152,7 +171,7 @@ Cursor:       Enable the belmont status rule, then: "Show belmont status"
 Other:        Load skills/belmont/status.md as context
 ```
 
-## 9. Iterate
+## 10. Iterate
 
 After implementing a milestone:
 - Run `/belmont:verify` to catch issues
@@ -163,11 +182,11 @@ After implementing a milestone:
 - Run `/belmont:status` to check progress
 - Continue until all milestones are complete
 
-### 9a. Fixing spec drift (the bug is in the docs)
+### 10a. Fixing spec drift (the bug is in the docs)
 
-If a bug exists because the PRD, TECH_PLAN, or NOTES drifted from shipped reality — acceptance criteria don't match behaviour, a TECH_PLAN decision was abandoned mid-implementation, or the docs describe an old approach — use `/belmont:debug-manual` (or `/belmont:debug` and choose "manual"). It loads the full Belmont context (master PR_FAQ + master/feature PRD + TECH_PLAN + NOTES + latest shipped MILESTONE) up front, then after the fix is confirmed walks the specs and offers diffs to correct drift in place. Code edits and spec edits land in one atomic commit so `git log` tells the complete story. Supports multi-feature debugging (bugs that span two or more features). Interactive only; never invoked from `belmont auto`. See [skills-reference.md#debug-manual](skills-reference.md) for the full behaviour.
+If a bug exists because the PRD, TECH_PLAN, or NOTES drifted from shipped reality — acceptance criteria don't match behaviour, a TECH_PLAN decision was abandoned mid-implementation, or the docs describe an old approach — use `/belmont:debug-manual` (or `/belmont:debug` and choose "manual"). It loads the full Belmont context (master PR_FAQ + master/feature PRD + UX_DESIGN + TECH_PLAN + NOTES + latest shipped MILESTONE) up front, then after the fix is confirmed walks the specs and offers diffs to correct drift in place. `UX_DESIGN.md` is context only — design drift is surfaced to you and fixed by re-running `/belmont:ux-design`, never edited in place. Code edits and spec edits land in one atomic commit so `git log` tells the complete story. Supports multi-feature debugging (bugs that span two or more features). Interactive only; never invoked from `belmont auto`. See [skills-reference.md#debug-manual](skills-reference.md) for the full behaviour.
 
-## 9b. Steering an auto run mid-flight
+## 10b. Steering an auto run mid-flight
 
 When `belmont auto` is running and you want to hand the agent a new piece
 of context — a fix direction, a "don't keep retrying this" guard, a
@@ -197,7 +216,7 @@ Steering only works while an auto run is active (i.e. `.belmont/auto.json`
 is present). Manual skill sessions are steered by typing directly into
 the terminal — no sidecar needed.
 
-## 10. Cleanup
+## 11. Cleanup
 
 When your project has accumulated completed features and stale state:
 
@@ -214,7 +233,7 @@ Other:        Load skills/belmont/cleanup.md as context
 - Audits CLAUDE.md and AGENTS.md for stale file paths and outdated conventions
 - Checks tool directories for stale copies or broken symlinks
 
-## 11. Start Fresh
+## 12. Start Fresh
 
 When you're done with a feature and want to plan something new:
 
@@ -228,5 +247,5 @@ Other:        Load skills/belmont/reset.md as context
 - Agent reads current state and shows what will be cleared (feature name, tasks, milestones)
 - Asks for explicit "yes" confirmation
 - Resets PRD.md and PROGRESS.md to blank templates
-- Deletes TECH_PLAN.md
+- Deletes TECH_PLAN.md, UX_DESIGN.md, `design-preview.html` and `ux-flows.html`
 - Prompts you to start fresh with `/belmont:product-plan`

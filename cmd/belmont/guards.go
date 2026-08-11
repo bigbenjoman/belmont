@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -264,6 +265,164 @@ func runEvidenceCheck(cfg loopConfig, action loopAction, pre *progressSnapshot) 
 	_ = amend.Run()
 	logEvidenceRevert(cfg.Feature, action.MilestoneID, missing)
 	injectEvidenceSteering(cfg, action, missing)
+}
+
+// designAuthorityFile is one protected path plus the bytes it held before the
+// agent ran.
+//
+// Present is not decoration: it separates "the file did not exist" from "it
+// existed and was empty". A file missing before and still missing after is not
+// a change and must not be reported; a file created where none existed IS a
+// change, and the revert for it is a delete, not a write.
+type designAuthorityFile struct {
+	Rel     string // repo-relative, for logs and steering text
+	Path    string
+	Present bool
+	Content []byte
+}
+
+// designAuthoritySnapshot is the pre-shell-out state of every design-authority
+// file a phase could reach.
+type designAuthoritySnapshot struct {
+	Files []designAuthorityFile
+}
+
+// designAuthorityChange is one reverted write, in the vocabulary the steering
+// entry uses to tell the next phase what its predecessor did.
+type designAuthorityChange struct {
+	Path string // repo-relative
+	Kind string // "created" | "modified" | "deleted"
+}
+
+// snapshotDesignAuthority records {base}/UX_DESIGN.md and .belmont/UX_DESIGN.md
+// before the agent runs. Returns nil when there is nothing to protect, which
+// the caller treats as "no baseline, skip guard" — the same contract
+// snapshotProgress has.
+func snapshotDesignAuthority(root, feature string) *designAuthoritySnapshot {
+	if root == "" {
+		return nil
+	}
+	rels := [][]string{}
+	if feature != "" {
+		rels = append(rels, []string{".belmont", "features", feature, "UX_DESIGN.md"})
+	}
+	rels = append(rels, []string{".belmont", "UX_DESIGN.md"})
+
+	snap := &designAuthoritySnapshot{}
+	for _, parts := range rels {
+		f := designAuthorityFile{
+			Rel:  strings.Join(parts, "/"),
+			Path: filepath.Join(append([]string{root}, parts...)...),
+		}
+		data, err := os.ReadFile(f.Path)
+		switch {
+		case err == nil:
+			f.Present = true
+			f.Content = data
+		case os.IsNotExist(err):
+			// Recorded as absent — that is a real baseline, not a failure.
+		default:
+			// Unreadable for some other reason. There is no baseline for this
+			// file, and "restoring" bytes we never held would destroy content.
+			// Skip it.
+			continue
+		}
+		snap.Files = append(snap.Files, f)
+	}
+	if len(snap.Files) == 0 {
+		return nil
+	}
+	return snap
+}
+
+// runDesignAuthorityGuard restores the design authority if an agent phase wrote
+// to it, then amends the agent's commit and steers the next phase — the same
+// revert/amend/steer shape runScopeGuard and runEvidenceCheck use.
+//
+// Unconditional, with no per-action exception table: `/belmont:ux-design` is the
+// only writer of UX_DESIGN.md, it is interactive-only and has no auto action
+// constant, so NO auto phase legitimately writes these files. Any change seen
+// here is an agent editing a human-approved authority, whichever phase it was.
+//
+// Running here rather than on the merge path is deliberate — it catches the edit
+// inside the worktree, before syncFeatureStateAfterMerge copies the feature dir
+// over master's, and it covers the `belmont recover` route, which never calls
+// that function at all. See knowledge/cross-cutting/design-authority.md.
+func runDesignAuthorityGuard(cfg loopConfig, action loopAction, pre *designAuthoritySnapshot) {
+	if pre == nil {
+		return
+	}
+	var reverted []designAuthorityChange
+	for _, f := range pre.Files {
+		data, err := os.ReadFile(f.Path)
+		exists := err == nil
+		if err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "\033[33m⚠ design-authority guard skipped %s: %s\033[0m\n", f.Rel, err)
+			continue
+		}
+		switch {
+		case !f.Present && !exists:
+			continue // absent before, absent after — nothing happened
+		case f.Present && exists && bytes.Equal(f.Content, data):
+			continue // untouched
+		}
+		kind := "modified"
+		switch {
+		case !f.Present:
+			kind = "created"
+		case !exists:
+			kind = "deleted"
+		}
+		if err := restoreDesignAuthority(f); err != nil {
+			fmt.Fprintf(os.Stderr, "\033[33m⚠ design-authority guard restore failed for %s: %s\033[0m\n", f.Rel, err)
+			continue
+		}
+		reverted = append(reverted, designAuthorityChange{Path: f.Rel, Kind: kind})
+	}
+	if len(reverted) == 0 {
+		return
+	}
+	// Amend the agent's last commit to include our revert (best-effort).
+	// If there's no agent commit, this no-ops harmlessly.
+	amend := exec.Command("git", "commit", "-a", "--amend", "--no-edit")
+	amend.Dir = cfg.Root
+	_ = amend.Run()
+
+	logDesignAuthorityRevert(cfg.Feature, action.MilestoneID, reverted)
+	injectDesignAuthoritySteering(cfg, action, reverted)
+}
+
+// restoreDesignAuthority puts one file back the way the snapshot found it:
+// rewritten from the snapshot bytes when it existed, deleted when it did not.
+func restoreDesignAuthority(f designAuthorityFile) error {
+	if !f.Present {
+		if err := os.Remove(f.Path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(f.Path), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(f.Path, f.Content, 0644)
+}
+
+// logDesignAuthorityRevert prints one line per revert batch to stderr.
+func logDesignAuthorityRevert(feature, milestoneID string, changes []designAuthorityChange) {
+	prefix := ""
+	if feature != "" {
+		if milestoneID != "" {
+			prefix = fmt.Sprintf("\033[36m[%s][%s]\033[0m: ", feature, milestoneID)
+		} else {
+			prefix = fmt.Sprintf("\033[36m[%s]\033[0m: ", feature)
+		}
+	}
+	var parts []string
+	for _, c := range changes {
+		parts = append(parts, fmt.Sprintf("%s (%s)", c.Path, c.Kind))
+	}
+	fmt.Fprintf(os.Stderr, "%s\033[33m[DESIGN-GUARD]\033[0m restored %d design authority file(s) — %s\n",
+		prefix, len(changes), strings.Join(parts, ", "))
 }
 
 // detectOrphanViolations flags task-shaped lines that sit outside any

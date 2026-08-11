@@ -4,12 +4,12 @@ Write to `{base}/TECH_PLAN.md` with this structure.
 
 > **Related output**: per-feature model tiers live in a separate file, `{base}/models.yaml`. The tech-plan skill writes it after Phase 4.6 (Model Tier Assignment). See `references/models-yaml-format.md` for the schema and tier semantics.
 
-> **CRITICAL — `## Design Contract` is not yours to regenerate.** This is a
-> whole-file template, so writing it naively destroys an approved contract.
-> Reproduce any existing `## Design Contract` section **byte-for-byte**,
-> including its `**Approval**` line, unless Phase 3.5 derived and the user
-> approved a new one in this session. See the tech-plan skill's Phase 3.5 for
-> the full rule and its headless clause.
+> **CRITICAL — the Design Contract does not live here.** It lives in
+> `{base}/UX_DESIGN.md`, written and owned by `/belmont:ux-design`. This
+> template carries no `## Design Contract` section, and `/belmont:tech-plan`
+> never creates one — not in this file, not in `.belmont/TECH_PLAN.md`, not in
+> any mode. Read the design authority, plan within it, and report conflicts
+> rather than editing it.
 
 ```markdown
 # Technical Plan: [Feature Name]
@@ -48,62 +48,18 @@ src/
 
 ---
 
-## Design Contract
-**Mode**: [derived — UI, no Figma | N/A — no UI | N/A — Figma present]
-**Source**: [storybook (<url>) | storybook (local) | tailwind.config.ts | globals.css |
-             components.json | master TECH_PLAN | sibling feature <slug> |
-             none — established here. Name EVERY rung you took content from, one
-             per family where they differ — a story index gives components and
-             states but no tokens, so that case reads
-             `storybook (<url>) — components & states; tailwind.config.ts — tokens`]
-**Authorities**: baseline[; ui-designer (tokens); ux-designer (strategy, states); ux-copywriter (microcopy);
-             ux-motion (motion); frontend-design:frontend-design (aesthetic)]
-**Approval**: [approved <ISO date> | unreviewed (headless replan <ISO date>)]
-
-### Token Contract
-Spacing — 8pt grid: 4, 8, 12, 16, 24, 32, 48, 64, 96. Internal ≤ external on every component.
-Typography — ratio [1.25], sizes [list], line-height 1.4–1.6 body / 1.1–1.3 heading. Max 4 sizes.
-Colour — 60/30/10. Max 3 hues + neutrals. Never pure #000/#FFF. Body ≥ 4.5:1.
-  Each semantic (success/error/warning/info) declares bg, border, text, icon.
-Radius — committed value [8px]. Nested children strictly smaller than parent.
-Elevation — [levels]. Interactive elements rise one level on hover.
-
-### Accessibility Floor
-Targets ≥ 44×44px (SC 2.5.5, AAA — adopted as Belmont's floor) · contrast ≥ 4.5:1 text / 3:1 large
-(SC 1.4.3, AA) · visible focus on every interactive element (SC 2.4.7, AA) · every input has a visible
-label, never placeholder-only · `prefers-reduced-motion` respected (SC 2.3.3, AAA) · no meaning by
-colour alone.
-
-### UX Strategy
-User · emotional state on arrival · hero element · primary action · biggest UX risk. Five lines.
-
-### State Inventory
-Per interactive component: default · hover · focus · active · disabled · loading · empty · error,
-plus any gesture or transition state the interaction introduces (drag, swipe, long-press, optimistic
-update). Components the feature only consumes get no entry. Omissions carry a reason.
-
-### Microcopy Rules
-Buttons: verb matching the outcome, never "Submit". Errors: what happened / why / what next, never
-blame or jokes. Empty states: what appears here, why it's empty, the action to fill it.
-Destructive confirmations: name what is destroyed. Possessive framing for user-owned objects.
-
-### Design Tokens (from Figma)
-[Only when **Mode** is `N/A — Figma present`. The exact values extracted from Figma in
-Phase 1 — colours, spacing, typography, radius, effects. Omit this subheading entirely in
-the other two modes.]
-
-### Motion Contract
-**Applies**: [yes | N/A — no motion in this feature]
-Duration bands — instant feedback ≤ 100ms · state change 150–200ms · context shift 250–300ms ·
-page transition 300–400ms. Above 400ms must justify itself.
-Easing — one documented curve per class (enter / exit / move). Bounce and overshoot are opt-in per
-product voice, never a default.
-Performance — animate `transform` and `opacity` only. Animating layout properties is a defect.
-Reduced motion — `prefers-reduced-motion: reduce` removes movement, never functionality.
+## Design Tokens (from Figma)
+[Write this section **only when a PRD task carries a Figma URL**. The exact values extracted
+from Figma in Phase 1 — colours, spacing, typography, radius, effects. **Do not drop them**:
+this is where a Figma feature's exact values live, and downstream agents read them from here.
+Omit the heading entirely when there are no Figma URLs — `{base}/UX_DESIGN.md` is the design
+authority in that case.]
 
 ---
 
 ## Component Specifications
+[Every surface in `{base}/UX_DESIGN.md`'s State Inventory maps to at least one entry here, naming
+the states that entry must render. Never add, remove or rename a surface.]
 ### ComponentA.tsx
 **PRD Tasks**: P1-1, P1-2
 **Figma Node**: [node-id if applicable]
@@ -128,6 +84,9 @@ Reduced motion — `prefers-reduced-motion: reduce` removes movement, never func
 ---
 
 ## Existing Components to Reuse
+[This table stays in TECH_PLAN.md — `Location` is a file path, which is technical. Fill it from
+`{base}/UX_DESIGN.md`'s `## Screens` table: the design authority names the surfaces, this table
+names the files that render them.]
 | Component | Location | Usage |
 |-----------|----------|-------|
 
@@ -140,6 +99,7 @@ Reduced motion — `prefers-reduced-motion: reduce` removes movement, never func
 
 ## Verification Checklist
 ### Per-Component Checks
+`**Mode**` is read from `{base}/UX_DESIGN.md`'s `## Design Contract` header, not from this file.
 - [ ] **If `**Mode**` is `N/A — Figma present`**: matches Figma design pixel-perfect
 - [ ] **If `**Mode**` is `derived — UI, no Figma`**: spacing, type sizes, colours, radius and
       elevation all on the declared scales; contrast and touch targets meet the Accessibility

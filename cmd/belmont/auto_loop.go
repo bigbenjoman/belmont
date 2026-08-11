@@ -229,6 +229,12 @@ func executeLoopAction(action loopAction, cfg loopConfig) executionResult {
 	// uses this baseline to revert out-of-scope milestone structure changes.
 	preSnap := snapshotProgress(cfg.Root, cfg.Feature)
 
+	// Snapshot the design authority too. No auto action writes UX_DESIGN.md —
+	// `/belmont:ux-design` is interactive-only — so the post-phase guard is
+	// unconditional and any difference it finds is an agent overwriting a
+	// human-approved document.
+	preDesign := snapshotDesignAuthority(cfg.Root, cfg.Feature)
+
 	// Consume any pending user steering for this milestone. Runs before any
 	// shell-out so a single injection maps to one agent run — the auto loop
 	// re-enters the same milestone across phases and we don't want the same
@@ -243,6 +249,7 @@ func executeLoopAction(action loopAction, cfg loopConfig) executionResult {
 		result := executeTriageAction(cfg, steeringBlock)
 		runScopeGuard(cfg, action, preSnap)
 		runEvidenceCheck(cfg, action, preSnap)
+		runDesignAuthorityGuard(cfg, action, preDesign)
 		return result
 	}
 
@@ -337,6 +344,7 @@ func executeLoopAction(action loopAction, cfg loopConfig) executionResult {
 	if err != nil {
 		runScopeGuard(cfg, action, preSnap)
 		runEvidenceCheck(cfg, action, preSnap)
+		runDesignAuthorityGuard(cfg, action, preDesign)
 		return executionResult{
 			Success:    false,
 			Output:     tw.String(),
@@ -347,6 +355,7 @@ func executeLoopAction(action loopAction, cfg loopConfig) executionResult {
 
 	runScopeGuard(cfg, action, preSnap)
 	runEvidenceCheck(cfg, action, preSnap)
+	runDesignAuthorityGuard(cfg, action, preDesign)
 	return executionResult{
 		Success:    true,
 		Output:     tw.String(),

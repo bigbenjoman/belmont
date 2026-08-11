@@ -12,7 +12,7 @@ Strong guardrails are in place to keep the agent focused and on task.
 
 **Design quality with or without Figma** -- where Figma designs exist, Belmont is built around understanding them: the design-agent extracts exact tokens (colors, typography, spacing), maps them to your design system, and produces implementation-ready component specs, and the verification-agent compares your implementation against the Figma source using headless browser screenshots. For the best experience, install [figma-mcp](https://github.com/nichochar/figma-mcp) so Belmont can load and analyze your designs automatically.
 
-Where a feature has a UI but **no** Figma, `/belmont:tech-plan` derives a **Design Contract** with you instead -- a per-feature standard covering design tokens, an accessibility floor, UX strategy, component states, microcopy and motion. It is approved once, by you, and then downstream agents implement against it and verification measures the running UI against it. Without one, a no-Figma UI feature has no design authority at all and verification silently falls back to checking acceptance criteria.
+Where a feature has a UI but **no** Figma, `/belmont:ux-design` derives a **Design Contract** with you instead -- a per-feature standard covering design tokens, an accessibility floor, UX strategy, interactive-surface states, microcopy and motion. It runs between `/belmont:product-plan` and `/belmont:tech-plan`, is approved once by you, and is written to `.belmont/features/<slug>/UX_DESIGN.md` alongside two review pages you can open in a browser. Downstream agents implement against it and verification measures the running UI against it. Without one, a no-Figma UI feature has no design authority at all and verification silently falls back to checking acceptance criteria.
 
 ---
 
@@ -49,6 +49,7 @@ Then use the skills:
 
 ```
 /belmont:product-plan
+/belmont:ux-design
 /belmont:tech-plan
 /belmont:implement
 /belmont:verify
@@ -80,29 +81,29 @@ The plugin and CLI work independently. The plugin gives you the full manual work
 Belmont breaks coding work into **phases**, each driven by a specialized agent. The user interacts through **skills** (markdown files loaded as slash commands or rules) that orchestrate these agents.
 
 ```
-┌──────────────┐     ┌─────────────┐     ┌────────────────┐     ┌─────────────────┐
-│  PR/FAQ      │ ──▶ │  Plan       │ ──▶ │  Tech Plan     │ ──▶ │  Implement      │
-│ (optional)   │     │  (PRD.md)   │     │ (TECH_PLAN.md) │     │  (MILESTONE.md) │
-└──────────────┘     └─────────────┘     └────────────────┘     └─────────────────┘
-                                                                      │
-                                           ┌──────────────────────────┤
-                                           ▼                          ▼
-                                      ┌───────────┐           ┌────────────┐
-                                      │  Verify   │           │  Status    │
-                                      │ (parallel)│           │ (read-only)│
-                                      └─────┬─────┘           └────────────┘
-                                            │
-                         ┌──────────────────┼──────────────┐
-                         ▼                  ▼              ▼
-                   ┌───────────┐     ┌───────────┐  ┌───────────┐
-                   │  Debug    │     │  Next     │  │Plan Review│
-                   │ (fix bug) │     │ (1 task)  │  │ (drift)   │
-                   └───────────┘     └───────────┘  └─────┬─────┘
-                                                          │
-                                                          ▼
-                                                   Updates PRDs,
-                                                   Tech Plans,
-                                                   PROGRESS
+┌──────────────┐     ┌─────────────┐     ┌────────────────┐     ┌────────────────┐     ┌─────────────────┐
+│  PR/FAQ      │ ──▶ │  Plan       │ ──▶ │  UX Design     │ ──▶ │  Tech Plan     │ ──▶ │  Implement      │
+│ (optional)   │     │  (PRD.md)   │     │ (UX_DESIGN.md) │     │ (TECH_PLAN.md) │     │  (MILESTONE.md) │
+└──────────────┘     └─────────────┘     └────────────────┘     └────────────────┘     └─────────────────┘
+                                                                                             │
+                                                                  ┌──────────────────────────┤
+                                                                  ▼                          ▼
+                                                             ┌───────────┐           ┌────────────┐
+                                                             │  Verify   │           │  Status    │
+                                                             │ (parallel)│           │ (read-only)│
+                                                             └─────┬─────┘           └────────────┘
+                                                                   │
+                                                ┌──────────────────┼──────────────┐
+                                                ▼                  ▼              ▼
+                                          ┌───────────┐     ┌───────────┐  ┌───────────┐
+                                          │  Debug    │     │  Next     │  │Plan Review│
+                                          │ (fix bug) │     │ (1 task)  │  │ (drift)   │
+                                          └───────────┘     └───────────┘  └─────┬─────┘
+                                                                                 │
+                                                                                 ▼
+                                                                          Updates PRDs,
+                                                                          Tech Plans,
+                                                                          PROGRESS
 ```
 
 ### MILESTONE File Architecture
@@ -207,31 +208,35 @@ Belmont has three design states, and each gets a different authority:
 | Your feature has | What happens |
 |---|---|
 | **No user interface** | The design phase is skipped entirely — no sub-agent is spawned for a backend, data, or infra milestone |
-| **UI and Figma URLs** | `design-agent` extracts exact tokens from the design; `verification-agent` compares your implementation against it |
-| **UI and no Figma** | `/belmont:tech-plan` derives a **Design Contract** with you — the design authority for the whole feature |
+| **UI and Figma URLs** | `design-agent` extracts exact tokens from the design; `verification-agent` compares your implementation against it. `/belmont:tech-plan` records the extracted values in the feature's `TECH_PLAN.md` under `## Design Tokens (from Figma)` |
+| **UI and no Figma** | `/belmont:ux-design` derives a **Design Contract** with you — the design authority for the whole feature |
 
 The third row is the one that used to fail silently. Without a design reference there is nothing for verification to check against, so it fell back to acceptance criteria — a correctness check, not a design-quality one. Nothing errored: you got a green report and a quietly mediocre UI, with inconsistent spacing, unreadable contrast, missing focus states and no empty state.
 
 ### The Design Contract
 
-During `/belmont:tech-plan`, when your feature has a UI and no Figma URLs, Belmont interviews you and derives a contract into `.belmont/features/<slug>/TECH_PLAN.md`:
+`/belmont:ux-design` runs after `/belmont:product-plan` and before `/belmont:tech-plan`. It writes `.belmont/features/<slug>/UX_DESIGN.md` for every feature it is run against, and when your feature has a UI and no Figma URLs it interviews you and derives a contract into it:
 
 | Section | What it pins down |
 |---|---|
 | **Token Contract** | Spacing scale, type scale and ratio, colour distribution, radius, elevation |
 | **Accessibility Floor** | Contrast ratios, touch targets, focus visibility, labels, reduced motion |
 | **UX Strategy** | The user, their state on arrival, hero element, primary action, biggest risk |
-| **State Inventory** | Every state each component must implement — hover, focus, loading, empty, error… |
+| **State Inventory** | Every state each interactive surface must implement — hover, focus, loading, empty, error… |
 | **Microcopy Rules** | Button verbs, error structure, empty-state copy, destructive confirmations |
 | **Motion Contract** | Duration bands, easing per class, what may be animated, reduced-motion behaviour |
 
-**You approve it once**, via a structured question, before any code is written. Belmont also writes a self-contained `design-preview.html` next to it — colour swatches with computed contrast ratios, the type ramp, the spacing scale, state rows — so you can review the contract by looking at it rather than reading it.
+`UX_DESIGN.md` also carries the feature's screens and flows, keyed to the PRD's acceptance criteria. A `**Mode**` line at the top of the file is the single machine-read signal downstream agents use: `derived — UI, no Figma` (a contract), `N/A — Figma present`, or `N/A — no UI`.
+
+**You approve it once**, via a structured question, before any code is written. Belmont also writes two self-contained review pages next to it: `design-preview.html` — colour swatches with computed contrast ratios, the type ramp, the spacing scale, state rows — and `ux-flows.html` — one panel per screen with its real microcopy in place, plus a diagram per flow. Both are plain HTML with no scripts and no external assets, so you review the design by looking at it rather than reading it.
 
 From then on the contract is the standard: `design-agent` derives per-task specs from it instead of inventing values, `implementation-agent` validates against it, and `verification-agent` **measures the running UI against it** with real mechanisms — computed styles for spacing and type, luminance maths for contrast, tab-and-assert for focus indicators, `emulateMedia` for reduced motion. A check whose tooling is unavailable is recorded `UNVERIFIABLE`, never `PASS`.
 
-**Reuse before invention.** The contract is derived by walking a ladder and stopping at the first rung that supplies values: a master or sibling feature's contract, then Storybook (read statically — never booted), then `tailwind.config.*` / CSS custom properties / `components.json`, and only then baseline defaults. Existing components are recorded as law, not redesigned, and `**Source**` names the rung it stopped at.
+**Reuse before invention.** The contract is derived by walking a ladder and stopping at the first rung that supplies values: the master `.belmont/UX_DESIGN.md` or a sibling feature's contract, then Storybook (read statically — never booted), then `tailwind.config.*` / CSS custom properties / `components.json`, and only then baseline defaults. Existing components are recorded as law, not redesigned, and `**Source**` names the rung it stopped at. On the first UI feature of a project, the Token Contract and Accessibility Floor are also written to a master `.belmont/UX_DESIGN.md` so feature 1 and feature 4 cannot mint competing scales.
 
-**It is not retroactive.** Features planned before you upgrade keep their existing verification — applying a new quality bar to an already-approved plan would fail milestones on a standard nobody agreed to. Adopt it per feature by re-running `/belmont:tech-plan --feature <slug>`.
+**One writer, everywhere else read-only.** Only `/belmont:ux-design` writes `UX_DESIGN.md`. `tech-plan`, `implement`, `verify`, `next`, `debug` and `review-plans` read it and never write it, and `belmont auto` never invokes `ux-design` at all — a contract is an approval artifact and there is nobody to approve it in a headless run. If a phase inside an auto run edits either file, the CLI restores it and tells the next phase why.
+
+**It is not retroactive.** Features planned before you upgrade keep their existing verification — applying a new quality bar to an already-approved plan would fail milestones on a standard nobody agreed to. Adopt it per feature by running `/belmont:ux-design --feature <slug>`; if the feature already carries a contract in its `TECH_PLAN.md` from an earlier Belmont version, the skill offers to move it into `UX_DESIGN.md` verbatim, approval stamp intact.
 
 ### Optional: richer contracts with the Yummy Labs design skills
 
@@ -276,6 +281,8 @@ The PR/FAQ is an optional but recommended first step in Belmont's workflow:
         ↓
 /belmont:product-plan       →  .belmont/PRD.md       (feature catalog + detailed PRDs)
         ↓
+/belmont:ux-design          →  UX_DESIGN.md          (design authority: contract, screens, flows)
+        ↓
 /belmont:tech-plan          →  .belmont/TECH_PLAN.md (master + feature implementation specs)
         ↓
 /belmont:implement          →  Code                  (agent pipeline)
@@ -299,21 +306,26 @@ For products with multiple features, Belmont supports a **sub-feature directory 
 .belmont/
   PR_FAQ.md                    ← Strategic vision (created by /belmont:working-backwards)
   PRD.md                       ← Master PRD (feature catalog)
+  UX_DESIGN.md                 ← Master design authority (token contract + accessibility floor)
   TECH_PLAN.md                 ← Master tech plan (cross-cutting architecture)
   features/
     user-authentication/
       PRD.md                   ← Feature-specific requirements + tasks
+      UX_DESIGN.md             ← Design authority: contract, screens, flows
+      design-preview.html      ← Reviewable tokens, contrast, states
+      ux-flows.html            ← Reviewable screens, microcopy, flow diagrams
       TECH_PLAN.md             ← Feature-specific technical plan
       PROGRESS.md              ← Milestones + task tracking
       MILESTONE.md             ← Active implementation context
       MILESTONE-M1.done.md     ← Archived milestones
     payment-processing/
       PRD.md
+      UX_DESIGN.md
       TECH_PLAN.md
       PROGRESS.md
 ```
 
-- **Master files** persist at the product level — the PR/FAQ, master PRD (feature catalog), and master tech plan (cross-cutting architecture)
+- **Master files** persist at the product level — the PR/FAQ, master PRD (feature catalog), master design authority (written on the first UI feature), and master tech plan (cross-cutting architecture)
 - **Feature directories** contain the detailed planning state for each feature — isolated PRDs, tech plans, progress tracking, and milestone files
 - **Skills prompt for feature selection** — when running any skill, you select or create the feature to work on
 - **Cleanup reduces bloat** — archive completed features into slim summaries, remove stale milestone files, trim notes, and audit convention files
@@ -384,6 +396,7 @@ go run ./cmd/belmont install --source . --project /tmp/test-project --no-prompt
 |---------------------|---------------------------------------------------|
 | `working-backwards` | Amazon-style PR/FAQ document creation             |
 | `product-plan`      | Interactive PRD and PROGRESS creation             |
+| `ux-design`         | Design authority: Design Contract, screens, flows (interactive only) |
 | `tech-plan`         | Technical implementation plan                     |
 | `codex-plan-apply`  | Codex-only apply step for plan-mode handoff packets |
 | `implement`         | Full milestone implementation pipeline (3 agents) |

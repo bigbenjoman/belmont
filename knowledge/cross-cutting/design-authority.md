@@ -22,42 +22,79 @@ would have been opt-out by construction. The result was a UI shipped with no
 design authority anywhere in the pipeline, and a green verify report saying so.
 
 The fix is not a better prompt for the design agent. It is **placement**: derive
-the standard once, per feature, interactively, where a human is already reviewing.
+the standard once, per feature, interactively, where a human is already reviewing
+— in a phase of its own, after `product-plan` and before `tech-plan`. See
+[`ux-design-phase.md`](ux-design-phase.md) for why that phase exists and what it
+may and may not ask.
 
 ## Invariant
 
-- **A Design Contract is derived in `/belmont:tech-plan` Phase 3.5, once per
-  feature, and only when the feature has a UI *and* no task in its PRD carries a
-  Figma URL.** Check every task regardless of `[ ]`/`[x]`/`[v]` state — this is a
-  feature-level gate, and keying it on the incomplete subset would flip it as work
-  progresses.
+- **A Design Contract is derived in `/belmont:ux-design`, once per feature, into
+  `{base}/UX_DESIGN.md`, and only when the feature has a UI *and* no task in its
+  PRD carries a Figma URL.** Check every task regardless of `[ ]`/`[x]`/`[v]`
+  state — this is a feature-level gate, and keying it on the incomplete subset
+  would flip it as work progresses.
 - **`**Mode**` is the single machine-read signal, and silence is not allowed.**
   `derived — UI, no Figma` is a contract. `N/A — no UI` and `N/A — Figma present`
-  are not, and neither is an absent section. Downstream agents must be able to
-  tell "not applicable" from "not done".
-- **Never key on the `## Design Contract` heading.** The feature template carries
-  it unconditionally, so a *Figma* feature's plan has the heading too — holding
-  the Figma tokens tech-plan extracted in-session. Discriminating on the heading
-  demands contract checks on every Figma feature, finds none, and fires the
-  fourth enforcement rule: an unconditional failure on every Figma milestone.
-- **Only the `tech-plan` skill writes the `## Design Contract` section.** The rule
-  is scoped to the **section**, not the file, because `debug-manual` legitimately
-  edits other TECH_PLAN prose under per-edit approval and `review-plans` offers
-  rewrites elsewhere. Neither may touch this section: it carries an approval stamp
-  their flows do not renew.
-- **Headless `actionReplan` preserves and never creates.** It may fill in
-  *subsections* absent from a contract that already exists, stamping
-  `**Approval**: unreviewed (headless replan <date>)`. If there is no contract at
-  all, it derives nothing.
-- **The gate is not retroactive.** A feature planned before contracts existed
-  falls to the no-contract branch and keeps its existing verification.
-- **A contract is derived ONCE. Re-running `tech-plan` must not re-derive it.**
-  The gate has a third condition — no `derived` contract already present. This
-  skill is re-run routinely (add a milestone, reconcile drift, replan), and
-  without that condition every visit re-opens the approval interview, churns the
-  four judgement sections and restamps `**Approval**` — which can put already
-  verified milestones out of compliance with a standard that moved under them.
-  Filling in *absent* subsections is fine; re-deriving needs an explicit ask.
+  are not. `UX_DESIGN.md` is written for **every** feature `ux-design` runs
+  against, in all three modes, so an absent file means *`ux-design` never ran* —
+  not "no UI". Downstream agents must be able to tell "not applicable" from
+  "not done".
+- **Never key on the `## Design Contract` heading — and never on the file
+  existing either.** Because the file is written in all three modes, both the
+  file and the heading are present on Figma features and on features with no UI
+  at all. Discriminating on either demands contract checks on every Figma
+  feature, finds none, and fires the fourth enforcement rule: an unconditional
+  failure on every Figma milestone. A separate file makes existence-keying
+  newly tempting; it is still wrong. Read `**Mode**`.
+- **Only `/belmont:ux-design` writes `{base}/UX_DESIGN.md` or
+  `.belmont/UX_DESIGN.md`.** The rule is now scoped to the **file**, not to a
+  section — strictly simpler than the version it replaces, which had to be
+  section-scoped only because other skills legitimately write elsewhere in
+  `TECH_PLAN.md`. `tech-plan`, `implement`, `verify`, `next`, `review-plans` and
+  `debug-manual` read it and never write it: it carries an approval stamp their
+  flows do not renew. `debug-auto` neither reads nor writes it — see
+  `Failure mode` for the gap that leaves. Six prose statements of the no-write
+  rule move together or contradict each other — `tech-plan.md`,
+  `review-plans.md`, `_partials/debug-scope-rules.md`,
+  `references/debug-manual-spec-reconcile.md`, `docs/workflow.md` and
+  `AGENTS.md`.
+- **Headless `actionReplan` never touches the design authority.** `actionReplan`
+  routes to `/belmont:tech-plan`, for which both `UX_DESIGN.md` paths are
+  read-only **in every mode** — never create, never edit, never reformat, never
+  restamp `**Approval**`. The old "fill in absent subsections headlessly,
+  stamping `**Approval**: unreviewed (headless replan <date>)`" affordance lost
+  its invoker when derivation moved out: nothing headless reaches `ux-design`.
+  That stamp survives only as a **legacy value** on features planned before the
+  split — preserve it byte-for-byte where you find it, and never write a new one.
+- **`/belmont:ux-design` is interactive-only and is never invoked by the auto
+  loop.** There is no `actionUxDesign`. Detecting headless, it reads nothing,
+  writes nothing, asks nothing, prints one line and terminates normally. It still
+  carries that clause despite having no auto invoker, because a user can type the
+  bare programmatic form into a `-p` session and because for Pi and opencode
+  `adaptPromptForTool` makes the skill body literally what the agent reads.
+- **The gate is not retroactive, and the ordering is advisory.** A feature planned
+  before contracts existed falls to the no-contract branch and keeps its existing
+  verification. `tech-plan` *notices* a missing `UX_DESIGN.md` on a UI feature,
+  says so, and offers to stop — it never derives or creates one. Adoption is
+  opt-in by running `/belmont:ux-design --feature <slug>`.
+- **A contract is derived ONCE. Re-running `ux-design` must not re-derive it.**
+  The gate's third condition is no `**Mode**: derived — UI, no Figma` already in
+  `{base}/UX_DESIGN.md` — **and** no `## Design Contract` left over in
+  `{base}/TECH_PLAN.md` from before the split. Without the first half, every
+  visit re-opens the approval interview, churns the judgement sections and
+  restamps `**Approval**`, which can put already verified milestones out of
+  compliance with a standard that moved under them. Without the second, every
+  migrated feature gets a second, conflicting contract. Filling in *absent*
+  subsections is fine; re-deriving needs an explicit ask.
+- **Migration is offered, never performed silently, and never mints a second
+  contract.** On finding a `## Design Contract` in `{base}/TECH_PLAN.md`,
+  `ux-design` offers exactly two options through the structured question tool:
+  **migrate** — move the section verbatim into `{base}/UX_DESIGN.md`,
+  `**Approval**` byte-for-byte intact, and delete it from `TECH_PLAN.md`; or
+  **leave it** — write nothing at all and report that consumers read
+  `UX_DESIGN.md` now, so this feature falls to the no-contract branch. Never both
+  files.
 - **Headless detection must be observable by the agent.** Belmont emits no
   auto-mode marker and `buildLoopPrompt` produces a prompt byte-identical to what
   a user types, so "under `belmont auto`" is not a condition an agent can check.
@@ -65,14 +102,26 @@ the standard once, per feature, interactively, where a human is already reviewin
   with no human prose, or no structured question tool* ⇒ non-interactive. And say
   explicitly that the general "degrade to plain-text questions" fallback in
   `user-questions.md` does **not** apply — a contract is an approval artifact and
-  there is nobody to approve it headlessly.
-- **A Figma feature's extracted tokens live under `### Design Tokens (from Figma)`
-  inside the `## Design Contract` section.** Generalising the old
-  `## Design Tokens (from Figma)` heading removed their only home; the write
-  instruction must put them back or Figma features silently lose their exact
-  values from the plan. This is also the *stated rationale* for the
-  never-key-on-the-heading rule, so dropping them falsifies the change's own
-  justification.
+  there is nobody to approve it headlessly. The paragraph lives in
+  `_partials/headless-detection.md` and is `@include`d by both `ux-design` and
+  `tech-plan`; two divergent copies of invariant-bearing wording is the failure
+  the partial exists to prevent.
+- **Figma extraction stays in `/belmont:tech-plan`, so `**Mode**` and the Figma
+  tokens live in different files.** A Figma feature's `UX_DESIGN.md` carries
+  `**Mode**: N/A — Figma present` plus the four header fields and nothing else.
+  The extracted values live in `{base}/TECH_PLAN.md` under a top-level
+  `## Design Tokens (from Figma)`, written only when Figma URLs exist, by the
+  same Phase 1 extraction tech-plan already does. The asymmetry is deliberate —
+  see `Don't re-do`. What must not happen is the tokens losing their home a
+  second time: without that section a Figma feature silently loses its exact
+  values from the plan, which is the regression the original entry was created to
+  record.
+- **The State Inventory's unit is an interactive *surface*, not a component.**
+  `ux-design` runs before the component breakdown exists, so a surface is named
+  from the PRD's flows and `UX_DESIGN.md`'s own `## Screens` table, never from a
+  file path or a React component name. `tech-plan` maps each surface to one or
+  more entries in `## Component Specifications` and may not add, remove or rename
+  one. Full reasoning in [`ux-design-phase.md`](ux-design-phase.md).
 - **No browser MCP at all is an environment gap, not an implementation defect.**
   Every row `UNVERIFIABLE`, Visual Verification INCOMPLETE, **one** Warning
   naming the missing tool — never thirteen Criticals blaming the code — and that
@@ -85,12 +134,12 @@ the standard once, per feature, interactively, where a human is already reviewin
   server, so the planning-session prohibition on build commands does not apply.
   Its `entries` give component titles (the reuse inventory) and story names
   (`Empty`, `Loading`, `Pending`, `Declined`) which **are** the State Inventory,
-  written by the team that built the component. Phase 3.5 *asks* whether one
-  exists — it is the one rung that cannot be discovered by reading the repo —
-  but **only interactively**. A headless replan may fill an absent subsection,
-  which walks the same ladder, so the ask needs its own carve-out: headless uses
-  only a URL already in the master plan, the PRD or `package.json`, and skips the
-  rung otherwise. Skip `type: "docs"` entries; they are generated, not states.
+  written by the team that built the component. `ux-design` *asks* whether one
+  exists — it is the one rung that cannot be discovered by reading the repo.
+  The ladder is now walked only interactively, because `ux-design` refuses to run
+  headlessly at all; keep the explicit interactive-only wording anyway, since it
+  is what tells the agent the ask is legitimate. Skip `type: "docs"` entries;
+  they are generated, not states.
 - **A story index supplies components and states, never tokens — so `**Source**`
   names more than one rung.** The ladder stops at the first rung supplying a
   *token family*, and `index.json` supplies none, so the walk continues to rung 2
@@ -113,27 +162,57 @@ the standard once, per feature, interactively, where a human is already reviewin
 
 ## How it's enforced
 
-Prose across three layers, plus one negative eval fixture. **There is no
-mechanical guard — see `Don't re-do`.**
+Prose across three layers, **one mechanical guard**, and one negative eval
+fixture.
 
-- **Authoring** — `_src/tech-plan.md` Phase 3.5 (gate, derivation, structured
-  approval, headless clause) and `_src/references/design-authority-baseline.md`
-  (the per-section authority ladder, the derivation order, the tier-2 rules).
-- **The write instruction** — `_src/references/tech-plan-feature-format.md` is a
-  **whole-file template**, so the preserve rule is stated *there too*, not only in
-  Phase 3.5. Without that, R4 is bypassed by construction: Phase 4 writes the
-  template and destroys the approved section on its way past.
-- **Consumption** — `design-agent.md` gains a contract mode; `implement.md`
-  Phase 2 gains a fourth run-trigger; `implementation-agent.md` validates against
-  the contract when the spec carries a `**Contract Source**` line.
+- **Authoring** — `_src/ux-design.md` (gate, migration prompt, derivation,
+  structured approval, headless refusal) and
+  `_src/references/ux-design-format.md` (the `UX_DESIGN.md` template) plus
+  `_src/references/design-authority-baseline.md` (the per-section authority
+  ladder, the derivation order, the tier-2 rules). The baseline moves into
+  `ux-design/references/` for free: `generate-skills.sh` stage 3 copies a
+  reference into the skill whose body names it, so it follows the mention.
+- **The write instruction** — nothing to preserve any more. The contract used to
+  live inside `tech-plan`'s **whole-file** feature template, so the preserve rule
+  had to be restated in `tech-plan-feature-format.md` or Phase 4 destroyed the
+  approved section on its way past. A dedicated file that only `ux-design` writes
+  removes the hazard and both copies of the warning with it.
+- **The ladder's rungs 0 and 0b** are `.belmont/UX_DESIGN.md` (master: Token
+  Contract and Accessibility Floor only) and `.belmont/features/*/UX_DESIGN.md`.
+  `worktree.go`'s `contextFiles` carries `UX_DESIGN.md` so every parallel
+  worktree receives the master authority.
+- **Consumption** — `design-agent.md` has a contract mode; `implement.md`
+  Phase 2 has a fourth run-trigger; `implementation-agent.md` validates against
+  the contract when the spec carries a `**Contract Source**` line, and falls back
+  to `UX_DESIGN.md` when that line names a `TECH_PLAN.md` with no contract in it
+  (archived `MILESTONE-*.done.md` files written before the split).
+- **The write guard** — `runDesignAuthorityGuard` in `cmd/belmont/guards.go`,
+  wired into `executeLoopAction` beside `runScopeGuard` and `runEvidenceCheck`:
+  hash `{base}/UX_DESIGN.md` and `.belmont/UX_DESIGN.md` before the agent
+  shell-out, compare after, restore on mismatch, best-effort amend the agent's
+  commit, append a `(pending)` STEERING.md entry. It is **unconditional** — no
+  auto action legitimately writes those files, because `ux-design` is not
+  auto-invocable — so it needs no per-action exception table. It runs *inside the
+  worktree*, which stops the edit before `syncFeatureStateAfterMerge` ever sees
+  it and so sidesteps the `recoverMerge` gap a merge-path guard would have had to
+  handle.
 - **The gate** — `verification-agent.md` Phase 2 is three-way (references /
   contract / neither), branch 1 runs contract checks *in addition to* comparison,
   the `:131` escape clause is narrowed to "no references **and** no `derived`
   contract", and a fourth enforcement rule fails a milestone whose required
   contract checks were not performed.
 - **Triage** — `prompts/belmont/post-verify-triage.md` lists contract a11y
-  failures as never-deferrable, so the loop cannot quietly defer them.
-- **The fixture** — `cmd/belmont/testdata/eval/ui-no-figma/`. Its `badge.css`
+  failures as never-deferrable, so the loop cannot quietly defer them. Its path
+  must track `UX_DESIGN.md`: a stale one finds no contract, and every violation
+  becomes deferrable.
+- **Ordering** — advisory prose only, in `tech-plan`'s Prerequisites, in the same
+  register as its existing "PRD is template-only" bullet. Not a lint: the gate's
+  first condition is "a page, component, layout, style, or user-facing copy
+  surface", which no Go parser can judge, and a `belmont validate` violation
+  aborts `belmont auto` at startup — one mis-flagged backend feature would stop
+  the whole run.
+- **The fixture** — `cmd/belmont/testdata/eval/ui-no-figma/`, whose contract now
+  lives in its `UX_DESIGN.md`. Its `badge.css`
   satisfies **every** acceptance criterion in its PRD while violating the contract
   (2.81:1 error text against a 4.5:1 floor; a semantic declaring a background but
   no border or text colour). That separation is deliberate: acceptance criteria
@@ -175,16 +254,33 @@ ever ran on.
   **prefix** match on purpose: it covers both reasons a section is empty
   (lightweight `/belmont:next` mode, and no design input). Matching the full
   lightweight-mode sentence silently breaks the skip path.
-- **Let a worktree phase write the section.** `syncFeatureStateAfterMerge` copies
-  the worktree's feature dir over master's after every merge, as a plain
-  filesystem copy outside git. You lose the *approval*, not the edit — the
-  worktree's version silently becomes main's. `PROGRESS.md` is the one exception
-  (#28 merges it via `mergeProgressState`); `TECH_PLAN.md`, and so the contract,
-  is still taken wholesale.
+- **Assume a separate file is safe by itself, or neuter
+  `runDesignAuthorityGuard`.** Extraction did not remove the hazard, only its
+  shape. `copyBelmontStateToWorktree` copies the whole `{base}` dir, so
+  `UX_DESIGN.md` travels into every worktree exactly like `TECH_PLAN.md` did, and
+  `syncFeatureStateAfterMerge` copies the worktree's feature dir back over
+  master's after every merge, outside git — every file but `PROGRESS.md`, which
+  #28 merges via `mergeProgressState`. You lose the *approval*, not the edit: the
+  worktree's version silently becomes main's. The guard is the only thing
+  stopping that, and it stops it at the shell-out, not at the merge.
 - **Trust `--assume-unchanged` as a write guard.** It stops the *branch* carrying
   the edit, but the merge copy is not git-aware, so the change ships anyway. It
-  also covers only files already in the index, so a new `design-preview.html` is
-  not covered at all.
+  also covers only files already in the index, so a new `design-preview.html` or
+  `ux-flows.html` is not covered at all.
+- **Assume `debug-auto` honours the contract. It does not — known gap, not fixed
+  by the extraction.** `_src/debug-auto.md` carries zero contract references, and
+  `_partials/debug-phase1-design.md` skips design analysis whenever there are no
+  Figma URLs — which is precisely the UI-no-Figma state. So an auto-loop debug
+  round on a contract feature reasons about the code with the standard invisible
+  to it, and can "fix" a symptom by moving a value off the token scale. `AGENTS.md`
+  asserted the opposite until 2026-08-11; the claim was never true. Wiring it up
+  is a behaviour change and needs its own Tier-2 eval, not a path repoint.
+- **Let `tech-plan` become a writer again** — by "just filling in" a missing
+  contract, by regenerating an artifact, or by restamping `**Approval**` after a
+  reconciliation finding. `actionReplan` sends `tech-plan` into the headless loop,
+  so any write permission it gains is a write permission the auto loop gains. A
+  Phase 4.5 contract conflict is **report-only**: name the conflicting decision
+  and tell the user to re-run `/belmont:ux-design --feature <slug>`.
 - **Let `next.md` clobber the archive.** It overwrites
   `MILESTONE-<ID>.done.md` wholesale. Without the carry-forward rule, one fix
   round replaces populated per-task design specs with `[Not populated — …]` and
@@ -199,8 +295,12 @@ ever ran on.
   state with the *most* design work to do, not the least.
 - **Store the contract in the MILESTONE file.** Rejected — `next.md` overwrites
   the archive, so the contract would not survive a fix round.
-- **A separate `DESIGN-CONTRACT-<M>.md`.** Rejected — same resume/merge profile as
-  any other worktree-local state, with an extra file to keep in sync.
+- **A separate `DESIGN-CONTRACT-<M>.md`.** Rejected — *per-milestone*, so it had
+  the same resume/merge profile as any other worktree-local state, with an extra
+  file per milestone to keep in sync. Not what `{base}/UX_DESIGN.md` is: that is
+  one durable per-feature file written by one interactive skill, and the reason it
+  is now safe to have is the guard, which a milestone-scoped file could never have
+  had (nothing knows which milestone's contract a phase may legitimately write).
 - **Relax `design-agent.md`'s `## FORBIDDEN ACTIONS`.** Rejected twice. A
   *consuming* agent needs no new write permission; MILESTONE stays its only
   writable output.
@@ -222,13 +322,46 @@ ever ran on.
   states the same published standards in its own words and credits the source.
 - **Apply the gate retroactively to existing features.** Rejected — it would fail
   milestones on a standard their author never agreed to. Adoption is opt-in by
-  re-running `/belmont:tech-plan --feature <slug>`.
-- **A mechanical guard on the merge path, in this PR.** Deferred, not rejected. It
-  would mean snapshotting the section before a wave and restoring it in
-  `syncFeatureStateAfterMerge` — a Go change on the merge path every feature
-  depends on, which does not belong in a prose-only design-quality change. Note
-  that `recoverMerge` never calls `syncFeatureStateAfterMerge` at all, so a guard
-  there would need to handle that path too.
+  running `/belmont:ux-design --feature <slug>`.
+- **Move Figma extraction into `ux-design` along with everything else.**
+  Rejected, deliberately, when the phase was split out. The tidy-looking version
+  put `### Design Tokens (from Figma)` in `UX_DESIGN.md` so one skill owned all
+  design values; the accepted version keeps extraction in `tech-plan` Phase 1
+  exactly as it was and puts the values in `{base}/TECH_PLAN.md` under a
+  top-level `## Design Tokens (from Figma)`. So `**Mode**` lives in
+  `UX_DESIGN.md` while a Figma feature's tokens live in `TECH_PLAN.md` — an
+  asymmetry worth stating plainly, because it looks like an oversight and is not.
+  The reasoning: extraction is a working MCP integration on the one path that was
+  never broken, and moving it buys nothing for the UI-no-Figma state this whole
+  entry exists for while putting a live Figma path through a rewrite. It also
+  keeps `ux-design` free of any MCP dependency, so the skill that must run on all
+  eight CLIs has no tool-permission precondition. The cost is one asymmetry;
+  the alternative was risking the row that already worked.
+- **A `belmont migrate` CLI command for the PR #32 → `UX_DESIGN.md` move.**
+  Rejected. Migration is an interactive prompt inside `ux-design`, offered when it
+  finds a `## Design Contract` in `{base}/TECH_PLAN.md`. A contract is an approval
+  artifact, so moving one is a decision a human should see; and a CLI command
+  would need its own Markdown section parser, its own tests, and a headless path
+  into files nothing headless is allowed to write. Declining leaves both files
+  untouched and `ux-design` exits without writing.
+- **Hard-block `tech-plan` when `UX_DESIGN.md` is missing on a UI feature.**
+  Rejected. `tech-plan` is re-run routinely (add a milestone, reconcile drift,
+  replan), so a blocking prerequisite stops every routine re-run on every
+  unmigrated project; it is retroactive, which is already rejected above; and
+  `actionReplan` sends `tech-plan` into the headless loop, turning a prose
+  ordering preference into a production loop failure. Advisory, non-blocking, and
+  never derive one.
+- **A mechanical guard on the merge path.** ~~Deferred~~ — **superseded: the
+  guard is implemented.** The deferral reasoned about a *section*-scoped guard,
+  which meant a Markdown parser running in `syncFeatureStateAfterMerge`, on the
+  path every feature depends on. File-scoping collapsed that to
+  `sha256.Sum256` of one file, and the cheapest placement turned out not to be
+  the merge path at all: `runDesignAuthorityGuard` hashes both `UX_DESIGN.md`
+  paths around each agent shell-out in `executeLoopAction`, reusing the
+  restore-amend-steer mechanism `runScopeGuard` and `runEvidenceCheck` already
+  have. That also answers the old note that `recoverMerge` never calls
+  `syncFeatureStateAfterMerge` — the guard runs inside the worktree, before
+  either path is reached.
 
 ## Evidence
 
@@ -247,17 +380,38 @@ ever ran on.
   after every merge (every file but `PROGRESS.md`, which #28 merges instead),
   outside git, and `commitBelmontState` then commits it. So a
   worktree edit is **not** lost — it silently replaces the approved contract on
-  main.
+  main. `UX_DESIGN.md` rides both copies exactly as `TECH_PLAN.md` does, which is
+  why splitting the file out was never on its own a durability fix.
 - **The eval fixture's numbers, computed not asserted:** `#9a9a9a` on `#ffffff` is
   2.81:1; the ok and warn variants are 8.15:1 and 7.38:1, so the failure is
   isolated to one variant and cannot be mistaken for a broken palette.
-- **Tier 1 cannot license any of this.** The change is prose-only, and nothing in
+- **Tier 1 cannot license any of this.** The prose is the change, and nothing in
   Tier 1 reads a `SKILL.md`. The fixture's Tier-1 assertions were still control-
   tested (flip a task to `[v]` → parse fails; rename the milestone to a polish
   pattern → validate fails), but they pin parse/decision behaviour, not prose.
   Only Tier 2 or a manual run can say whether the gate works.
+  `runDesignAuthorityGuard` is the one part that Tier 1 *can* cover, because it is
+  Go — and covering it there is not evidence about anything else in the change.
 
 ## Revisions
+
+- 2026-08-11 — design authority extracted out of `/belmont:tech-plan` into a new
+  `/belmont:ux-design` skill running between `product-plan` and `tech-plan`, and
+  out of `{base}/TECH_PLAN.md` into `{base}/UX_DESIGN.md` (plus two artifacts:
+  `design-preview.html`, unrenamed, and the new `ux-flows.html`). The
+  single-writer rule became file-scoped, `tech-plan` became read-only in every
+  mode, and the headless "fill in absent subsections" affordance was deleted
+  because nothing headless reaches `ux-design` any more. Three decisions worth
+  keeping: Figma extraction deliberately **stayed** in `tech-plan`, so `**Mode**`
+  and a Figma feature's tokens live in different files; migration of a PR #32
+  contract is an interactive prompt, not a CLI command; and the deferred
+  mechanical guard is now implemented as `runDesignAuthorityGuard` — file-scoping
+  made it a hash rather than a parser, and `executeLoopAction` a better home than
+  the merge path. Also recorded the State Inventory's unit changing from
+  "component" to "surface", which the new ordering forced (see
+  [`ux-design-phase.md`](ux-design-phase.md)), and corrected a false claim
+  inherited from `AGENTS.md`: `debug-auto` never read the contract, and still
+  does not.
 
 - 2026-08-09 — hardened the deployed-Storybook rung after a second red-team (140
   agents, 8 lenses, 44 findings, 41 refuted). One survivor and two convergences

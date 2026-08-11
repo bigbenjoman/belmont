@@ -14,11 +14,12 @@ Walk every loaded spec file (master + per-feature) and look for any of the follo
 | 2 | `**Solution**:` outdated | `{base}/PRD.md` task | Edit text in place |
 | 3 | Task description vague / misleading | `{base}/PRD.md` task description | Tighten the description |
 | 4 | PRD scope misunderstood | `{base}/PRD.md` Overview / Problem Statement / Out of Scope | Edit in place; preserve heading structure |
-| 5 | TECH_PLAN decision wrong or stale | `{base}/TECH_PLAN.md` or `.belmont/TECH_PLAN.md` | Edit narrative in place; preserve heading structure. **Excludes `## Design Contract`** — see Hard rules |
+| 5 | TECH_PLAN decision wrong or stale | `{base}/TECH_PLAN.md` or `.belmont/TECH_PLAN.md` | Edit narrative in place; preserve heading structure |
 | 6 | Master architecture decision contradicted | `.belmont/TECH_PLAN.md` | Edit in place; flag to user before proposing |
 | 7 | PR_FAQ-level product misunderstanding | `.belmont/PR_FAQ.md` | Surface to user FIRST; edit only with explicit per-edit approval |
 | 8 | Follow-up task completed by this fix | `{base}/PROGRESS.md` | Flip `[ ]` → `[x]` (NEVER `[v]`); current-or-last-shipped milestone only |
 | 9 | Root cause pattern worth remembering | `{base}/NOTES.md` `## Root Cause Patterns` | Append Five-Whys entry |
+| 10 | UX design drift — shipped UI contradicts the design authority | `{base}/UX_DESIGN.md` (+ `design-preview.html`, `ux-flows.html`) | **Nothing.** Surface it to the user and point them at `/belmont:ux-design --feature <slug>`; do not propose a diff — see Hard rules |
 
 ## Per-edit decision flow
 
@@ -128,7 +129,7 @@ Spec reconciliation complete.
 - Never use polish/follow-up/cleanup/FWLUP/"deviations from"/"verification fixes" naming.
 - Never add new `[ ]` tasks for unfixed drift — fix it or skip it; do not park it.
 - Never flip a task to `[v]` — that is `/belmont:verify`'s job.
-- **Never edit the `## Design Contract` section of any TECH_PLAN.** Category 5 covers TECH_PLAN narrative; this section is excluded from it. The contract carries an `**Approval**` stamp from the `/belmont:tech-plan` session where a human reviewed it, and the per-edit approval flow here does not renew that stamp. If the fix revealed the contract itself is wrong, say so to the user and point them at `/belmont:tech-plan --feature <slug>` — do not propose a diff.
+- **Never edit `{base}/UX_DESIGN.md` or `.belmont/UX_DESIGN.md`**, or the `design-preview.html` / `ux-flows.html` artifacts beside them. The design authority carries an `**Approval**` stamp from the `/belmont:ux-design` session where a human reviewed it, and the per-edit approval flow here does not renew that stamp. If the fix revealed the design authority itself is wrong, say so to the user and point them at `/belmont:ux-design --feature <slug>` — do not propose a diff. That is drift category 10, and reporting is its only action.
 - Never edit a feature's specs that was not selected at Step 0.
 - PROGRESS.md `[x]` flips: scoped to the current or last-shipped milestone of the feature being debugged. Sibling milestones are off-limits.
 - Commit message body MUST include task IDs whose state was flipped (e.g. `P1-M3-2`) so `runEvidenceCheck` finds attribution on a future verify pass.

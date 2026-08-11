@@ -23,11 +23,12 @@ every milestone instead of for yours.
 1. `{base}/PROGRESS.md` — first. Select the milestone before reading anything else.
 2. `{base}/models.yaml` — small, and needed up front to resolve tiers (if exists — see "Model Tiers" below).
 3. `{base}/NOTES.md` and `.belmont/NOTES.md` — feature-level and global learnings (if they exist). These stay eager on purpose: they are small, and Step 2 requires copying them into the MILESTONE file's `### Learnings from Previous Sessions`.
+4. `{base}/UX_DESIGN.md` — grep it for `## Design Contract` and read **only** that section's `**Mode**` line. Phase 2's skip decision needs it on every milestone, and it is two lines, not a file read. The design-agent reads the rest itself when Phase 2 runs.
 
 **Then read, scoped to the milestone you selected:**
-4. `{base}/PRD.md` — the sections covering that milestone's task IDs. Read the whole file if it has no per-task structure, or if the sections you find do not fully explain the work.
-5. `{base}/TECH_PLAN.md` — if the milestone touches architecture it describes (if exists). Skip when the milestone is self-contained.
-6. `.belmont/TECH_PLAN.md` — only when the milestone is cross-cutting: it changes shared infrastructure or spans features (if in feature mode and exists).
+5. `{base}/PRD.md` — the sections covering that milestone's task IDs. Read the whole file if it has no per-task structure, or if the sections you find do not fully explain the work.
+6. `{base}/TECH_PLAN.md` — if the milestone touches architecture it describes (if exists). Skip when the milestone is self-contained.
+7. `.belmont/TECH_PLAN.md` — only when the milestone is cross-cutting: it changes shared infrastructure or spans features (if in feature mode and exists).
 
 This is guidance for the common case, not a prohibition. If a file you skipped
 turns out to matter — the task is ambiguous, the design is unclear, an
@@ -63,7 +64,7 @@ Write a structured MILESTONE file that all agents read from and write to. The MI
 
 **Mandatory rules while writing MILESTONE** (these MUST be observed every run — they are not in the reference file because they can never be skipped):
 
-- **Do NOT copy PRD or TECH_PLAN content into MILESTONE.** The pointers in `### File Paths` are enough. Duplicating content wastes context across every sub-agent invocation.
+- **Do NOT copy PRD, TECH_PLAN or UX_DESIGN content into MILESTONE.** The pointers in `### File Paths` are enough. Duplicating content wastes context across every sub-agent invocation.
 - **`### Active Task IDs` lists IDs only** (e.g. `P0-1, P0-2`). The PRD holds the full definitions.
 - **The three sub-agent-written sections (`## Codebase Analysis`, `## Design Specifications`, `## Implementation Log`) remain the source of truth for downstream agents** — they ARE written into MILESTONE and ARE read by Phase 3. Only the PRD/TECH_PLAN content is externalised; the sub-agent hand-off data stays inside MILESTONE. Leave these three headings present but empty; each agent will fill in its section.
 
@@ -103,7 +104,7 @@ Use the dispatch method you selected in "Choosing Your Dispatch Method" above. F
 
 ### Phase 2: Design Analysis (design-agent) — *runs in parallel with Phase 1*
 
-**Purpose**: Establish the design authority for ALL tasks and write per-task design specifications into the MILESTONE file. Where Figma URLs exist, that authority is the Figma design. Where the feature has a UI but no Figma, it is the **Design Contract** in `{base}/TECH_PLAN.md` — an approved, per-feature standard covering tokens, accessibility, states, microcopy and motion, which the design agent turns into per-task specs and verification later checks against.
+**Purpose**: Establish the design authority for ALL tasks and write per-task design specifications into the MILESTONE file. Where Figma URLs exist, that authority is the Figma design. Where the feature has a UI but no Figma, it is the **Design Contract** in `{base}/UX_DESIGN.md` — an approved, per-feature standard covering tokens, accessibility, states, microcopy and motion, which the design agent turns into per-task specs and verification later checks against.
 
 **Skip this phase entirely when the milestone has no design input.** You have already read the active tasks' PRD sections in Setup. Skip when **none** of them:
 
@@ -111,7 +112,7 @@ Use the dispatch method you selected in "Choosing Your Dispatch Method" above. F
 - links a mockup, screenshot or reference image, or
 - produces visible UI — a page, component, layout, style, or user-facing copy change,
 
-**and** `{base}/TECH_PLAN.md` has no Design Contract. Check that last one cheaply — grep the file for `## Design Contract` and read only its `**Mode**` line. A contract counts **only** when `**Mode**` is `derived — UI, no Figma`; both `N/A` values and an absent section are "no contract".
+**and** `{base}/UX_DESIGN.md` has no Design Contract. You have that from Setup — the `## Design Contract` heading and its `**Mode**` line, grepped rather than read. A contract counts **only** when `**Mode**` is `derived — UI, no Figma`; both `N/A` values, an absent section, and an absent file are "no contract".
 
 A contract is an explicit, human-approved statement that this feature has a UI worth holding to a standard. The three bullets above are judgement calls about the tasks in front of you; this one is not, so it wins. **A milestone whose feature has a contract never skips Phase 2** — otherwise the standard its author approved is silently ignored for exactly the milestones it was written for.
 
@@ -119,7 +120,7 @@ When you skip, write this into the MILESTONE file's `## Design Specifications` s
 
 ```
 [Not populated — no design input: no task in this milestone has a Figma URL,
-reference image, or visible UI, and the feature has no Design Contract.]
+reference image, or visible UI, and {base}/UX_DESIGN.md records no Design Contract.]
 ```
 
 Do **not** spawn the agent just to have it report there is nothing to analyse. That spends a full sub-agent's context — its own spec reads included — on a null result. A backend, data, infrastructure or tooling milestone typically has no design input at all.
@@ -154,7 +155,7 @@ If you are NOT using Agent Teams: Spawn a sub-agent with this prompt:
 
 If you ARE using Agent Teams: Add an implementation-agent into the team per task in the milestone, with the same prompt as above. Use the team-lead to coordinate between them if they need to edit the same areas fo the codebase.
 
-**Visual Validation**: For any task with visual output, the implementation agent's Step 3b requires browser-MCP validation — start the project's preview tool, navigate to the implemented UI, and take screenshots. What it compares them against depends on what authority exists: Figma designs or reference images where those exist, otherwise the feature's Design Contract (tokens on the declared scales, the Accessibility Floor met, every State Inventory entry rendered). Do NOT silently skip this step.
+**Visual Validation**: For any task with visual output, the implementation agent's Step 3b requires browser-MCP validation — start the project's preview tool, navigate to the implemented UI, and take screenshots. What it compares them against depends on what authority exists: Figma designs or reference images where those exist, otherwise the feature's Design Contract in `{base}/UX_DESIGN.md` (tokens on the declared scales, the Accessibility Floor met, every State Inventory entry rendered). Do NOT silently skip this step.
 
 **Wait for**: Sub-agent to complete with all tasks implemented, verified, and committed. Verify that `## Implementation Log` in the MILESTONE file has been populated.
 

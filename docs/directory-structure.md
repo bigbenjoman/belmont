@@ -21,6 +21,7 @@ belmont/
 │       │   └── references/      # Progressive-disclosure detail, source
 │       ├── references/          # Detail loaded on demand by skills (generated)
 │       ├── product-plan.md      # Planning skill (generated)
+│       ├── ux-design.md         # Design authority skill (generated)
 │       ├── tech-plan.md         # Tech plan skill (generated)
 │       ├── codex-plan-apply.md  # Codex plan-mode handoff apply skill (generated)
 │       ├── implement.md         # Implementation skill (generated)
@@ -79,19 +80,25 @@ your-project/
 │           │       └── openai.yaml   # Codex UI metadata (if Codex selected) — display_name "belmont:implement"
 │           ├── verify/
 │           │   └── SKILL.md  (+ references/, agents/openai.yaml)
-│           └── ...              # one folder per skill: working-backwards, product-plan, tech-plan,
-│                                # next, debug, debug-auto, debug-manual, status, review-plans,
-│                                # repair, codex-plan-apply, note, cleanup, reset
+│           └── ...              # one folder per skill: working-backwards, product-plan, ux-design,
+│                                # tech-plan, next, debug, debug-auto, debug-manual, status,
+│                                # review-plans, repair, codex-plan-apply, note, cleanup, reset
 │                                # (loop is Claude-only and is NOT here — see below)
 ├── .belmont/                    # Planning & state (commit to share with team)
 │   ├── PR_FAQ.md
 │   ├── PRD.md                   # Living spec (no status markers — purely requirements)
 │   ├── PROGRESS.md              # Single source of truth for all state (task checkboxes, milestones)
+│   ├── UX_DESIGN.md             # Master design authority — token contract + accessibility floor only
+│   │                            #   (written by /belmont:ux-design on a project's first UI feature)
 │   ├── TECH_PLAN.md
 │   ├── worktree.json            # Optional: setup/teardown hooks, env, monorepo workspace overrides
 │   ├── features/                # Sub-feature directories (optional)
 │   │   └── <feature-slug>/
 │   │       ├── PRD.md
+│   │       ├── UX_DESIGN.md     # Design authority: Design Contract, screens, flows
+│   │       │                    #   (written by /belmont:ux-design — read-only for every other skill)
+│   │       ├── design-preview.html  # Self-contained review page: tokens, contrast, states
+│   │       ├── ux-flows.html    # Self-contained review page: screens, microcopy, flow diagrams
 │   │       ├── TECH_PLAN.md
 │   │       ├── PROGRESS.md
 │   │       ├── models.yaml      # Per-feature model tiers (optional, written by /belmont:tech-plan)
@@ -124,7 +131,7 @@ Codex, Cursor, Windsurf, Gemini, GitHub Copilot, Pi, and opencode all auto-disco
 
 - `.agents/belmont/` -- Shared agent instructions. Committed to git. Referenced by all tools.
 - `.agents/skills/belmont/` -- Canonical skill files. Single source of truth.
-- `.belmont/` -- Planning state (PR/FAQ, PRD, PROGRESS, TECH_PLAN, MILESTONE). PRD.md is a status-free living spec; PROGRESS.md is the single source of truth for all task/milestone state. Commit to git so the whole team has shared context.
+- `.belmont/` -- Planning state (PR/FAQ, PRD, PROGRESS, UX_DESIGN, TECH_PLAN, MILESTONE). PRD.md is a status-free living spec; PROGRESS.md is the single source of truth for all task/milestone state; UX_DESIGN.md and its two HTML review pages are written only by `/belmont:ux-design`. Commit to git so the whole team has shared context.
 - `.claude/`, `.codex/`, `.cursor/`, etc. -- Tool-specific wiring. Some use symlinks, some use copied/synced files.
 
 ## Should I gitignore `.belmont/`?

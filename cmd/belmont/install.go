@@ -152,7 +152,7 @@ func runInstall(args []string) error {
 				fmt.Println("  Claude Code  .claude/agents/belmont -> ../../.agents/belmont")
 				fmt.Println("               .claude/commands/belmont/<skill>.md -> ../../../.agents/skills/belmont/<skill>/SKILL.md (per-skill)")
 				fmt.Println("               .claude/commands/belmont/loop.md (Claude-only — drives a feature to completion via /loop)")
-				fmt.Println("    Use: /belmont:working-backwards, /belmont:product-plan, /belmont:tech-plan, /belmont:implement, /belmont:next, /belmont:verify, /belmont:loop, /belmont:debug, /belmont:debug-auto, /belmont:debug-manual, /belmont:status")
+				fmt.Println("    Use: /belmont:working-backwards, /belmont:product-plan, /belmont:ux-design, /belmont:tech-plan, /belmont:implement, /belmont:next, /belmont:verify, /belmont:loop, /belmont:debug, /belmont:debug-auto, /belmont:debug-manual, /belmont:status")
 			case "codex":
 				fmt.Println("  Codex        .agents/skills/belmont/<name>/SKILL.md (auto-discovered)")
 				fmt.Println("    Use: prompt belmont:<skill> — Codex resolves via /skills")
@@ -171,7 +171,7 @@ func runInstall(args []string) error {
 			case "opencode":
 				fmt.Println("  opencode     .agents/skills/belmont/<name>/SKILL.md (auto-discovered)")
 				fmt.Println("               .opencode/command/belmont/<skill>.md (generated per-skill slash commands)")
-				fmt.Println("    Use: /belmont/working-backwards, /belmont/product-plan, /belmont/tech-plan, /belmont/implement, /belmont/next, /belmont/verify, /belmont/debug, /belmont/debug-auto, /belmont/debug-manual, /belmont/status")
+				fmt.Println("    Use: /belmont/working-backwards, /belmont/product-plan, /belmont/ux-design, /belmont/tech-plan, /belmont/implement, /belmont/next, /belmont/verify, /belmont/debug, /belmont/debug-auto, /belmont/debug-manual, /belmont/status")
 				fmt.Println("    (or prompt belmont:<skill> — opencode also loads skills via its skill tool)")
 			}
 		}

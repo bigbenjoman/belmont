@@ -250,7 +250,7 @@ func adaptPromptForTool(prompt, tool string) string {
 				skill, skill)
 		}
 		return fmt.Sprintf(
-			"Run the belmont:%s skill against feature %q. Read .agents/skills/belmont/%s/SKILL.md fully and follow the instructions in its body to completion. Project state for this feature lives at .belmont/features/%s/ (PRD.md, TECH_PLAN.md, PROGRESS.md).",
+			"Run the belmont:%s skill against feature %q. Read .agents/skills/belmont/%s/SKILL.md fully and follow the instructions in its body to completion. Project state for this feature lives at .belmont/features/%s/ (PRD.md, UX_DESIGN.md, TECH_PLAN.md, PROGRESS.md).",
 			skill, feature, skill, feature)
 	})
 }

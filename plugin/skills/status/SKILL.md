@@ -45,7 +45,8 @@ If a specific feature is requested (user says "show status for auth" or similar)
 2. Read `{base}/PROGRESS.md` — every task state, milestone and count in the report comes from here.
 3. Read `{base}/PRD.md` only for the feature's **name and one-line description**. If the report does not need more than that, read the header rather than the whole file.
 4. For `{base}/TECH_PLAN.md`, `{base}/NOTES.md` and `.belmont/NOTES.md`, the report states only whether they exist and are non-empty — **check existence, do not read their contents.**
-5. Produce the standard status report (see format below)
+5. For `{base}/UX_DESIGN.md`, read its `**Mode**` line only (it sits in the first ten lines — `head` it). That one line gives the report's `Design authority:` value.
+6. Produce the standard status report (see format below)
 
 ## Files to Read
 
@@ -55,8 +56,9 @@ first entry is read in full.
 1. `{base}/PROGRESS.md` — **read fully.** Milestones, task states, session history. Everything the report counts comes from here.
 2. `{base}/PRD.md` — **header only**, for the feature name and description. Task definitions are not needed: PROGRESS.md is the single source of truth for task state.
 3. `{base}/TECH_PLAN.md` — **existence and non-emptiness only.** Do not read the contents.
-4. `{base}/NOTES.md` — existence only.
-5. `.belmont/NOTES.md` — existence only.
+4. `{base}/UX_DESIGN.md` — **its `Mode` line only.** Never key on the file existing or on a `## Design Contract` heading; `**Mode**` is the only signal.
+5. `{base}/NOTES.md` — existence only.
+6. `.belmont/NOTES.md` — existence only.
 
 If the user asks a question the report does not answer, read what you need — this
 is the default path, not a restriction.
@@ -104,6 +106,7 @@ Belmont Status
 Feature: [Extract from PRD title]
 
 Tech Plan: [Ready / Not written (run /belmont:tech-plan to create)]
+Design authority: [Derived / Figma / None — no UI / Not written (run /belmont:ux-design to create)]
 Notes:     [Has notes / -- None]
 
 Status: [Not Started | In Progress | Complete | Verified]
@@ -161,6 +164,12 @@ PROGRESS.md is the single source of truth for task state. PRD.md is a pure spec 
 
 ### Milestone Status (computed from tasks)
 Milestone status is computed from its tasks — no markers on milestone headers. A milestone is verified when all its tasks are `[v]`.
+
+### Design Authority (from `{base}/UX_DESIGN.md`'s `**Mode**` line)
+- **Derived**: `derived — UI, no Figma` — the feature has an approved Design Contract
+- **Figma**: `N/A — Figma present`
+- **None — no UI**: `N/A — no UI`
+- **Not written**: no file, or a file with no `**Mode**` line — `/belmont:ux-design` has not run. This is not the same as "no UI"; do not report it as one.
 
 ### Task Priority Order
 - Tasks are sorted by priority: P0 first, then P1, P2, P3

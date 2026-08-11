@@ -518,3 +518,19 @@ func injectEvidenceSteering(cfg loopConfig, action loopAction, missing []evidenc
 	body.WriteString("\nTo verify these tasks: either (a) show the existing commit by its hash if the task was genuinely implemented (perhaps under a different task ID — then update PROGRESS.md's task ID to match), or (b) implement the task now, commit with the task ID in the message, then re-verify.")
 	_ = appendSteeringEntry(path, time.Now().UTC().Format(time.RFC3339), action.MilestoneID, body.String())
 }
+
+// injectDesignAuthoritySteering tells the next phase that its predecessor's
+// write to UX_DESIGN.md was undone, and where the only write path is.
+func injectDesignAuthoritySteering(cfg loopConfig, action loopAction, changes []designAuthorityChange) {
+	if cfg.Root == "" || cfg.Feature == "" {
+		return
+	}
+	path := filepath.Join(cfg.Root, ".belmont", "features", cfg.Feature, "STEERING.md")
+	var body strings.Builder
+	body.WriteString("belmont's design-authority guard restored UX_DESIGN.md after your previous phase changed it. UX_DESIGN.md is the human-approved design authority: only `/belmont:ux-design` writes it, that skill is interactive-only, and no automated phase may create, edit, reformat or restamp it — including its `**Approval**` line. The Go CLI restores these files after every phase, so committing with `--no-verify` does not bypass it.\n\nRestored:\n")
+	for _, c := range changes {
+		body.WriteString(fmt.Sprintf("- %s — your phase %s it; the pre-phase version is back on disk.\n", c.Path, c.Kind))
+	}
+	body.WriteString(fmt.Sprintf("\nRead the design authority, never write it. If a technical constraint contradicts it, or it does not cover what you need, STOP and report that in your summary — re-running `/belmont:ux-design --feature %s` in a live session is the only way to change it.", cfg.Feature))
+	_ = appendSteeringEntry(path, time.Now().UTC().Format(time.RFC3339), action.MilestoneID, body.String())
+}

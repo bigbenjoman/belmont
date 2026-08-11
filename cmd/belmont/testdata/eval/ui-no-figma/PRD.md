@@ -6,7 +6,7 @@ design work to do, but there is nothing to extract from.
 
 The acceptance criteria below are deliberately **functional only**. Nothing here
 mentions contrast, spacing scales, or semantic colour completeness — those live
-in the TECH_PLAN's Design Contract. An implementation can satisfy every
+in UX_DESIGN.md's Design Contract. An implementation can satisfy every
 criterion on this page and still violate the contract, which is the point.
 
 ## P1-M1-1: Status badge markup
