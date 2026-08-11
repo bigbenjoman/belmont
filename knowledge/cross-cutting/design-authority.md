@@ -196,6 +196,20 @@ fixture.
   worktree*, which stops the edit before `syncFeatureStateAfterMerge` ever sees
   it and so sidesteps the `recoverMerge` gap a merge-path guard would have had to
   handle.
+  **Known gap — the interrupt path bypasses it, as it does its two siblings.**
+  All three guards run *after* `executeLoopAction`'s shell-out returns, and the
+  SIGINT goroutine in `auto_parallel.go` calls `gracefulShutdown` then
+  `os.Exit(1)`, so a phase that is killed rather than returned gets no guard
+  pass at all. An agent write to `UX_DESIGN.md` then survives: the interactive
+  `[r]` resume branch of `handleStaleWorktree` leaves `.belmont/` as-is, the
+  file is `assume-unchanged` so no dirty check sees it, and
+  `snapshotDesignAuthority` re-reads from disk at the start of the next phase
+  and adopts the corrupted bytes as its baseline. Not fixed here on purpose:
+  the snapshot is a local in `executeLoopAction`, restoring from the signal
+  handler means plumbing per-worktree snapshots onto `worktreeTracker` and
+  touching state concurrently with an in-flight process-group kill, and the
+  same hole loses `runScopeGuard`'s milestone-structure protection — strictly
+  worse. Fix all three together, in a change that can carry its own tests.
 - **The gate** — `verification-agent.md` Phase 2 is three-way (references /
   contract / neither), branch 1 runs contract checks *in addition to* comparison,
   the `:131` escape clause is narrowed to "no references **and** no `derived`

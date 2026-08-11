@@ -15,7 +15,7 @@ This session requires ultrathink-level reasoning — work through flows, surface
 2. Do NOT create or edit any source code files (no .tsx, .ts, .css, etc.).
 3. This skill is the **only** writer of `{base}/UX_DESIGN.md` and `.belmont/UX_DESIGN.md`. Every other skill and agent reads them and never writes them.
 4. A Design Contract is an **approval artifact**. A human approves it once, through your structured question tool. Never approve one yourself, never re-derive an approved one, never restamp an existing `**Approval**` line.
-5. You do not write `{base}/PRD.md` or `{base}/PROGRESS.md`, and you add nothing to `{base}/TECH_PLAN.md`. The single exception is deleting a migrated `## Design Contract` section from TECH_PLAN.md — see *Migration*.
+5. You do not write `{base}/PRD.md` or `{base}/PROGRESS.md`, and you add nothing to `{base}/TECH_PLAN.md`. The single exception is deleting a migrated `## Design Contract` section whose `**Mode**` is `derived — UI, no Figma` — never one under either `N/A` mode, which nests the Figma tokens. See *Migration*.
 6. **Interactive only.** If you are running non-interactively (see *Running headlessly* below), write nothing and stop.
 
 ## Codex Plan-Mode Preflight
@@ -71,7 +71,7 @@ For a UX design session, the relevant domains (per the Dynamic Questioning frame
 - Writing to `{base}/UX_DESIGN.md` (the feature's design authority — primary output)
 - Writing to `.belmont/UX_DESIGN.md` (master cross-cutting design authority — first derived contract only)
 - Writing to `{base}/design-preview.html` and `{base}/ux-flows.html` (the design authority's reviewable artifacts). These are **planning artifacts under `.belmont/`**, never project source: CRITICAL RULE 2 still forbids you from creating or editing any `.tsx`/`.ts`/`.css` file.
-- Deleting a migrated `## Design Contract` section from `{base}/TECH_PLAN.md` — the only edit this skill ever makes to that file
+- Deleting a migrated `## Design Contract` section from `{base}/TECH_PLAN.md`, and **only** when its `**Mode**` reads `derived — UI, no Figma` — the only edit this skill ever makes to that file
 
 <!-- @include feature-detection.md feature_action="Ask which feature to design" -->
 
@@ -89,7 +89,7 @@ Derive a **contract** (`**Mode**: derived — UI, no Figma`) only when ALL THREE
 
 1. The feature has a **user interface** — a page, component, layout, style, or user-facing copy surface.
 2. **No task in `{base}/PRD.md` carries a Figma URL.** Check *every* task regardless of its `[ ]`/`[x]`/`[v]` state — this is a feature-level gate, and keying it on the incomplete subset would flip it as work progresses.
-3. No contract exists yet — neither a `**Mode**` of `derived — UI, no Figma` in `{base}/UX_DESIGN.md`, nor a legacy `## Design Contract` section in `{base}/TECH_PLAN.md` (see *Migration*).
+3. No contract exists yet — neither a `**Mode**` of `derived — UI, no Figma` in `{base}/UX_DESIGN.md`, nor a legacy `## Design Contract` section in `{base}/TECH_PLAN.md` **whose own `**Mode**` line reads `derived — UI, no Figma`** (see *Migration*). The legacy heading alone settles nothing: pre-split `tech-plan` wrote it under all three modes.
 
 **Mixed Figma coverage**: a feature counts as a Figma feature if **any** task carries a Figma URL, even where other UI tasks carry none. A partially-covered feature has no single design authority to reconcile against, and inventing one would contradict the Figma tokens already extracted for its covered tasks.
 
@@ -105,9 +105,18 @@ Neither `N/A` value is a contract. Only `derived — UI, no Figma` is.
 
 ### Migration
 
-Features planned before this skill existed carry their contract in `{base}/TECH_PLAN.md`. If that file has a `## Design Contract` section, **do not mint a second one.** Ask the user, via your structured question tool, to choose between exactly two options:
+Features planned before this skill existed carry their design authority in `{base}/TECH_PLAN.md`. If that file has a `## Design Contract` section, **read its `**Mode**` line before you do anything with it.** The heading decides nothing here either — pre-split `tech-plan` wrote it under all three modes, and under `N/A — Figma present` it is the *parent* of `### Design Tokens (from Figma)`, the only recorded copy of the values extracted from Figma.
 
-- **Migrate (recommended)** — move the section into a new `{base}/UX_DESIGN.md` **verbatim**, `**Approval**` line preserved byte-for-byte, then delete it from `{base}/TECH_PLAN.md`. Never leave it in both files. An existing `{base}/design-preview.html` already sits at the right path — leave it alone.
+| Legacy `**Mode**` | What to do |
+|---|---|
+| `derived — UI, no Figma` | It is a contract. Offer the two-option choice below. |
+| `N/A — Figma present` | **Not a contract — leave the whole section exactly where it is.** Deleting it destroys the `### Design Tokens (from Figma)` values nested inside it — the only recorded copy, and the MILESTONE file still sends the design-agent to `TECH_PLAN.md` for them. Write `{base}/UX_DESIGN.md` with `**Mode**: N/A — Figma present` and stop. Tell the user the legacy section stays behind, and why. |
+| `N/A — no UI` | Not a contract, and nothing to move. Write `{base}/UX_DESIGN.md` with `**Mode**: N/A — no UI` and stop; leave the legacy section alone. |
+| absent, or a value you do not recognise | Do **not** guess and do **not** delete. Say what you found, ask the user whether it is a contract, and act on their answer — the two-option choice if yes, otherwise leave it untouched and note it under `## Open Design Questions`. |
+
+Only the first row is a contract, and only there may you delete anything from `{base}/TECH_PLAN.md`. In that row, **do not mint a second contract.** Ask the user, via your structured question tool, to choose between exactly two options:
+
+- **Migrate (recommended)** — move the section into a new `{base}/UX_DESIGN.md` **verbatim**, `**Approval**` line preserved byte-for-byte, then delete it from `{base}/TECH_PLAN.md`. Never leave it in both files. `derived — UI, no Figma` is the one mode under which the pre-split format omits `### Design Tokens (from Figma)` entirely, so this move loses nothing. An existing `{base}/design-preview.html` already sits at the right path — leave it alone.
 - **Leave it** — write nothing at all, and report that consumers read `UX_DESIGN.md` now, so this feature falls to the no-contract branch until it is migrated.
 
 A migrated file then follows the re-run rules below: its contract is approved, so offer only to fill the sections that migration cannot supply — Review Artifacts, Screens, Flows.

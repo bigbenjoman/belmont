@@ -206,7 +206,7 @@ This is a **product** planning session, NOT a technical planning session. Techni
 
 If the user volunteers technical preferences unprompted, record them as **open questions for the tech-plan step** — do NOT commit them as decisions in the PRD. The tech-plan step may well decide otherwise, and baking a technical idiom into the PRD creates drift (the PRD ends up saying "use `<Image>` directly" while the tech-plan correctly introduces a wrapper component). The only exceptions are genuinely cross-cutting product constraints the tech-plan must honor (e.g. "must ship inside the existing Next.js 15 app", "must reuse the existing design-system primitives") — never file paths, wrapper-vs-direct component choices, library imports, regex syntax, or endpoint names.
 
-See the plan-separation partial above for the full PRD ↔ TECH_PLAN boundary rules.
+See the plan-separation partial above for the full PRD ↔ UX_DESIGN ↔ TECH_PLAN boundary rules. Design values — token scales, contrast floors, per-surface state inventories, motion bands — are not yours either: they belong to `/belmont:ux-design`, which runs next.
 
 <!-- @include commit-belmont-changes.md commit_context="after product planning" -->
 

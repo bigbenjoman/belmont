@@ -50,9 +50,9 @@ The packet must include every target `.belmont/` path, each operation (`create`,
 - Running package manager or build commands
 - Making any code changes
 
-## PRD ↔ TECH_PLAN Boundary
+## PRD ↔ UX_DESIGN ↔ TECH_PLAN Boundary
 
-Belmont's planning workflow splits concerns across two documents. Keeping the boundary clean prevents drift — the most common failure mode is PRD and TECH_PLAN disagreeing after tech-plan refinements, which confuses the implementation agent.
+Belmont's planning workflow splits concerns across three documents, one per phase: `product-plan` writes the PRD, `ux-design` writes UX_DESIGN, `tech-plan` writes TECH_PLAN. Keeping the boundary clean prevents drift — the most common failure mode is two of them disagreeing after tech-plan refinements, which confuses the implementation agent.
 
 ### What belongs in the PRD (product surface)
 
@@ -65,6 +65,16 @@ Belmont's planning workflow splits concerns across two documents. Keeping the bo
 - Priority and scope
 - Figma URLs / node IDs (by reference only — never the implementation path they render to)
 
+### What belongs in the UX_DESIGN (design surface)
+
+- Token *values*: the spacing scale, the type ratio and its sizes, the colour distribution and hues, the committed radius, the elevation levels
+- The Accessibility Floor — contrast ratios, target sizes, focus and label rules. The PRD's target WCAG level is adopted here and may be raised, never lowered
+- The per-**surface** State Inventory (default / hover / focus / active / disabled / loading / empty / error, plus gesture and transition states), and any omission's reason
+- Screens, and the PRD's flows rendered screen-by-screen with each failure edge's landing state
+- Microcopy *rules* — button verb style, error shape, empty-state shape, destructive confirmations. Never the strings themselves; the PRD already fixed those
+- Motion duration bands, easing classes, and the reduced-motion rule — not the animation library
+- Written by `/belmont:ux-design` only. Every other skill, `tech-plan` included, reads it and never writes it. **Design tokens extracted from Figma are the exception and stay in the TECH_PLAN** (below) — `tech-plan` owns Figma extraction
+
 ### What belongs in the TECH_PLAN (implementation surface)
 
 - File paths (`src/...`) and directory structure
@@ -75,6 +85,7 @@ Belmont's planning workflow splits concerns across two documents. Keeping the bo
 - tRPC / REST endpoint names the implementation commits to
 - State management choices, styling approach, data-fetching approach
 - Design tokens extracted from Figma, file-level TypeScript interfaces
+- How the UX_DESIGN's token *values* are expressed — CSS variable names, theme layer, config files — and which components each of its surfaces maps to. Tech-plan may not add, remove or rename a surface
 
 ### Grey-zone rule
 
@@ -424,7 +435,7 @@ This is a **product** planning session, NOT a technical planning session. Techni
 
 If the user volunteers technical preferences unprompted, record them as **open questions for the tech-plan step** — do NOT commit them as decisions in the PRD. The tech-plan step may well decide otherwise, and baking a technical idiom into the PRD creates drift (the PRD ends up saying "use `<Image>` directly" while the tech-plan correctly introduces a wrapper component). The only exceptions are genuinely cross-cutting product constraints the tech-plan must honor (e.g. "must ship inside the existing Next.js 15 app", "must reuse the existing design-system primitives") — never file paths, wrapper-vs-direct component choices, library imports, regex syntax, or endpoint names.
 
-See the plan-separation partial above for the full PRD ↔ TECH_PLAN boundary rules.
+See the plan-separation partial above for the full PRD ↔ UX_DESIGN ↔ TECH_PLAN boundary rules. Design values — token scales, contrast floors, per-surface state inventories, motion bands — are not yours either: they belong to `/belmont:ux-design`, which runs next.
 
 ### Commit Planning File Changes
 

@@ -42,10 +42,11 @@ Before asking the user a single follow-up question, load the spec context. Read 
 **Per-feature files** — for EACH base in `{bases[]}`:
 
 5. `{base}/PRD.md`
-6. `{base}/TECH_PLAN.md`
-7. `{base}/PROGRESS.md`
-8. `{base}/NOTES.md`
-9. Latest `{base}/MILESTONE-M*.done.md` — numeric-sorted by milestone ID, take the highest (most recently shipped). Skip if > 500 lines; tell the user and offer to load if they want it.
+6. `{base}/UX_DESIGN.md` — the feature's design authority. **Context only, never editable**: drift category 10 in `references/debug-manual-spec-reconcile.md` is scoped to "every loaded spec file", so without this read a UI fix has nothing to check itself against and design drift cannot be reported. Read `**Mode**` first — only `derived — UI, no Figma` carries a contract; under either `N/A` value the file is a four-line header and there is nothing further to load.
+7. `{base}/TECH_PLAN.md`
+8. `{base}/PROGRESS.md`
+9. `{base}/NOTES.md`
+10. Latest `{base}/MILESTONE-M*.done.md` — numeric-sorted by milestone ID, take the highest (most recently shipped). Skip if > 500 lines; tell the user and offer to load if they want it.
 
 After all reads, emit a single **Context-load summary** block:
 
@@ -58,7 +59,7 @@ Context loaded
     .belmont/NOTES.md       <N lines>   | skipped: not present
   Features:
     <slug-1>:
-      PRD.md, TECH_PLAN.md, PROGRESS.md, NOTES.md, MILESTONE-M<X>.done.md
+      PRD.md, UX_DESIGN.md, TECH_PLAN.md, PROGRESS.md, NOTES.md, MILESTONE-M<X>.done.md
     <slug-2>: ...
   Total: <N> files, ~<KB> KB
 ```

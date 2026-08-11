@@ -32,7 +32,7 @@ Reads the MILESTONE file, then produces per-task design specs. It has **two mode
 - Produces implementation-ready component code
 
 **Contract mode** (no Figma URLs, and `{base}/UX_DESIGN.md` records `**Mode**: derived — UI, no Figma`):
-- Reads the `## Design Contract` from `{base}/UX_DESIGN.md` — path supplied by the MILESTONE file's `## File Paths` — and the master `.belmont/UX_DESIGN.md` where one exists
+- Reads the `## Design Contract` from `{base}/UX_DESIGN.md` — path supplied by the MILESTONE file's `### File Paths` — and the master `.belmont/UX_DESIGN.md` where one exists
 - Picks values off the contract's declared scales — never mints new ones
 - Enumerates every State Inventory state for each surface the task builds
 - Applies the Accessibility Floor to each component spec

@@ -164,10 +164,20 @@ both rungs, one per family — e.g.
    Its `entries` map is the richest inventory available anywhere: each entry has a
    `title` (the component path, e.g. `Bookings/BookingPicker`) and a `name` (the
    story, e.g. `Empty`, `Loading`, `Pending`, `Declined`, `Long Headline`).
-   **Component titles give you the `## Screens` table's surfaces; story names give
-   you the State Inventory directly** — they are a real team's enumeration of the
-   states that component actually has, which is strictly better than your guess.
-   Ignore `Docs` entries (`type: "docs"`); they are generated, not states.
+   **Story names give you the State Inventory's state lists directly** — they are a
+   real team's enumeration of the states that thing actually has, which is strictly
+   better than your guess. Ignore `Docs` entries (`type: "docs"`); they are
+   generated, not states.
+
+   **Component titles are evidence, not names.** They tell you what already exists,
+   which is how you tell a surface the feature *builds* from one it *reuses
+   unchanged* — and only the former gets a State Inventory entry. They never become
+   surface names: surfaces are named from the PRD's flows (see *State Inventory*
+   below), and mapping a surface onto one or more components is `/belmont:tech-plan`'s
+   job, in its `## Component Specifications`. A title copied into the `## Screens`
+   table would enumerate the inventory per component file, which is exactly the
+   framing this phase exists to move away from — components are chosen after this
+   session, not during it.
 
    **You have read a story index only if** the response body parses as JSON *and*
    carries an `entries` object (Storybook 7+) or a `stories` object (6.x) whose
@@ -192,10 +202,14 @@ both rungs, one per family — e.g.
    collide with worktree port isolation. A local build's `storybook-static/index.json`,
    if one is already committed, counts as 1a and is preferable to parsing sources.
 
-   Either way: record the component inventory into `{base}/UX_DESIGN.md`'s
-   `## Screens` table, under its *Surfaces it contains* column; treat those
-   components as **LAW** — the contract records them, it does not redesign them —
-   and add `storybook (<url>)` or `storybook (local)` to `**Source**` so a reader
+   Either way: use the inventory to fill each flow-named surface's **States**
+   column in `{base}/UX_DESIGN.md`'s `### State Inventory`, taking the story names
+   of whichever component already realises that surface, and to mark as *reused
+   unchanged* — no entry, one-line reason — any surface an existing component
+   already covers. Treat what the stories record as **LAW**: the contract records
+   the states the team built, it does not redesign or prune them. Do not write
+   component titles into the `## Screens` table's *Surfaces it contains* column.
+   Add `storybook (<url>)` or `storybook (local)` to `**Source**` so a reader
    knows which you used. **Adding, not replacing**: a story index supplies components
    and states, not tokens, so keep walking to rung 2 for the Token Contract and
    name that rung too. `**Source**` must always name the artifact each family of
