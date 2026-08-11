@@ -360,3 +360,60 @@ func TestSyncIndentedHeadingDoesNotSplitMilestone(t *testing.T) {
 		}
 	}
 }
+
+// A carried master-only task must land after the anchor task's indented body,
+// not between the task and its own continuation lines — otherwise the body is
+// re-attached to the inserted task.
+func TestSyncCarryLandsAfterTaskBody(t *testing.T) {
+	master := "### M1: Core\n- [ ] P1-M1-1: foo\n  - Done when: bar renders\n- [ ] P1-M1-2: added by a sibling\n"
+	wt := "### M1: Core\n- [ ] P1-M1-1: foo\n  - Done when: bar renders\n"
+	got, _ := mergeProgressState(master, wt)
+	if !strings.Contains(got, "P1-M1-2") {
+		t.Fatalf("the master-only task was dropped:\n%s", got)
+	}
+	body := strings.Index(got, "Done when: bar renders")
+	carried := strings.Index(got, "P1-M1-2")
+	if carried < body {
+		t.Errorf("the carried task was spliced between P1-M1-1 and its body:\n%s", got)
+	}
+}
+
+// A duplicated milestone heading — a genuine duplicate, or a session note
+// written in header shape after the startup lint already ran — makes every
+// anchor for that milestone ambiguous. The merge must decline it the way the
+// runtime guards and repair do, not guess.
+func TestSyncDeclinesDuplicateMilestoneHeading(t *testing.T) {
+	master := "### M1: Core\n- [x] P1-M1-1: real\n- [ ] P1-M1-2: added by a sibling\n"
+	wt := "### M1: Core\n\n## Session History\n\n### M1: retro notes\nprose about the retro\n"
+	got, warnings := mergeProgressState(master, wt)
+	// The carry must not land under the header-shaped note in Session History.
+	if strings.Contains(got, "P1-M1-2") {
+		t.Errorf("a task was carried into a milestone with a duplicated heading:\n%s", got)
+	}
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "M1") && strings.Contains(w, "more than one heading") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("a duplicated milestone heading must be warned about, got: %v", warnings)
+	}
+	// Declining must not corrupt the document.
+	if got != wt {
+		t.Errorf("declining the merge still altered the worktree document:\ngot:\n%s\nwant:\n%s", got, wt)
+	}
+}
+
+// The decline covers the in-place rewrite too: a task-shaped line quoted under
+// a header-shaped note must never be rewritten with master's state. The quoted
+// ID here is unique on each side, so neither the dupIDs refusal nor the master
+// walk's own dupMS skip is what protects it — only the worktree walk's decline.
+func TestSyncDuplicateHeadingNeverRewritesQuotedLine(t *testing.T) {
+	master := "### M2: Other\n- [x] P1-M2-1: real task\n"
+	wt := "### M1: Core\n- [ ] P1-M1-1: core\n\n## Session History\n\n### M1: retro notes\n- [ ] P1-M2-1: quoted into the log\n"
+	got, _ := mergeProgressState(master, wt)
+	if !strings.Contains(got, "- [ ] P1-M2-1: quoted into the log") {
+		t.Errorf("a line quoted under a header-shaped note was rewritten with master's state:\n%s", got)
+	}
+}
