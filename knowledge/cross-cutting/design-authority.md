@@ -178,7 +178,9 @@ ever ran on.
 - **Let a worktree phase write the section.** `syncFeatureStateAfterMerge` copies
   the worktree's feature dir over master's after every merge, as a plain
   filesystem copy outside git. You lose the *approval*, not the edit — the
-  worktree's version silently becomes main's.
+  worktree's version silently becomes main's. `PROGRESS.md` is the one exception
+  (#28 merges it via `mergeProgressState`); `TECH_PLAN.md`, and so the contract,
+  is still taken wholesale.
 - **Trust `--assume-unchanged` as a write guard.** It stops the *branch* carrying
   the edit, but the merge copy is not git-aware, so the change ships anyway. It
   also covers only files already in the index, so a new `design-preview.html` is
@@ -242,7 +244,8 @@ ever ran on.
 - **State movement is bidirectional, and the risk is the opposite of the obvious
   one.** `copyBelmontStateToWorktree` wipes and re-copies master → worktree;
   `syncFeatureStateAfterMerge` replaces master's feature dir with the worktree's
-  after every merge, outside git, and `commitBelmontState` then commits it. So a
+  after every merge (every file but `PROGRESS.md`, which #28 merges instead),
+  outside git, and `commitBelmontState` then commits it. So a
   worktree edit is **not** lost — it silently replaces the approved contract on
   main.
 - **The eval fixture's numbers, computed not asserted:** `#9a9a9a` on `#ffffff` is
@@ -282,6 +285,11 @@ ever ran on.
   slot, silently regressing the Figma path; and `next.md` carried a populated
   design spec forward then told the sub-agent it was empty. Also resolved the
   browser-less-install question four lenses raised independently.
+- 2026-08-11 — rebased onto v0.10.17. #28 made `syncFeatureStateAfterMerge` merge
+  `PROGRESS.md` instead of replacing it, so the "whole feature dir is replaced"
+  claim is now qualified in both places it appears. The contract lives in
+  `TECH_PLAN.md`, which is still taken wholesale, so the unguarded-durability
+  position is unchanged.
 - 2026-08-08 — created when landing the Design Contract. Records the three design
   states and which was broken; the placement argument (derive once, interactively,
   in tech-plan) over the per-milestone sub-agent alternatives; `**Mode**` as the
