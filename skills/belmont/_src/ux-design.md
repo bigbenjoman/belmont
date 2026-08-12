@@ -188,7 +188,24 @@ Steps 2–4 apply only when you derived a contract this session. Under either `N
 1. Write `{base}/UX_DESIGN.md` using the format below.
 2. **First derived contract in this project only**: also write `.belmont/UX_DESIGN.md`, carrying `### Token Contract` and `### Accessibility Floor` and nothing else — the two that must be identical across every feature. See the master format at the end of the format reference.
 3. Write `{base}/design-preview.html` — the contract, rendered: colour swatches with computed contrast ratios, the type ramp, the spacing scale, radius and elevation samples, and one state row per State Inventory entry. This is the page that lets a human check the Accessibility Floor by looking rather than reading.
-4. Write `{base}/ux-flows.html` — the design, rendered: one panel per `## Screens` row listing that screen's surfaces and each surface's states, the actual microcopy in place inside those panels so the rules can be judged against real strings, and one inline-SVG diagram per flow (entry → steps → success/failure) with each failure edge labelled with the state it lands in.
+4. Write `{base}/ux-flows.html` — **the design, drawn.** See *Drawing the artifacts* below; this is the output people actually judge you on.
+
+### Drawing the artifacts
+
+**A list of state names is not a rendering.** The failure mode for both files is a page of labelled boxes — `<div class="surface">` with the word `hover` inside it — which describes the design without ever showing it. A reviewer cannot tell whether a design is good from a table of its parts, and a designer will not read one twice.
+
+**`ux-flows.html`: draw each screen as it will look.**
+
+- **Build the actual interface in HTML and CSS.** A screen panel is a rendered mockup at real device width — the sheet or page frame, its header, the controls, the copy in place — not a container listing what it contains. You already know the token values; they are in the contract you just wrote. Use them.
+- **Compose from the project's own primitives.** Phase 1 explored the codebase and, on the Storybook rung, you hold the real component inventory. Name those components in the caption and mirror their shape: if the project has a bottom sheet with a grab handle, draw the grab handle. This is the difference between a mockup of *this* product and a generic wireframe.
+- **Give the mockups their own token set**, separate from the page chrome around them. The document is a review artifact with its own typography; the mockup inside it must render in the *product's* palette. Mixing them makes both look wrong.
+- **Every state gets drawn, not named.** A `loading` state is a skeleton; `empty` is the real empty screen with its real copy; `error` is the message the user actually sees. One frame per state that differs visibly. This is what makes the State Inventory checkable.
+- **Caption every frame** — number it, name the screen and state, say in one line what it does and whether it exists today or is new. The caption carries the reasoning; the frame carries the design.
+- **Then the flow diagram.** One inline SVG per flow (entry → steps → success/failure) with each failure edge labelled with the state it lands in. It comes *after* the frames and summarises them; it is not a substitute for them.
+
+**`design-preview.html`: it must look like the design system it describes.** A page setting out a type ramp in a default sans-serif has failed on its own terms. Set the ramp in the contract's own typeface and sizes, show the palette as generous swatches with their computed ratios beside them, render radius and elevation as real surfaces catching real shadow, and show each state as the styled control rather than a row in a table.
+
+**Both files:** compose with flex or grid and `gap`; give the page a max width and let it breathe; keep the reviewer's eye on the design rather than on your chrome. These are the two things a human opens, and their quality is the first impression the whole design authority makes.
 
 **Both HTML files are self-contained**, and that is a hard requirement, not a preference:
 
@@ -220,6 +237,10 @@ Never create `UX_DESIGN.md`, never create or regenerate either HTML artifact, an
 
 <!-- @include commit-belmont-changes.md commit_context="after UX design" -->
 
+- **Hand the artifacts over as something the user can open.** You wrote two HTML files whose entire purpose is to be looked at, and a path buried in a summary is not a way to look at them. Nobody reviews what they cannot find.
+  - If your environment can publish a page the user can open in a browser — Claude Code's artifacts, or any equivalent — **publish `ux-flows.html` and give them the link**, and `design-preview.html` alongside it. That is the reviewable form.
+  - Otherwise print both as `file://` absolute paths, which terminals make clickable, each on its own line under a heading like `Open these:`. Never a bare relative path inside a paragraph.
+  - Say in one line what each is for, so the user knows which to open first: `ux-flows.html` is the design; `design-preview.html` is the contract.
 - Say: "UX design complete."
 - STOP. Do not continue. Do not plan the implementation.
 - Final: Prompt user to "/clear" and "/belmont:tech-plan"
