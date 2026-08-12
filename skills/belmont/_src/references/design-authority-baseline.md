@@ -242,7 +242,13 @@ pick from at will — write concrete numbers into the contract.
   internal padding is ≤ its external margin, always.
 - **Typography** — one ratio (1.2 minor third / 1.25 major third / 1.333 perfect
   fourth), sizes derived from it, line-height 1.4–1.6 for body and 1.1–1.3 for
-  headings. **Max 4 sizes** in one feature.
+  headings. **Max 4 sizes** in one feature. Every size must actually sit on the
+  ratio you named: a scale of 14 / 16 / 18 / 31 is not a 1.25 scale, and a ratio
+  that does not describe the sizes beneath it is decoration.
+- **Type families** — **one family carries display and body.** A second family
+  appears only in named outlier slots, and you must enumerate them (a wordmark,
+  numerals, code). A third family is never correct. Headings are roman —
+  italic display type is a recognisable machine tell, not a decision.
 - **Colour** — 60/30/10 distribution (dominant / secondary / accent). Max 3 hues
   plus neutrals. **Never pure `#000` or `#FFF`.** Body text ≥ 4.5:1 against its
   background. Each semantic colour (success / error / warning / info) declares
@@ -256,7 +262,9 @@ pick from at will — write concrete numbers into the contract.
 **Banned defaults.** Unstyled browser focus rings removed without replacement;
 `border-radius: 0` on every surface as a non-decision; pure-black text on
 pure-white; a shadow on everything; system-font-only typography where the
-project already ships a typeface.
+project already ships a typeface; naming a typeface the project neither ships
+nor loads, which silently falls back to the system stack and makes the contract
+describe a design nobody will see.
 
 ### Accessibility Floor
 
@@ -265,8 +273,22 @@ This is the one section a tier-1 skill may never lower.
 - Touch targets ≥ 44×44px — **WCAG 2.1 SC 2.5.5, Level AAA**, adopted as
   Belmont's floor.
 - Contrast ≥ 4.5:1 for body text, ≥ 3:1 for large text — **SC 1.4.3, Level AA**.
+  **Every ratio you write down is one you computed**, by WCAG 2.x relative
+  luminance, on the actual pair of values in the contract — not an estimate, not
+  a recollection of what that colour usually scores, and not a number carried
+  over from the source you took the palette from. Convert to sRGB first where the
+  palette is authored in another space; a lightness percentage is not a
+  luminance. Show the pair adjacently in `design-preview.html` at body size so a
+  human can check the claim by looking, which is what that artifact is for. A
+  ratio nobody computed is the same defect as a component inventory nobody
+  fetched: it reads as evidence, the verification agent treats it as authority,
+  and it is worth less than saying nothing. If you cannot compute one, write the
+  pair and say so.
 - A visible focus indicator on every interactive element — **SC 2.4.7, Level AA**.
 - Every input has a visible label. **Placeholder-only is a failure**, not a style.
+- Content reflows at 320px with no horizontal scrolling — **SC 1.4.10, Level AA**.
+  A control's label fits on one line at that width, or the label is too long: a
+  button that wraps to two lines is a copy decision that was never made.
 - `prefers-reduced-motion: reduce` is respected — **SC 2.3.3, Level AAA**.
 - No meaning conveyed by colour alone.
 
