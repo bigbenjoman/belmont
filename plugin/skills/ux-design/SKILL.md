@@ -139,6 +139,7 @@ For a UX design session, the relevant domains (per the Dynamic Questioning frame
 - Writing to `{base}/UX_DESIGN.md` (the feature's design authority — primary output)
 - Writing to `.belmont/UX_DESIGN.md` (master cross-cutting design authority — first derived contract only)
 - Writing to `{base}/design-preview.html` and `{base}/ux-flows.html` (the design authority's reviewable artifacts). These are **planning artifacts under `.belmont/`**, never project source: CRITICAL RULE 2 still forbids you from creating or editing any `.tsx`/`.ts`/`.css` file.
+- Writing, publishing and then deleting a **disposable one-question render** of the options you are asking between — see *Seeing the options* under Phase 3. Put it in a scratch directory outside the repo if your tool has one; otherwise `{base}/`, and delete it before the commit step so it never lands in the repo. Only the two review artifacts are durable output.
 - Deleting a migrated `## Design Contract` section from `{base}/TECH_PLAN.md`, and **only** when its `**Mode**` reads `derived — UI, no Figma` — the only edit this skill ever makes to that file
 
 ## Feature Selection
@@ -263,13 +264,29 @@ This is a **design** session. Product decisions were already made in the PRD dur
 
 If something in the PRD is ambiguous, ask — framed as a design question, not a product re-do. If it is contradictory, record it under `## Open Design Questions` and tell the user; you may not edit the PRD to resolve it.
 
+#### Seeing the options (CRITICAL for anything visual)
+
+**A design decision the user could not see is a decision they did not make.** This skill has asked a human to settle on a marigold hero and a Fraunces/Inter pairing having shown them neither, then written both into a document that downstream verification treats as fixed. The contract is only worth what its approval is worth, and an approver reading hex codes is a rubber stamp.
+
+Two mechanisms, chosen by how visual the choice is:
+
+1. **Alternatives that survive being read — use the per-option preview.** Where your structured question tool renders a preview beside each option (Claude Code's `AskUserQuestion` takes a `preview` on each option and switches to a side-by-side layout), fill it in whenever the options are concrete rather than preferences: the type ramp as its actual sizes, two candidate error strings in full, an ASCII sketch of two layouts, the spacing scale in numbers. It costs one field and turns "which ratio?" into a choice between two things the user can read. Previews are single-select only.
+
+2. **Anything whose quality is visual — render it, hand it over, then ask.** Colour, typeface pairing, elevation, density, layout: none of these are judgeable from a description, and the user agreeing to a word is not the same as the user agreeing to the thing. Build a small self-contained page showing the options *rendered side by side*, give the user the link, and only then ask — with option labels matching the labels on the page word for word, so answering is reading off the page.
+   - Publish it if your environment can (Claude Code artifacts or equivalent); otherwise give an absolute `file://` path on its own line. Same hard rules as the two review artifacts: self-contained, no JavaScript, no fetched fonts, and **never name a typeface the page cannot render** — a font comparison that silently shows Georgia in both columns is worse than no page at all, because it invites a decision about something nobody has seen.
+   - Keep it to the single decision on the table. This is not `design-preview.html`: two or three swatch sets, or two headline pairings, on one screen, disposable.
+   - **The page cannot answer for you.** A published page has no channel back to this session — the capabilities available to one are downloads and MCP, and neither is an input. The user reads the page and answers in the terminal. Never draw a button on it, never write "choose below", never wait for a click that cannot arrive.
+
+Do this for values you are deriving *this session*. A value a ladder rung already supplies was decided elsewhere and is not being put to a vote here — showing it is reporting, not asking.
+
 ### Phase 4 - Approval (MANDATORY)
 
 This phase applies only when you derived a contract. Under either `N/A` mode there is nothing to approve — go straight to Phase 5 and write the header block.
 
 1. Fill `**Source**` with every ladder rung you actually took content from, one per token family where they differ, and `**Authorities**` with the skill enriching each section. A rung named but not read from, or read from but not named, disarms the verification agent's anti-circularity rule.
-2. **Present the contract to the user for approval using your structured question tool.** The mandatory rules in *Asking Questions* apply in full: a Markdown pick-list is not an approval gate, and if you are Codex without the structured question tool, stop and tell the user to restart in plan mode.
-3. On approval, set `**Approval**: approved <ISO date>`. Without approval, write nothing.
+2. **Nothing reaches this gate unseen.** Every value in the contract whose quality is visual — the palette, the type pairing, radius, elevation — must either have been shown rendered during the interview (*Seeing the options*) or be shown now. Build the one-screen render of the palette, the type ramp and the surfaces, hand over the link, and ask against it. It is the same content `design-preview.html` will carry, so on approval Phase 5 writes it rather than rebuilding it; until then it is scratch, because an unapproved contract writes nothing to `{base}`. Where you genuinely cannot write or publish a page — Codex plan mode with file editing unavailable — say so at the gate instead of skipping it silently, and name the values the user is approving unseen. An informed rubber stamp is still the wrong outcome, but a silent one is worse.
+3. **Present the contract to the user for approval using your structured question tool.** The mandatory rules in *Asking Questions* apply in full: a Markdown pick-list is not an approval gate, and if you are Codex without the structured question tool, stop and tell the user to restart in plan mode.
+4. On approval, set `**Approval**: approved <ISO date>`. Without approval, write nothing.
 
 ### Phase 5 - Write
 
@@ -280,7 +297,7 @@ Steps 2–4 apply only when you derived a contract this session. Under either `N
 
 1. Write `{base}/UX_DESIGN.md` using the format below.
 2. **First derived contract in this project only**: also write `.belmont/UX_DESIGN.md`, carrying `### Token Contract` and `### Accessibility Floor` and nothing else — the two that must be identical across every feature. See the master format at the end of the format reference.
-3. Write `{base}/design-preview.html` — the contract, rendered: colour swatches with computed contrast ratios, the type ramp, the spacing scale, radius and elevation samples, and one state row per State Inventory entry. This is the page that lets a human check the Accessibility Floor by looking rather than reading.
+3. Write `{base}/design-preview.html` — the contract, rendered: colour swatches with computed contrast ratios, the type ramp, the spacing scale, radius and elevation samples, and one state row per State Inventory entry. This is the page that lets a human check the Accessibility Floor by looking rather than reading. You built the core of it for the approval gate: extend that page here rather than starting again, and delete the scratch copy and any one-question renders from the interview.
 4. Write `{base}/ux-flows.html` — **the design, drawn.** See *Drawing the artifacts* below; this is the output people actually judge you on.
 
 ### Drawing the artifacts

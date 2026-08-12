@@ -159,6 +159,24 @@ may and may not ask.
   file. Anything else falls through to local story files or project config.
 - **A contract is never a fallback for a *failed* Figma load.** Mode is keyed on
   URL *presence*, never on load outcome. The NO FALLBACK rule stands untouched.
+- **The approver has to be able to see what they are approving.** The whole
+  design-authority argument rests on the contract being *human-approved*; an
+  approver choosing between hex codes and typeface names has approved a word, not
+  a design. So a visual choice is rendered before it is asked: the per-option
+  `preview` field for alternatives that survive being read (a type ramp in
+  numbers, two candidate strings, an ASCII layout), and a disposable
+  self-contained page rendering the options side by side for anything whose
+  quality is visual — palette, type pairing, elevation, density — handed over as a
+  link, *then* asked, with option labels matching the page word for word. The
+  Phase 4 gate inherits the same rule: the palette and type pairing reach approval
+  rendered or not at all, and where a tool genuinely cannot write or publish a
+  page (Codex plan mode without file editing) the gate says so and names what is
+  being approved unseen rather than skipping silently.
+- **The rendered page is one-way.** A published artifact has no channel back into
+  the session — the capabilities available to one are `downloads` and `mcp`, and
+  neither is an input. This is publish-then-ask in the terminal, never a browser
+  form, and the page must not draw a control implying otherwise. Checked, not
+  assumed.
 
 ## How it's enforced
 
@@ -409,6 +427,16 @@ ever ran on.
 
 ## Revisions
 
+- 2026-08-12 — the approval gate became see-before-you-approve. The first
+  interactive runs had a human settle a marigold hero and a Fraunces/Inter
+  pairing having seen neither rendered, which makes the one gate the whole
+  feature rests on a rubber stamp. `ux-design.md` now fills `AskUserQuestion`'s
+  per-option `preview` (previously unused anywhere in the tree) for readable
+  alternatives, renders visual options to a disposable page and hands over the
+  link before asking, and carries the same requirement into Phase 4. The scratch
+  page is an ALLOWED ACTION, because a closed allowlist that omits the action a
+  rule mandates is the defect the reverted Hallmark contrast rule was made of.
+  Recorded too: a published page cannot answer back, so this is publish-then-ask.
 - 2026-08-11 — design authority extracted out of `/belmont:tech-plan` into a new
   `/belmont:ux-design` skill running between `product-plan` and `tech-plan`, and
   out of `{base}/TECH_PLAN.md` into `{base}/UX_DESIGN.md` (plus two artifacts:
