@@ -83,7 +83,11 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      MILESTONE file, dispatch to the implementation agent, process results,
      archive MILESTONE, then continue to the next pending FWLUP. Stop when no
      FWLUP tasks remain in <M>. Only work on FWLUP tasks belonging to <M>;
-     if there are none, stop immediately and report 'No FWLUP tasks to fix.'"
+     if there are none, stop immediately and report 'No FWLUP tasks to fix.'
+     ARCHIVE CAVEAT: your own Step 5 says to OVERWRITE
+     MILESTONE-<M>.done.md when it already exists. That rule assumes one
+     task per invocation; in batch mode it would destroy every log but the
+     last. APPEND each task's log to that file instead."
      Do NOT invoke /belmont:next once per task — each invocation reloads the
      whole skill, and that cost is why this loop runs out of session.
      Then re-verify FOCUSED: run /belmont:verify <feature> and append
