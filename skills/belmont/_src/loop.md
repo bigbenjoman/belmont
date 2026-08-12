@@ -47,14 +47,23 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      config touching <=2 files. Anything touching frontend, backend, schema,
      or critical config is ALWAYS verified — when unsure, verify.
      When you do verify, run /belmont:verify <feature> and append:
-     "MILESTONE-SCOPED VERIFICATION: only verify tasks in milestone <M>. Do
-     NOT change the task state of any other milestone — they may be
-     intentionally incomplete. EXCEPTION: if verify's own scan finds [x]
-     tasks in an EARLIER milestone that this pass verified, record those
-     [x]->[v] flips. That flip is the documented recovery for a missed
-     verification and must not be suppressed by this scoping rule."
-     If you skipped verify for this milestone, note which milestone it was —
-     step 5 needs it.
+     "MILESTONE-SCOPED VERIFICATION: verify milestone <M>. Do NOT change
+     the task state of any other milestone — they may be intentionally
+     incomplete. ONE EXCEPTION, and it is an instruction to INCLUDE, not
+     merely to record: if your Step 1 scan surfaces [x] tasks in an EARLIER
+     milestone that are NOT recorded as a deliberate skip in NOTES.md
+     `## Loop decisions`, add them to this pass — dispatch them to the
+     verification and code-review agents alongside <M>'s tasks, and record
+     the resulting [x]->[v] flips for those that pass. That rescan is the
+     documented recovery for a verification whose flips were never written;
+     this scoping rule must not suppress it. Never flip a task this pass
+     did not actually verify."
+     If you SKIP verify, you must leave a record on disk — step 5's success
+     test depends on it and your memory of this decision will not survive
+     compaction. Append to {base}/NOTES.md under `## Loop decisions`:
+     "verify skipped for <M> — <reason>", and commit it. An [x] with no such
+     record is NOT a deliberate gap: it is a verification that failed,
+     crashed, or never recorded its flips, and step 5 must treat it that way.
   3. If verify reported follow-up (FWLUP) tasks, TRIAGE before fixing.
      Read the actual follow-up descriptions in PROGRESS.md — do not just
      count them. Classify each as:
@@ -109,28 +118,48 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      session (some tasks legitimately stay [x] when verification found
      issues). A feature reading "Complete" with unverified tasks is NOT
      finished — status warns about it and names `belmont reverify`.
-     SUCCESS-WITH-KNOWN-GAPS: if no pending milestones remain and every
-     remaining [x] task is one YOU deliberately left — a milestone you
-     skipped in step 2, or items triage deferred — that is a SUCCESSFUL
-     run, not a stall. Stop and report the feature complete, naming those
-     tasks and offering `belmont reverify --feature <feature>`. Do NOT
-     iterate again hoping they flip: nothing in the remaining steps can
-     flip them, so another iteration only re-spends what step 2 saved.
+     SUCCESS-WITH-KNOWN-GAPS: if no pending milestones remain and EVERY
+     remaining [x] task has DISK EVIDENCE that the run left it on purpose,
+     that is a SUCCESSFUL run, not a stall. Only two things count as that
+     evidence, and you must actually look — never infer it from memory:
+       - a `## Loop decisions` entry in NOTES.md recording a step-2 skip
+         for that milestone; or
+       - a `belmont: triage — deferred N polish items` commit, where the
+         item is listed under `## Polish` in NOTES.md.
+     Stop, report the feature complete, name those tasks, and offer
+     `belmont reverify --feature <feature>`. Do NOT iterate again hoping
+     they flip: nothing in the remaining steps can flip them.
+     NOT SUCCESS — report INCOMPLETE, not complete, if either holds:
+       - any remaining [x] lacks that evidence. It failed verification,
+         crashed mid-phase, or never had its flips recorded. Name those
+         tasks separately from the deliberate ones and say they need
+         investigation, not just `belmont reverify`.
+       - the step-3 CIRCUIT BREAKER fired this session. It defers
+         everything regardless of classification, so its deferrals may
+         include blocking issues. Report INCOMPLETE, name the deferred
+         items from NOTES.md `## Polish` — their PROGRESS lines are gone,
+         so that file is the only remaining record — and name
+         /belmont:debug-manual <feature> as the next step.
      Otherwise continue to the next milestone.
   COUNTED STOP CONDITIONS — track these across iterations; when one fires,
   stop and report rather than scheduling another iteration:
     a. Three consecutive phase failures (any mix of implement/verify/next).
     b. The same milestone FAILS VERIFICATION twice. "Fails verification"
-       means the verify phase errored, or reported Critical issues that
-       survived a fix round — NOT merely that it produced follow-ups, which
-       is the normal path into step 3. This rule outranks the step-3
-       circuit breaker: if both would fire, stop rather than defer-and-
-       proceed, and name /belmont:debug-manual <feature> as the next step.
+       means the verify phase errored, OR reported any issue you classified
+       as BLOCKING in step 3 that survived a fix round — use step 3's
+       blocking list, not verify's Critical/Warning tiers, which do not line
+       up with it. It does NOT mean merely producing follow-ups, which is
+       the normal path into step 3. This rule outranks the step-3 circuit
+       breaker: if both would fire, stop rather than defer-and-proceed, and
+       name /belmont:debug-manual <feature> as the next step.
     c. No state change across two iterations — identical task counts from
        `belmont status` twice running.
-  Re-derive these counts from what is on disk (git log, PROGRESS.md task
-  counts, NOTES.md ## Polish entries) rather than from memory alone; this
-  loop survives context compaction and a remembered counter may not.
+  These counters must live ON DISK, not in your head — this loop survives
+  compaction and a remembered count does not. Nothing else records them, so
+  after every failed phase and every blocking-issue-survived-a-fix-round,
+  append one line to {base}/NOTES.md under `## Loop decisions`:
+  "<iso date> <phase> failed for <M> — <one-line reason>". Count from that
+  file. (c) alone is derivable without it, from `belmont status` task counts.
   Do not start unrelated work; only progress this one feature.
 ```
 
@@ -145,8 +174,8 @@ The counted conditions (a/b/c) live **inside** the fenced recipe above, delibera
 Stop the loop — do not schedule another iteration — when any of these holds:
 
 - The status check in step 5 shows every milestone verified (the success case: feature complete).
-- The status check in step 5 reaches **success-with-known-gaps**: no pending milestones, and every remaining `[x]` is one the run deliberately left (a skipped milestone or a triage deferral). Report success, name the unverified tasks, offer `belmont reverify`.
-- The status check in step 5 still reports done-but-unverified tasks that the run did *not* deliberately leave, after a re-verify pass has already run this session — report which tasks and stop, rather than churning.
+- The status check in step 5 reaches **success-with-known-gaps**: no pending milestones, and every remaining `[x]` has disk evidence it was left on purpose — a `## Loop decisions` skip entry or a triage-deferral commit. Report success, name the unverified tasks, offer `belmont reverify`. Memory is not evidence; if the record is not on disk this branch does not apply.
+- The status check in step 5 shows remaining `[x]` tasks *without* that evidence, or the step-3 circuit breaker fired this session — report **INCOMPLETE**, name those tasks separately from the deliberate ones, and say they need investigation rather than a plain `belmont reverify`.
 - A milestone is blocked (`[!]` tasks) and cannot proceed after a batch fix attempt; report the blocker and stop for user input.
 - Any of the counted conditions (a) three consecutive phase failures, (b) the same milestone failing verification twice, or (c) no state change across two iterations.
 - The user steers you to stop, change features, or do other work.
