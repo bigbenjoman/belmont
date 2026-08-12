@@ -9,6 +9,10 @@ alwaysApply: false
 
 This is the interactive, in-session counterpart to the headless `belmont auto` CLI (also aliased `belmont loop`). Use `/belmont:loop` when you want to stay in the Claude Code REPL and have the agent advance the feature milestone-by-milestone without you re-typing each skill. Use `belmont auto` when you want fully headless, parallel, worktree-based execution from the terminal.
 
+**Loop is the steering tool, not the throughput tool.** Auto will always be faster — it runs milestones in parallel worktrees and gives every phase a fresh context. Loop's value is that you are present and can redirect with a sentence. The recipe below therefore optimises for *not wasting your session* — batching follow-up fixes, triaging polish out of the critical path, and scoping re-verification — rather than for raw parallelism. Do not try to recover auto's parallelism here.
+
+<!-- @include milestone-immutability.md -->
+
 ## Argument
 
 `$ARGUMENTS` is the feature name or slug to drive (e.g. `/belmont:loop checkout`). 
@@ -33,11 +37,55 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
 ```
 /loop Drive the <feature> Belmont feature to completion. Each iteration:
   1. Run /belmont:implement <feature> to build the next pending milestone.
-  2. Run /belmont:verify <feature> on what was just built.
-  3. If verify reports follow-up tasks or failures: run /belmont:next <feature>
-     and repeat /belmont:next <feature> until those follow-ups clear, then
-     re-run /belmont:verify <feature>.
-  4. Check whether work remains: run `belmont status --feature <feature>`.
+     Append: "MILESTONE-SCOPED IMPLEMENTATION: only implement tasks in
+     milestone <M>. Do NOT flip checkboxes, add/remove tasks, or edit notes
+     for any other milestone — treat their state as read-only context."
+     (Substitute the milestone the status check named.)
+  2. Decide whether verification is warranted, then run it.
+     Skip /belmont:verify only when the milestone's diff is trivially
+     unverifiable: zero files changed, pure documentation, or non-critical
+     config touching <=2 files. Anything touching frontend, backend, schema,
+     or critical config is ALWAYS verified — when unsure, verify.
+     When you do verify, run /belmont:verify <feature> and append the same
+     milestone-scoping clause as step 1.
+  3. If verify reported follow-up (FWLUP) tasks, TRIAGE before fixing.
+     Read the actual follow-up descriptions in PROGRESS.md — do not just
+     count them. Classify each as:
+       - Blocking — build/test failures, runtime errors, security issues,
+         acceptance criteria not met, significant visual mismatch from the
+         design, missing PRD-specified behaviour, missing i18n keys for
+         primary user-facing text.
+       - Deferrable — missing aria-labels, Lighthouse warnings, code style,
+         docs, console.log cleanup, 1-2px spacing, import ordering, naming,
+         perf micro-optimisations, tests for non-critical paths.
+     Err toward blocking when genuinely unsure; UI/visual fidelity issues are
+     usually blocking. Then act:
+       - All deferrable → move them to NOTES.md under `## Polish` (removing
+         their PRD sections and PROGRESS checkbox lines), commit as
+         "belmont: triage — deferred N polish items to NOTES.md", and go to
+         step 5. Do NOT fix them, do NOT re-verify.
+       - Any blocking → move only the deferrable ones to NOTES.md, leave the
+         blocking ones pending, and go to step 4.
+     CIRCUIT BREAKER: if two fix rounds have already run for this milestone,
+     defer EVERYTHING remaining regardless of classification and go to step 5.
+     Deferral NEVER means creating a milestone — see the milestone-structure
+     rule above.
+  4. Fix the blocking follow-ups in ONE batch, not one at a time.
+     Run /belmont:next <feature> and append: "BATCH MODE: implement ALL
+     pending FWLUP tasks in <M> sequentially. For each: find it, create the
+     MILESTONE file, dispatch to the implementation agent, process results,
+     archive MILESTONE, then continue to the next pending FWLUP. Stop when no
+     FWLUP tasks remain in <M>. Only work on FWLUP tasks belonging to <M>;
+     if there are none, stop immediately and report 'No FWLUP tasks to fix.'"
+     Do NOT invoke /belmont:next once per task — each invocation reloads the
+     whole skill, and that cost is why this loop runs out of session.
+     Then re-verify FOCUSED: run /belmont:verify <feature> and append
+     "FOCUSED RE-VERIFICATION: only verify (1) the FWLUP tasks just fixed,
+     (2) build and tests pass, (3) any previously-failing acceptance
+     criteria. Do NOT re-run Lighthouse. Do NOT re-check visual specs unless
+     a FWLUP addressed UI. Do NOT create new Polish-level issues."
+     Return to step 3 to triage whatever that re-verify surfaced.
+  5. Check whether work remains: run `belmont status --feature <feature>`.
      Do NOT use --format json here — it is ~3x larger and grows with task
      count. Only fall back to /belmont:status <feature> if the CLI is
      unavailable: that skill must load ~6KB of its own instructions before
@@ -56,16 +104,18 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
 
 When delegating, you are invoking the `/loop` skill — follow its self-pacing guidance (it uses `ScheduleWakeup` to re-enter the task between milestones, surviving context compaction). Each iteration advances exactly one milestone, so the loop converges as milestones flip to verified.
 
-**If the `/loop` skill is unavailable** in this Claude Code build, fall back to driving the cycle inline: run steps 1–4 yourself in sequence, then repeat from step 1 for the next milestone, using `ScheduleWakeup` to self-pace between milestones. Stop on the same condition (no pending milestones left).
+**If the `/loop` skill is unavailable** in this Claude Code build, fall back to driving the cycle inline: run steps 1–5 yourself in sequence, then repeat from step 1 for the next milestone, using `ScheduleWakeup` to self-pace between milestones. Stop on the same condition (no pending milestones left).
 
 ## Stop conditions
 
-Stop the loop — do not schedule another iteration — when any of these holds:
+Stop the loop — do not schedule another iteration — when any of these holds. Each is a **counted** condition, not a judgement call: track the counts across iterations so a stall is detected rather than felt.
 
-- The status check in step 4 shows every milestone verified (the success case: feature complete).
-- The status check in step 4 still reports done-but-unverified tasks after a re-verify pass has already run this session — report which tasks and stop, rather than churning.
-- A milestone is blocked (`[!]` tasks) and cannot proceed after `/belmont:next` attempts; report the blocker and stop for user input.
-- `/belmont:verify` keeps failing on the same task across iterations with no new progress (avoid an infinite verify/next churn) — report the stuck task and stop.
+- The status check in step 5 shows every milestone verified (the success case: feature complete).
+- The status check in step 5 still reports done-but-unverified tasks after a re-verify pass has already run this session — report which tasks and stop, rather than churning.
+- A milestone is blocked (`[!]` tasks) and cannot proceed after a batch fix attempt; report the blocker and stop for user input.
+- **Three consecutive phase failures** (any mix of implement / verify / next returning failure) — stop and report the last error.
+- **The same milestone fails verification twice.** Do not attempt a third fix round: the triage circuit breaker has already deferred what it can, so a third round means the problem is structural. Report the failing acceptance criteria and stop, naming `/belmont:debug-manual <feature>` as the next step — a real debugging session with you present will beat another blind fix round.
+- **No state change after two iterations** — if `belmont status` reports identical task counts twice running, the loop is stuck. Report and stop.
 - The user steers you to stop, change features, or do other work.
 
 On stop, report: the feature, which milestones completed this run, the final status, any blockers or stuck tasks that need user attention, and — if `belmont status` warned about done-but-unverified tasks — say so explicitly and name `belmont reverify --feature <feature>` as the recovery.
@@ -73,5 +123,5 @@ On stop, report: the feature, which milestones completed this run, the final sta
 ## Scope rules
 
 - **One feature only.** Never let an iteration pull in a different feature or unrelated refactor. The recipe's final line ("Do not start unrelated work") is load-bearing.
-- **Do not edit milestone structure.** This skill orchestrates the existing implement/verify/next/status skills — it never adds, renames, or removes milestones. Milestone structure is immutable outside `/belmont:tech-plan`.
+- **Do not edit milestone structure.** This skill orchestrates the existing implement/verify/next/status skills — it never adds, renames, or removes milestones. The canonical rule and the routing for discovered work are stated above; the triage step in particular must never turn a deferral into a milestone.
 - **Respect each underlying skill's rules.** `/belmont:implement`, `/belmont:verify`, and `/belmont:next` enforce their own scope guards, evidence checks, and feature-detection prompts. Do not bypass them; just sequence them.

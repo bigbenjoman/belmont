@@ -105,13 +105,15 @@ Runs verification and code review on all completed tasks.
 **Claude Code only.** Drives a single feature to completion from inside the Claude Code REPL, advancing it milestone-by-milestone without you re-typing each skill. Usage: `/belmont:loop <feature-name>`.
 
 - Resolves `<feature-name>` to one feature slug (prompts if omitted or ambiguous), then runs a self-paced loop where each iteration:
-  1. `/belmont:implement <feature>` — build the next pending milestone
-  2. `/belmont:verify <feature>` — verify what was just built
-  3. `/belmont:next <feature>` (repeated until clear) + re-verify — if verify reports follow-ups or failures
-  4. `/belmont:status <feature>` — stop if no pending milestones remain, otherwise continue
+  1. `/belmont:implement <feature>` — build the next pending milestone, milestone-scoped
+  2. `/belmont:verify <feature>` — verify what was just built, skipped only for a trivially unverifiable diff (zero files, pure docs, non-critical config ≤2 files)
+  3. **Triage** — classify follow-ups as blocking or deferrable, move deferrable ones to `NOTES.md` under `## Polish`, and proceed without fixing them. Circuit breaker: after two fix rounds, defer everything remaining
+  4. **Batch fix** — one `/belmont:next <feature>` in BATCH MODE covering every pending FWLUP in the milestone, then a *focused* re-verify (fixed tasks + build/tests + previously-failing criteria only), then back to triage
+  5. `belmont status --feature <feature>` — stop if every milestone is verified, otherwise continue
 - Delegates to Claude Code's built-in `/loop` skill (self-paced via `ScheduleWakeup`), which is why it is installed **only for Claude Code** — other CLIs don't have those mechanics. It is written as a real `.claude/commands/belmont/loop.md` command and is deliberately kept off the shared `.agents/skills/` surface so other tools never list it.
-- Stays scoped to the one named feature — never starts unrelated work, never edits milestone structure.
-- The interactive counterpart to the headless `belmont auto` CLI (also aliased `belmont loop`). Use `/belmont:loop` to stay in the REPL and watch/steer; use `belmont auto` for fully headless, parallel, worktree-based execution.
+- Stays scoped to the one named feature — never starts unrelated work, never edits milestone structure. Deferral routes to `NOTES.md` or a same-milestone `[!]`, never a new milestone.
+- Stop conditions are counted, not judged: three consecutive phase failures, the same milestone failing verification twice (escalates to `/belmont:debug-manual`), or no state change across two iterations.
+- The interactive counterpart to the headless `belmont auto` CLI (also aliased `belmont loop`). Use `/belmont:loop` to stay in the REPL and watch/steer; use `belmont auto` for fully headless, parallel, worktree-based execution. **Auto is the faster path** — parallel worktrees and a fresh context per phase. Loop's advantage is that you are present to steer, so it optimises for not wasting your session rather than for parallelism.
 
 ## `debug`
 
