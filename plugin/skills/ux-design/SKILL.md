@@ -306,8 +306,12 @@ tool is available in this turn, treat this as a non-interactive call.**
 When you are headless: **read nothing further, write nothing, ask nothing.** A design authority is an approval artifact, and there is no one to approve it in a headless run — so the general "ask one clearly formatted plain-text question at a time" fallback in *Asking Questions* does not apply here. Print exactly one line and terminate normally:
 
 ```text
-/belmont:ux-design is interactive only: it produces a human-approved design authority. Run it in a live session. Nothing was written.
+/belmont:ux-design is interactive only: it produces a human-approved design authority. Nothing was written.
+If you are a human reading this in a live session, the bare `--feature <slug>` form reads as scripted.
+Re-run it with prose alongside the command, e.g. `/belmont:ux-design --feature <slug> — let's design this`.
 ```
+
+The second and third lines matter: the detection above cannot distinguish a script from a person who typed the documented command form, and it deliberately errs toward refusing. That makes a false refusal the *expected* experience for a real user following the docs, so the way out has to be in the message. Never print a refusal that names no remedy.
 
 Never create `UX_DESIGN.md`, never create or regenerate either HTML artifact, and never touch the `**Approval**` line of an existing file.
 
