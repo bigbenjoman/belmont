@@ -74,29 +74,19 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      milestone <M>. Do NOT flip checkboxes, add/remove tasks, or edit notes
      for any other milestone — treat their state as read-only context."
      (Substitute the milestone the status check named.)
-  2. Decide whether verification is warranted, then run it.
-     Skip /belmont:verify only when the milestone's diff is trivially
-     unverifiable: zero files changed, pure documentation, or non-critical
-     config touching <=2 files. Anything touching frontend, backend, schema,
-     or critical config is ALWAYS verified — when unsure, verify.
-     When you do verify, run /belmont:verify <feature> and append:
+  2. ALWAYS run /belmont:verify <feature> — there is no skip. Only verify
+     writes [v], so a skipped milestone can never reach a verified state,
+     and every milestone must. Append:
      "MILESTONE-SCOPED VERIFICATION: verify milestone <M>. Do NOT change
      the task state of any other milestone — they may be intentionally
      incomplete. ONE EXCEPTION, and it is an instruction to INCLUDE, not
      merely to record: if your Step 1 scan surfaces [x] tasks in an EARLIER
-     milestone that are NOT recorded as a deliberate skip in NOTES.md
-     `## Loop decisions`, add them to this pass — dispatch them to the
-     verification and code-review agents alongside <M>'s tasks, and record
-     the resulting [x]->[v] flips for those that pass. That rescan is the
-     documented recovery for a verification whose flips were never written;
-     this scoping rule must not suppress it. Never flip a task this pass
-     did not actually verify."
-     If you SKIP verify, you must leave a record on disk — step 5's success
-     test depends on it and your memory of this decision will not survive
-     compaction. Append to {base}/NOTES.md under `## Loop decisions`:
-     "verify skipped for <M> — <reason>", and commit it. An [x] with no such
-     record is NOT a deliberate gap: it is a verification that failed,
-     crashed, or never recorded its flips, and step 5 must treat it that way.
+     milestone, add them to this pass — dispatch them to the verification
+     and code-review agents alongside <M>'s tasks, and record the resulting
+     [x]->[v] flips for those that pass. That rescan is the documented
+     recovery for a verification whose flips were never written; this
+     scoping rule must not suppress it. Never flip a task this pass did not
+     actually verify."
   3. If verify reported follow-up (FWLUP) tasks, TRIAGE before fixing.
      Read the actual follow-up descriptions in PROGRESS.md — do not just
      count them. Classify each as:
@@ -151,28 +141,19 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      session (some tasks legitimately stay [x] when verification found
      issues). A feature reading "Complete" with unverified tasks is NOT
      finished — status warns about it and names `belmont reverify`.
-     SUCCESS-WITH-KNOWN-GAPS: if no pending milestones remain and EVERY
-     remaining [x] task has DISK EVIDENCE that the run left it on purpose,
-     that is a SUCCESSFUL run, not a stall. Only two things count as that
-     evidence, and you must actually look — never infer it from memory:
-       - a `## Loop decisions` entry in NOTES.md recording a step-2 skip
-         for that milestone; or
-       - a `belmont: triage — deferred N polish items` commit, where the
-         item is listed under `## Polish` in NOTES.md.
-     Stop, report the feature complete, name those tasks, and offer
-     `belmont reverify --feature <feature>`. Do NOT iterate again hoping
-     they flip: nothing in the remaining steps can flip them.
-     NOT SUCCESS — report INCOMPLETE, not complete, if either holds:
-       - any remaining [x] lacks that evidence. It failed verification,
-         crashed mid-phase, or never had its flips recorded. Name those
-         tasks separately from the deliberate ones and say they need
-         investigation, not just `belmont reverify`.
+     THERE IS NO SUCCESSFUL RUN THAT LEAVES AN [x]. Every milestone is
+     verified (step 2 has no skip), so the only way a task stays [x] is
+     that verification found issues, errored, or never recorded its flips.
+     All three are failures. Never report a feature complete over one.
+     Report INCOMPLETE — not complete — and stop, if either holds:
+       - any task remains [x]. Name those tasks and say they need
+         investigation, not just a `belmont reverify` re-run.
        - the step-3 CIRCUIT BREAKER fired this session. It defers
          everything regardless of classification, so its deferrals may
-         include blocking issues. Report INCOMPLETE, name the deferred
-         items from NOTES.md `## Polish` — their PROGRESS lines are gone,
-         so that file is the only remaining record — and name
-         /belmont:debug-manual <feature> as the next step.
+         include blocking issues. Name the deferred items from NOTES.md
+         `## Polish` — their PROGRESS lines are gone, so that file is the
+         only remaining record — and name /belmont:debug-manual <feature>
+         as the next step.
      Otherwise continue to the next milestone.
   COUNTED STOP CONDITIONS — track these across iterations; when one fires,
   stop and report rather than scheduling another iteration:
@@ -206,9 +187,8 @@ The counted conditions (a/b/c) live **inside** the fenced recipe above, delibera
 
 Stop the loop — do not schedule another iteration — when any of these holds:
 
-- The status check in step 5 shows every milestone verified (the success case: feature complete).
-- The status check in step 5 reaches **success-with-known-gaps**: no pending milestones, and every remaining `[x]` has disk evidence it was left on purpose — a `## Loop decisions` skip entry or a triage-deferral commit. Report success, name the unverified tasks, offer `belmont reverify`. Memory is not evidence; if the record is not on disk this branch does not apply.
-- The status check in step 5 shows remaining `[x]` tasks *without* that evidence, or the step-3 circuit breaker fired this session — report **INCOMPLETE**, name those tasks separately from the deliberate ones, and say they need investigation rather than a plain `belmont reverify`.
+- The status check in step 5 shows every milestone verified — **the only success case**. There is no successful run that leaves an `[x]`: step 2 never skips verification, so a task at `[x]` means verification found issues, errored, or lost its flips.
+- The status check in step 5 shows any remaining `[x]`, or the step-3 circuit breaker fired this session — report **INCOMPLETE**, name those tasks, and say they need investigation rather than a plain `belmont reverify`.
 - A milestone is blocked (`[!]` tasks) and cannot proceed after a batch fix attempt; report the blocker and stop for user input.
 - Any of the counted conditions (a) three consecutive phase failures, (b) the same milestone failing verification twice, or (c) no state change across two iterations.
 - The user steers you to stop, change features, or do other work.
