@@ -232,8 +232,18 @@ skill body for interactive use:
 - never deletes a task line (dropped work is `[-]` withdrawn, reason in
   `## Decisions Log`)
 - never creates, renames or removes a milestone; may move a task between
-  milestones that already exist
+  milestones that already exist, carrying the task's whole block — the bullet
+  plus the indented body beneath it — rather than the bullet alone
 - never touches a line it did not flag, or a line that changed since it scanned
+
+A misplaced task always gets a destination, which is the step people used to
+loop on. If its ID names a milestone the file already has, it moves there. If it
+names none — the usual shape of a follow-up from a cross-cutting sweep — it goes
+under the **highest-numbered existing milestone whose work it touches**, or the
+last milestone in the plan if it is genuinely global. Never a new milestone
+(`/belmont:tech-plan` forbids one for follow-ups, so escalating there was a dead
+end) and never left outside every milestone, where it is counted by nothing and
+never scheduled.
 
 See [cli-commands.md](cli-commands.md) for the CLI half.
 

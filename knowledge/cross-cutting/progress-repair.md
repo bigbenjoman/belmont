@@ -50,8 +50,29 @@ The rest follows from that:
   refused with a pointer to `/belmont:tech-plan`.
 - **Repair only touches lines it flagged**, and only while they are
   byte-for-byte what it scanned.
+- **A task is a bullet PLUS its body, and a move carries both.** The indented
+  continuation lines under a task line are where `**Verification**` and
+  `**Evidence**` prose lives. `moveTaskLines` relocates
+  `idx..taskBodyEnd(lines, idx)` — the same extent that anchors an insertion past
+  the destination task's own body, and the same one `mergeProgressState` uses.
+  One definition of where a task ends. A bullet nested inside another moving
+  task's body is **refused out loud**, not moved: its lines already travel with
+  the enclosing block, so moving it again would emit them twice and duplicate a
+  task ID, which switches off every milestone-keyed reader.
 - **Ambiguous structure is refused, not guessed** — a repeated `### M<n>:`
   heading, same policy as both runtime guards.
+- **A misplaced task always has a destination, and repair states it.** "Move it
+  under its `### M<n>:` heading" is only actionable when such a heading exists.
+  When it does not, the reader escalates to `/belmont:tech-plan`, which forbids
+  creating a milestone for follow-ups, and arrives back at a task outside every
+  milestone — issue #34, three correct pieces of guidance meeting on one finding
+  and forming a loop. The ruling: highest-numbered existing milestone whose work
+  it touches, or the last milestone in the plan when it is genuinely global.
+  Highest, not earliest — the earliest re-opens work later milestones already
+  built on, which is the dependency-graph lie `milestone-immutability.md` bans a
+  polish milestone for. It is stated in three places because three paths reach
+  it: `detectOrphanViolations` (conditionally, per finding), `repairAgentRules`
+  (the CLI-injected brief) and `_src/repair.md` (interactive).
 - **The `[v]`-without-evidence audit is reported, never applied.** It is the
   mirror of `runEvidenceCheck` for the half that guard cannot see: it compares a
   phase's before and after, so a `[v]` already on disk when a run started is
@@ -95,8 +116,10 @@ The rest follows from that:
   printed.
 - `applyRepairPlans` / `moveTaskLines` / `appendDecisionLogEntry` are the only
   writers, and they are pure string functions. `moveTaskLines` anchors exactly as
-  `mergeProgressState` does: after the destination's last task line, or after its
-  header when it holds no tasks yet.
+  `mergeProgressState` does: after the destination's last task line (past that
+  task's own body), or after its header when it holds no tasks yet. It resolves
+  block extents **before** anchors, because an anchor landing anywhere inside a
+  departing block is a line that will not be emitted where it currently sits.
 - The skill (`skills/belmont/_src/repair.md`) carries the same rules for the
   interactive path, where nothing mechanical enforces them.
 
@@ -172,6 +195,16 @@ and proves nothing in either direction.
   as outstanding work at the next sibling sync — in either direction.
 - **Skip the "is this still the line I scanned?" check.** An editor or a
   concurrent agent shifts the file, and the action lands on a task nobody judged.
+- **Move a task line without its body.** Issue #33, and the worst kind of bug
+  this command can have: it produces two false statements from one move — the
+  body stays behind and re-attaches to whatever task now precedes it, crediting
+  that task with evidence it never earned, while the task that moved arrives
+  asserting done with nothing behind it — and **nothing downstream notices**. The
+  file parses, the task count is unchanged, `belmont validate` reports no
+  violations. On a real 11,948-line PROGRESS.md it re-attributed a Stripe
+  test-clock measurement across two money-path tasks; it was caught only because
+  the skill says to read the diff, and the diff showed three changed lines where
+  a block move should have shown six.
 
 ## Don't re-do
 
@@ -218,6 +251,11 @@ and proves nothing in either direction.
 
 ## Revisions
 
+- 2026-08-12 — `moveTaskLines` moves a task's whole block rather than its bullet
+  (issue #33), refusing a bullet nested inside another moving task's body; and
+  the "where does a misplaced task go" ruling was written into all three paths
+  that reach it (issue #34). Both regressions are mutation-tested: reverting the
+  extent to the bullet alone fails three named tests.
 - 2026-08-09 — round seven: the `[v]` audit applies the cross-feature ambiguity rule; `reviewable` carries one finding per line; the unresolved count subtracts orphans the review tier ruled are not tasks; `remaining` stops subtracting by line on the real run, which had hidden a cross-milestone finding the mechanical tier itself created; `evidence_available` reports the repository rather than the findings.
 
 - 2026-08-09 — added the `[v]`-without-evidence audit: the mirror of

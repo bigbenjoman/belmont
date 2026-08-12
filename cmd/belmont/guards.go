@@ -278,16 +278,44 @@ func runEvidenceCheck(cfg loopConfig, action loopAction, pre *progressSnapshot) 
 //
 // Takes raw content rather than parsed milestones for the obvious reason: by
 // the time parseMilestones has run, these lines are already gone.
+//
+// The advice is CONDITIONAL, and that is the point. "Move it under its
+// `### M<n>:` heading" is actionable only when there is such a heading to move
+// it under. When there is not — a follow-up produced by a cross-cutting sweep,
+// which is the common case at volume — the reader escalates to
+// `/belmont:tech-plan`, which forbids creating a milestone for follow-ups, and
+// arrives back at a task outside every milestone. That is issue #34: three
+// pieces of correct guidance meeting on one finding and forming a loop. So a
+// task whose ID names a milestone this file already has gets told exactly that
+// and pointed at `belmont repair`, which moves between existing milestones; only
+// the genuinely unattributable ones get the destination rule.
 func detectOrphanViolations(slug, progress string) []validationViolation {
 	orphans := orphanedTaskLines(progress)
 	if len(orphans) == 0 {
 		return nil
 	}
+	present := map[string]bool{}
+	for _, m := range parseMilestones(progress) {
+		present[m.ID] = true
+	}
+	repairCmd := "belmont repair"
+	if slug != "" {
+		repairCmd += " --feature " + slug
+	}
+
 	var out []validationViolation
 	for _, t := range orphans {
 		label := t.ID
 		if label == "" {
 			label = t.Name
+		}
+		advice := fmt.Sprintf(
+			"Its ID names no milestone, so its destination is a reading question, not a lookup: file it under the highest-numbered existing milestone whose work it touches — the last one whose outputs the fix depends on — or the final milestone in the plan if it is genuinely global. Never a new milestone. `%s` moves it once you have picked one.",
+			repairCmd)
+		if named, _ := taskIDNamedMilestone(t.ID); named != "" && present[named] {
+			advice = fmt.Sprintf(
+				"Its ID names %s, which this file already has, so `%s` can move it there — no milestone needs creating and `/belmont:tech-plan` is not involved.",
+				named, repairCmd)
 		}
 		out = append(out, validationViolation{
 			Feature:  slug,
@@ -296,8 +324,8 @@ func detectOrphanViolations(slug, progress string) []validationViolation {
 			Severity: severityWarning,
 			Remedy:   remedyNeedsEvidence,
 			Message: fmt.Sprintf(
-				"task line at PROGRESS.md:%d (%s) sits outside any milestone, so it is counted by nothing and never scheduled. A `## ` heading at column zero ends the milestones region — if this task is real, move it under its `### M<n>:` heading, or indent the heading above it so it reads as part of the preceding task's body.",
-				t.Line, label),
+				"task line at PROGRESS.md:%d (%s) sits outside any milestone, so it is counted by nothing and never scheduled. A `## ` heading at column zero ends the milestones region — if this is not a task at all, indent the heading above it so it reads as part of the preceding task's body. %s",
+				t.Line, label, advice),
 		})
 	}
 	return out
@@ -409,6 +437,14 @@ func parseProgressSnapshot(path, content string) *progressSnapshot {
 	snap := &progressSnapshot{Path: path, Raw: content, ByID: map[string]int{}}
 	msHeaderRe := regexp.MustCompile(`(?m)^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):\s*(.+)$`)
 	depsRe := regexp.MustCompile(`\(depends:\s*(M[\d]+(?:\s*,\s*M[\d]+)*)\)\s*$`)
+	// Deliberately wider than `parseTaskID`, and NOT a missed conversion. This
+	// asks "what token identifies this line inside its milestone block" so the
+	// scope guard can tell whether a marker moved — not "what is this task's ID".
+	// Matching too much costs nothing here: a line keyed by a token that is not
+	// really an ID is still compared only against itself. Matching too little
+	// drops the line from TaskStates entirely, and an out-of-scope flip on it
+	// then passes the guard unseen. Narrowing this to the shared parser would
+	// weaken a runtime guard to tidy up a regex.
 	taskRe := regexp.MustCompile(`(?m)^\s*-\s+\[(.)\]\s+(\S+?):`)
 
 	lines := strings.Split(content, "\n")
@@ -473,6 +509,9 @@ func revertEvidenceMissing(post *progressSnapshot, missing []evidenceMissing) st
 	}
 
 	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):\s*(.+)$`)
+	// Same wider token match as parseProgressSnapshot, and for the same reason —
+	// this rebuilds the lines that snapshot keyed, so the two must agree with
+	// each other rather than with `parseTaskID`. See the note there.
 	taskRe := regexp.MustCompile(`^(\s*-\s+\[)(.)\](\s+)(\S+?)(:.*)$`)
 
 	var out strings.Builder
