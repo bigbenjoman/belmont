@@ -38,9 +38,7 @@ Write to `{base}/UX_DESIGN.md` with this structure.
 
 ### Token Contract
 Spacing — 8pt grid: 4, 8, 12, 16, 24, 32, 48, 64, 96. Internal ≤ external on every component.
-Typography — ratio [1.25], sizes [list — every one on the named ratio], line-height 1.4–1.6 body /
-  1.1–1.3 heading. Max 4 sizes. One family carries display and body; name any outlier slot and the
-  family it uses. Headings roman, never italic.
+Typography — ratio [1.25], sizes [list], line-height 1.4–1.6 body / 1.1–1.3 heading. Max 4 sizes.
 Colour — 60/30/10. Max 3 hues + neutrals. Never pure #000/#FFF. Body ≥ 4.5:1.
   Each semantic (success/error/warning/info) declares bg, border, text, icon.
 Radius — committed value [8px]. Nested children strictly smaller than parent.
@@ -49,16 +47,8 @@ Elevation — [levels]. Interactive elements rise one level on hover.
 ### Accessibility Floor
 Targets ≥ 44×44px (SC 2.5.5, AAA — adopted as Belmont's floor) · contrast ≥ 4.5:1 text / 3:1 large
 (SC 1.4.3, AA) · visible focus on every interactive element (SC 2.4.7, AA) · every input has a visible
-label, never placeholder-only · reflow at 320px with no horizontal scroll (SC 1.4.10, AA) ·
-`prefers-reduced-motion` respected (SC 2.3.3, AAA) · no meaning by colour alone.
-
-| Pair (fg on bg) | Computed | Floor |
-|-----------------|----------|-------|
-[One row per text/background pair the Token Contract commits to. Every number here is one you
-computed by WCAG 2.x relative luminance on those exact values — never estimated, never inherited
-from the source you took the palette from. If you could not compute one, write `not computed` and
-say why; a number nobody calculated reads as evidence and is worth less than nothing.]
-
+label, never placeholder-only · `prefers-reduced-motion` respected (SC 2.3.3, AAA) · no meaning by
+colour alone.
 [If the PRD names a target WCAG level, adopt it here and say so. This floor may be raised, never lowered.]
 
 ### UX Strategy
