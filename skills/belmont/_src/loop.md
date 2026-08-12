@@ -46,8 +46,15 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      unverifiable: zero files changed, pure documentation, or non-critical
      config touching <=2 files. Anything touching frontend, backend, schema,
      or critical config is ALWAYS verified — when unsure, verify.
-     When you do verify, run /belmont:verify <feature> and append the same
-     milestone-scoping clause as step 1.
+     When you do verify, run /belmont:verify <feature> and append:
+     "MILESTONE-SCOPED VERIFICATION: only verify tasks in milestone <M>. Do
+     NOT change the task state of any other milestone — they may be
+     intentionally incomplete. EXCEPTION: if verify's own scan finds [x]
+     tasks in an EARLIER milestone that this pass verified, record those
+     [x]->[v] flips. That flip is the documented recovery for a missed
+     verification and must not be suppressed by this scoping rule."
+     If you skipped verify for this milestone, note which milestone it was —
+     step 5 needs it.
   3. If verify reported follow-up (FWLUP) tasks, TRIAGE before fixing.
      Read the actual follow-up descriptions in PROGRESS.md — do not just
      count them. Classify each as:
@@ -98,7 +105,28 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      session (some tasks legitimately stay [x] when verification found
      issues). A feature reading "Complete" with unverified tasks is NOT
      finished — status warns about it and names `belmont reverify`.
+     SUCCESS-WITH-KNOWN-GAPS: if no pending milestones remain and every
+     remaining [x] task is one YOU deliberately left — a milestone you
+     skipped in step 2, or items triage deferred — that is a SUCCESSFUL
+     run, not a stall. Stop and report the feature complete, naming those
+     tasks and offering `belmont reverify --feature <feature>`. Do NOT
+     iterate again hoping they flip: nothing in the remaining steps can
+     flip them, so another iteration only re-spends what step 2 saved.
      Otherwise continue to the next milestone.
+  COUNTED STOP CONDITIONS — track these across iterations; when one fires,
+  stop and report rather than scheduling another iteration:
+    a. Three consecutive phase failures (any mix of implement/verify/next).
+    b. The same milestone FAILS VERIFICATION twice. "Fails verification"
+       means the verify phase errored, or reported Critical issues that
+       survived a fix round — NOT merely that it produced follow-ups, which
+       is the normal path into step 3. This rule outranks the step-3
+       circuit breaker: if both would fire, stop rather than defer-and-
+       proceed, and name /belmont:debug-manual <feature> as the next step.
+    c. No state change across two iterations — identical task counts from
+       `belmont status` twice running.
+  Re-derive these counts from what is on disk (git log, PROGRESS.md task
+  counts, NOTES.md ## Polish entries) rather than from memory alone; this
+  loop survives context compaction and a remembered counter may not.
   Do not start unrelated work; only progress this one feature.
 ```
 
@@ -108,14 +136,15 @@ When delegating, you are invoking the `/loop` skill — follow its self-pacing g
 
 ## Stop conditions
 
-Stop the loop — do not schedule another iteration — when any of these holds. Each is a **counted** condition, not a judgement call: track the counts across iterations so a stall is detected rather than felt.
+The counted conditions (a/b/c) live **inside** the fenced recipe above, deliberately: the recipe is the only text guaranteed to travel with the delegated `/loop` task and survive compaction. Stop-condition prose that sits only out here can be summarised away mid-run, which is precisely when a stall guard is needed. Do not move them back out.
+
+Stop the loop — do not schedule another iteration — when any of these holds:
 
 - The status check in step 5 shows every milestone verified (the success case: feature complete).
-- The status check in step 5 still reports done-but-unverified tasks after a re-verify pass has already run this session — report which tasks and stop, rather than churning.
+- The status check in step 5 reaches **success-with-known-gaps**: no pending milestones, and every remaining `[x]` is one the run deliberately left (a skipped milestone or a triage deferral). Report success, name the unverified tasks, offer `belmont reverify`.
+- The status check in step 5 still reports done-but-unverified tasks that the run did *not* deliberately leave, after a re-verify pass has already run this session — report which tasks and stop, rather than churning.
 - A milestone is blocked (`[!]` tasks) and cannot proceed after a batch fix attempt; report the blocker and stop for user input.
-- **Three consecutive phase failures** (any mix of implement / verify / next returning failure) — stop and report the last error.
-- **The same milestone fails verification twice.** Do not attempt a third fix round: the triage circuit breaker has already deferred what it can, so a third round means the problem is structural. Report the failing acceptance criteria and stop, naming `/belmont:debug-manual <feature>` as the next step — a real debugging session with you present will beat another blind fix round.
-- **No state change after two iterations** — if `belmont status` reports identical task counts twice running, the loop is stuck. Report and stop.
+- Any of the counted conditions (a) three consecutive phase failures, (b) the same milestone failing verification twice, or (c) no state change across two iterations.
 - The user steers you to stop, change features, or do other work.
 
 On stop, report: the feature, which milestones completed this run, the final status, any blockers or stuck tasks that need user attention, and — if `belmont status` warned about done-but-unverified tasks — say so explicitly and name `belmont reverify --feature <feature>` as the recovery.
