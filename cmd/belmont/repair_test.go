@@ -420,6 +420,128 @@ func TestRepairMovesIntoAnEmptyMilestone(t *testing.T) {
 	t.Errorf("M3 is gone:\n%s", got)
 }
 
+// A task is a bullet PLUS its body. Moving the bullet alone produces two false
+// statements from one move — the body re-attaches to whatever task now precedes
+// it, and the task that moved arrives with its evidence removed — and nothing
+// downstream notices: the file parses, the count is unchanged, `belmont
+// validate` reports no violations. This is issue #33, and the fixture is its
+// repro: on a real 11,948-line file it re-attributed a Stripe test-clock
+// measurement to a neighbouring task.
+func TestRepairMoveCarriesTheTaskBodyWithItsBullet(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [v] P0-M1-1: a task that belongs here.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [v] P0-M2-1: a single-line task, nothing underneath it.\n" +
+		"- [v] P0-M1-2: filed under M2, ID names M1.\n" +
+		"  **Verification**: this line is the task's body.\n" +
+		"  **Evidence**: measured on a real test clock; this is the proof.\n" +
+		"- [v] P0-M2-2: the task that follows.\n" +
+		"\n## Decisions Log\n"
+
+	findings := collectRepairFindings(doc)
+	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 6, TaskID: "P0-M1-2", Action: repairMoveMilestone, Milestone: "M1", Reason: "its ID names M1"},
+	})
+	if len(rejected) != 0 {
+		t.Fatalf("unexpected refusal: %+v", rejected)
+	}
+	got, applied, warnings := applyRepairPlans(doc, plans, "2026-08-12")
+	if len(warnings) != 0 || len(applied) != 1 {
+		t.Fatalf("warnings=%v applied=%d", warnings, len(applied))
+	}
+
+	block := "- [v] P0-M1-2: filed under M2, ID names M1.\n" +
+		"  **Verification**: this line is the task's body.\n" +
+		"  **Evidence**: measured on a real test clock; this is the proof."
+	if !strings.Contains(got, block) {
+		t.Fatalf("the bullet and its body were separated:\n%s", got)
+	}
+	// …and separated is not the only failure: the body must not ALSO still be
+	// sitting where it was, which is what a copy rather than a move would do.
+	if n := strings.Count(got, "**Evidence**"); n != 1 {
+		t.Errorf("the evidence line appears %d times, want 1:\n%s", n, got)
+	}
+	if strings.Index(got, block) > strings.Index(got, "### M2: Second") {
+		t.Errorf("the block landed in M2 rather than M1:\n%s", got)
+	}
+	// The single-line task above it is the one that silently inherited the
+	// evidence in the reported bug.
+	if strings.Contains(got, "nothing underneath it.\n  **") {
+		t.Errorf("P0-M2-1 inherited a body it never had:\n%s", got)
+	}
+}
+
+// The anchor side of the same rule. A block moved into a milestone whose last
+// task has its own body must land after that body, not between the anchor task
+// and its evidence — otherwise the move fixes one stranding by causing another.
+func TestRepairMoveLandsPastTheAnchorTasksOwnBody(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [v] P0-M1-1: the anchor.\n" +
+		"  **Evidence**: the anchor's own proof.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [v] P0-M1-2: filed under M2, ID names M1.\n" +
+		"  **Evidence**: the moved task's proof.\n" +
+		"\n## Decisions Log\n"
+
+	findings := collectRepairFindings(doc)
+	plans, _ := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 6, TaskID: "P0-M1-2", Action: repairMoveMilestone, Milestone: "M1", Reason: "its ID names M1"},
+	})
+	got, _, warnings := applyRepairPlans(doc, plans, "2026-08-12")
+	if len(warnings) != 0 {
+		t.Fatalf("warnings: %v", warnings)
+	}
+	want := "- [v] P0-M1-1: the anchor.\n" +
+		"  **Evidence**: the anchor's own proof.\n" +
+		"- [v] P0-M1-2: filed under M2, ID names M1.\n" +
+		"  **Evidence**: the moved task's proof."
+	if !strings.Contains(got, want) {
+		t.Fatalf("the moved block split the anchor from its body:\n%s", got)
+	}
+}
+
+// A bullet nested inside another moving task's body is carried by the enclosing
+// block already. Moving it a second time would emit its lines twice and
+// duplicate a task ID, which switches off every milestone-keyed reader — so it
+// is refused out loud instead.
+func TestRepairRefusesToMoveABulletInsideAnotherMovingTask(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [ ] P1-M1-1: the anchor.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [ ] P1-M1-2: the outer task.\n" +
+		"  - [ ] P1-M1-3: a bullet inside the outer task's body.\n" +
+		"\n## Session History\n"
+
+	findings := collectRepairFindings(doc)
+	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 5, TaskID: "P1-M1-2", Action: repairMoveMilestone, Milestone: "M1", Reason: "ID names M1"},
+		{Line: 6, TaskID: "P1-M1-3", Action: repairMoveMilestone, Milestone: "M1", Reason: "ID names M1"},
+	})
+	if len(rejected) != 0 {
+		t.Fatalf("unexpected refusal at the gate: %+v", rejected)
+	}
+	got, applied, warnings := applyRepairPlans(doc, plans, "2026-08-12")
+
+	if n := strings.Count(got, "P1-M1-3"); n != 1 {
+		t.Fatalf("the nested bullet was emitted %d times, want 1:\n%s", n, got)
+	}
+	if len(applied) != 1 || applied[0].Finding.TaskID != "P1-M1-2" {
+		t.Errorf("applied = %+v, want only the enclosing task", applied)
+	}
+	var said bool
+	for _, w := range warnings {
+		if strings.Contains(w, "inside the body of another task being moved") {
+			said = true
+		}
+	}
+	if !said {
+		t.Errorf("the refusal was silent; warnings = %v", warnings)
+	}
+}
+
 // ----------------------------------------------------------------------------
 // End to end, through the command
 // ----------------------------------------------------------------------------

@@ -148,10 +148,33 @@ For each finding, read the task text, then look for what it names in the
 | Something replaced it, it was folded into other work, or the feature it belonged to is gone | `withdraw` (+ reason) |
 | It is waiting on something you can name | `set_marker` `"!"` |
 | It is not a task at all — a retro bullet, a quoted log line, a table row shaped like a checkbox | `leave` |
+| It is a real task sitting in the wrong place | `move_milestone` (see below) |
 | The code does not settle it | `escalate` |
 
 `escalate` is a real answer and is always better than a marker you cannot
 justify. A wrong state here is the exact bug this command exists to fix.
+
+### Where a misplaced task goes
+
+This is the step people loop on, so it has a rule.
+
+A task **outside every milestone**, or one **filed under the wrong milestone**,
+needs somewhere to land:
+
+- **Its ID names a milestone the file already has** → `move_milestone` to that
+  milestone. Nothing else to decide.
+- **Its ID names no milestone** — a follow-up produced by a cross-cutting sweep
+  is the usual case — it still needs a destination. Do **not** escalate to
+  `/belmont:tech-plan` expecting a new milestone: that skill forbids creating one
+  for follow-ups, so the task returns here still counted by nothing. File it
+  under the **highest-numbered existing milestone whose work it touches** — the
+  last one whose outputs the fix depends on — or the final milestone in the plan
+  when it is genuinely global. Say which milestones it touches in your reason.
+- **Only when you cannot tell what it touches** → `escalate`.
+
+Filing it under the *earliest* milestone it touches instead re-opens work that
+later milestones already built on — the same dependency-graph lie the
+milestone-immutability rule bans a "polish from M\<N>" milestone for.
 
 **A commit naming the task ID proves the work happened.** That is what tier 1
 already used. It cannot prove the reverse — no commit means no commit, not "not

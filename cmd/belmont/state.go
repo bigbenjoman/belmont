@@ -325,6 +325,46 @@ func isSectionBreak(line string) bool {
 	return rest[0] == ' ' || rest[0] == '\t'
 }
 
+// taskIDRe is the single definition of what a task ID looks like — the leading
+// `<ID>:` token on a task line. Every reader that needs a task's IDENTITY must
+// route through parseTaskID; see the note there about the one reader that
+// deliberately does not.
+//
+// Two alternatives, and the order matters:
+//
+//   - `P\d+-…` is the shape Belmont's own templates emit and the shape every
+//     reader accepted before. It is first and unchanged, so nothing that parsed
+//     yesterday parses differently today.
+//   - a hyphenated identifier ending in a number covers the IDs people actually
+//     write by hand — `FWLUP-SWEEP-1` from a cross-cutting audit is the case
+//     from issue #34, where repair reported `(no task ID)` for a line the
+//     runtime guards were happily treating as a task, and so never looked the
+//     task up in the commit log.
+//
+// The trailing `-\d+` is what keeps this from eating prose. `Note: something`
+// has no hyphen, `Fix the login: it breaks` has a space before the colon, and
+// `re-run: the suite` does not end in a number — none of them are task IDs, and
+// none of them match.
+var taskIDRe = regexp.MustCompile(`^(P\d+-[\w][\w-]*|[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-\d+):\s*(.+)$`)
+
+// parseTaskID splits a task line's text into its ID and the remaining name.
+// Returns ok=false when the text carries no ID, in which case the whole text is
+// the name.
+//
+// One reader is deliberately NOT converted: `parseProgressSnapshot` and
+// `revertEvidenceMissing` in guards.go match a wider `(\S+?):`. That is not an
+// oversight and not a missed conversion — see the comment at those call sites.
+// They are answering "what token identifies this line inside its milestone
+// block", where matching too much is fail-safe (the flip is still tracked) and
+// matching too little lets an out-of-scope edit through unseen.
+func parseTaskID(text string) (id, name string, ok bool) {
+	m := taskIDRe.FindStringSubmatch(text)
+	if len(m) < 3 {
+		return "", text, false
+	}
+	return m[1], strings.TrimSpace(m[2]), true
+}
+
 // orphanedTaskLines returns task-shaped lines that sit outside any milestone —
 // before the first `### M<n>:` header, or after a `## ` section break closed
 // the region. They are counted by nothing, rendered nowhere, and never
@@ -337,7 +377,6 @@ func isSectionBreak(line string) bool {
 // always worth saying out loud. See issue #31.
 func orphanedTaskLines(progress string) []task {
 	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+(.+)$`)
-	idRe := regexp.MustCompile(`^(P\d+-[\w][\w-]*):\s*(.+)$`)
 
 	var out []task
 	inMilestone := false
@@ -359,9 +398,9 @@ func orphanedTaskLines(progress string) []task {
 		}
 		text := strings.TrimSpace(m[2])
 		t := task{Name: text, Marker: m[1], Line: i + 1}
-		if idm := idRe.FindStringSubmatch(text); len(idm) >= 3 {
-			t.ID = idm[1]
-			t.Name = strings.TrimSpace(idm[2])
+		if id, name, ok := parseTaskID(text); ok {
+			t.ID = id
+			t.Name = name
 		}
 		if st, ok := canonicalMarker(m[1]); ok {
 			t.Status = st
@@ -431,13 +470,7 @@ func parseMilestones(progress string) []milestone {
 				status, _ := canonicalMarker(marker)
 
 				// Extract task ID if present (e.g., "P0-1: Task Name")
-				taskID := ""
-				taskName := taskText
-				idRe := regexp.MustCompile(`^(P\d+-[\w][\w-]*):\s*(.+)$`)
-				if idMatch := idRe.FindStringSubmatch(taskText); len(idMatch) >= 3 {
-					taskID = idMatch[1]
-					taskName = strings.TrimSpace(idMatch[2])
-				}
+				taskID, taskName, _ := parseTaskID(taskText)
 
 				currentMS.Tasks = append(currentMS.Tasks, task{
 					ID:          taskID,
