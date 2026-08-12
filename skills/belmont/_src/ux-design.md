@@ -194,6 +194,11 @@ Steps 2–4 apply only when you derived a contract this session. Under either `N
 
 **A list of state names is not a rendering.** The failure mode for both files is a page of labelled boxes — `<div class="surface">` with the word `hover` inside it — which describes the design without ever showing it. A reviewer cannot tell whether a design is good from a table of its parts, and a designer will not read one twice.
 
+**The bar: a working product designer should be able to review these files and sign the design off from them alone.** That is the standard, and it is not met by anything a reviewer has to interpret. Two tests before you consider either file done:
+
+1. **Could this page be describing any other product?** If the frames would look the same for a booking flow, a payroll tool and a photo gallery, you have drawn containers rather than a design. The screens must be recognisably *this* feature, in *this* project's visual language.
+2. **Would a designer ask for a real mockup after reading it?** If yes, you have not made one. The point of these files is that the answer is no.
+
 **`ux-flows.html`: draw each screen as it will look.**
 
 - **Build the actual interface in HTML and CSS.** A screen panel is a rendered mockup at real device width — the sheet or page frame, its header, the controls, the copy in place — not a container listing what it contains. You already know the token values; they are in the contract you just wrote. Use them.
