@@ -654,12 +654,30 @@ func TestEvalLive(t *testing.T) {
 				}
 			}
 			// Flag nondeterminism explicitly rather than letting run 1 speak
-			// for all of them.
-			for i := 1; i < len(results); i++ {
-				for id, v := range results[0] {
-					if results[i][id] != v {
+			// for all of them — but only for tasks the fixture actually pins.
+			//
+			// This loop used to compare EVERY id seen in run 1 and demand exact
+			// equality, which contradicted LiveExpect above and made ui-no-figma
+			// fail on both sides of any diff:
+			//
+			//   - A task LiveExpect deliberately allows to vary (P1-M1-1 accepts
+			//     both [x] and [v], and its own comment says "observed runs do
+			//     flip it") was still reported as nondeterminism.
+			//   - Agent-invented follow-up ids (P1-M1-FIX-3) exist in one run and
+			//     not another BY DESIGN — creating follow-ups is correct
+			//     behaviour here — so they could never match.
+			//
+			// A fixture that is red whatever the prose says cannot license a
+			// prose change, which is the one job Tier 2 has. Pinned means: the id
+			// is in LiveExpect with exactly one accepted state.
+			for id, accepted := range fx.LiveExpect {
+				if len(accepted) != 1 {
+					continue // fixture permits variation here; not a defect
+				}
+				for i := 1; i < len(results); i++ {
+					if results[i][id] != results[0][id] {
 						t.Errorf("nondeterministic across runs: task %s was %v in run 1, %v in run %d",
-							id, v, results[i][id], i+1)
+							id, results[0][id], results[i][id], i+1)
 					}
 				}
 			}
