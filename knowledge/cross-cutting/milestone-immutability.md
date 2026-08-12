@@ -8,7 +8,7 @@
 
 Only `/belmont:tech-plan` may add, remove, rename, or re-parent a `### M<N>:` heading in PROGRESS.md. Every other skill (implement, verify, next, debug-auto, triage) may only edit tasks **inside** existing milestone headings.
 
-**Milestone headings are level 3.** The partial said `## M<N>:` in four places while the parser, `validate`'s expected-structure output and every real file use `### M<n>:`. That is not cosmetic: a level-2 heading at column zero is exactly what *ends* the milestones region (`isSectionBreak`), so an agent following the partial literally would both fail to create a milestone and silently orphan every task after it — manufacturing more of the finding this entry's routing rules exist to answer. Fixed 2026-08-12 (issue #34).
+**Milestone headings are level 3.** The partial said `## M<N>:` in two places (the issue reported four) while the parser, `validate`'s expected-structure output and every real file use `### M<n>:`. That is not cosmetic: a level-2 heading at column zero is exactly what *ends* the milestones region (`isSectionBreak`), so an agent following the partial literally would both fail to create a milestone and silently orphan every task after it — manufacturing more of the finding this entry's routing rules exist to answer. Fixed 2026-08-12 (issue #34).
 
 **Exception**: interactive `/belmont:debug-manual` may edit spec prose (PRD/TECH_PLAN/NOTES/PROGRESS task text and follow-up `[x]` flips) in place under human-gated per-edit approval. The structural rules above (no new/renamed/removed milestones, no polish-pattern naming) still apply to `debug-manual`. See [cross-cutting/debug-spec-reconciliation.md](debug-spec-reconciliation.md) for the rationale and bounds.
 

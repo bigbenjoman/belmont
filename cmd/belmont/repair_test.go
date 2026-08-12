@@ -542,6 +542,90 @@ func TestRepairRefusesToMoveABulletInsideAnotherMovingTask(t *testing.T) {
 	}
 }
 
+// The block extent is bounded by the task's OWN indent, not by column zero.
+//
+// A nested bullet is a real task — parseMilestones returns it and
+// collectRepairFindings flags it — so it can be the subject of a move. Ending
+// its body at column zero instead would run to the end of the ENCLOSING list
+// item, carrying its siblings and its parent's evidence into another milestone:
+// task lines nobody flagged change milestone, a task nobody named loses its
+// proof, and `warnings` is empty. Issue #33's mis-attribution, pointed the other
+// way, and a silent breach of "only touch the lines it flagged".
+func TestRepairMoveOfANestedBulletLeavesItsSiblingsAlone(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [ ] P1-M1-1: the anchor.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [ ] P1-M2-1: parent task.\n" +
+		"  - [ ] P1-M1-9: sub-task whose ID names M1.\n" +
+		"  - [ ] P1-M2-2: a sibling nobody asked to move.\n" +
+		"  **Evidence**: the parent's own proof.\n" +
+		"\n## Session History\n"
+
+	findings := collectRepairFindings(doc)
+	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 6, TaskID: "P1-M1-9", Action: repairMoveMilestone, Milestone: "M1", Reason: "its ID names M1"},
+	})
+	if len(rejected) != 0 {
+		t.Fatalf("unexpected refusal: %+v", rejected)
+	}
+	got, applied, warnings := applyRepairPlans(doc, plans, "2026-08-12")
+	if len(applied) != 1 || len(warnings) != 0 {
+		t.Fatalf("applied=%d warnings=%v", len(applied), warnings)
+	}
+
+	m1 := got[strings.Index(got, "### M1:"):strings.Index(got, "### M2:")]
+	if strings.Contains(m1, "P1-M2-2") {
+		t.Errorf("an unflagged sibling was moved to M1:\n%s", got)
+	}
+	if strings.Contains(m1, "the parent's own proof") {
+		t.Errorf("the parent's evidence was moved to M1:\n%s", got)
+	}
+	if !strings.Contains(m1, "P1-M1-9") {
+		t.Errorf("the flagged task did not move:\n%s", got)
+	}
+	// The parent keeps everything that was never named.
+	m2 := got[strings.Index(got, "### M2: Second"):]
+	for _, want := range []string{"P1-M2-1", "P1-M2-2", "the parent's own proof"} {
+		if !strings.Contains(m2, want) {
+			t.Errorf("M2 lost %q:\n%s", want, got)
+		}
+	}
+}
+
+// The refusal warning must not claim a line stayed put when it travelled with
+// the block enclosing it. A false report about a moved task is the same class of
+// defect as the move that prompted this whole change.
+func TestRepairNestedRefusalNamesWhereTheLineActuallyWent(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [ ] P1-M1-1: the anchor.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [ ] P1-M1-2: the outer task.\n" +
+		"  - [ ] P1-M1-3: nested inside the outer task's body.\n" +
+		"\n## Session History\n"
+
+	findings := collectRepairFindings(doc)
+	plans, _ := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 5, TaskID: "P1-M1-2", Action: repairMoveMilestone, Milestone: "M1", Reason: "ID names M1"},
+		{Line: 6, TaskID: "P1-M1-3", Action: repairMoveMilestone, Milestone: "M1", Reason: "ID names M1"},
+	})
+	got, _, warnings := applyRepairPlans(doc, plans, "2026-08-12")
+
+	joined := strings.Join(warnings, " | ")
+	if strings.Contains(joined, "left exactly where it is") {
+		t.Errorf("the warning claims the line stayed put: %s", joined)
+	}
+	if !strings.Contains(joined, "travels to M1") {
+		t.Errorf("the warning does not say where the line went: %s", joined)
+	}
+	// And it really did go there, exactly once.
+	m1 := got[strings.Index(got, "### M1:"):strings.Index(got, "### M2:")]
+	if !strings.Contains(m1, "P1-M1-3") || strings.Count(got, "P1-M1-3") != 1 {
+		t.Errorf("nested line placement is wrong:\n%s", got)
+	}
+}
+
 // ----------------------------------------------------------------------------
 // End to end, through the command
 // ----------------------------------------------------------------------------

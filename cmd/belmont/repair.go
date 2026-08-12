@@ -853,19 +853,26 @@ func moveTaskLines(lines []string, moves map[int]string) ([]string, []string, []
 	// bullets, so an anchor landing anywhere inside a block is recognised as a
 	// line that will not be emitted where it currently sits.
 	//
-	// A bullet inside another moving task's body is refused rather than moved:
-	// its lines are already carried by the enclosing block, so moving it too
-	// would emit them twice. That is a genuinely ambiguous file, and duplicating
-	// a task ID is worse than declining.
+	// A bullet inside another moving task's body is refused AS A SEPARATE ACTION
+	// rather than moved twice: its lines are already carried by the enclosing
+	// block, so emitting them again would duplicate a task ID and switch off
+	// every milestone-keyed reader.
+	//
+	// Note what the warning must NOT say. The line does not stay where it is — it
+	// travels with the block enclosing it, to that block's destination. Only the
+	// separate move failed. Reporting a real relocation as "left exactly where it
+	// is" would be a false statement about a moved task, which is the class of
+	// bug this whole change exists to remove.
 	blockEnd := map[int]int{}
 	moving := map[int]bool{}
 	var placeable []int
 	coveredTo := -1
+	coveringDest := ""
 	for _, idx := range order {
 		if idx <= coveredTo {
 			warnings = append(warnings, fmt.Sprintf(
-				"the task at line %d sits inside the body of another task being moved, so it was left exactly where it is — move the enclosing task on its own, or separate the two first",
-				idx+1))
+				"the task at line %d sits inside the body of another task being moved, so it travels to %s with that task instead of being moved on its own — separate the two first if it belongs somewhere else",
+				idx+1, coveringDest))
 			dropped = append(dropped, idx)
 			continue
 		}
@@ -875,6 +882,7 @@ func moveTaskLines(lines []string, moves map[int]string) ([]string, []string, []
 			moving[i] = true
 		}
 		coveredTo = end
+		coveringDest = moves[idx]
 		placeable = append(placeable, idx)
 	}
 
@@ -1087,8 +1095,10 @@ WHERE A MISPLACED TASK GOES. This is the step people loop on, so it has a rule:
 
   - "task_outside_milestone" or "cross_milestone_task_id" whose ID names a
     milestone the file ALREADY has -> move_milestone to that milestone. Done.
-  - a real task whose ID names no milestone — a follow-up from a cross-cutting
-    sweep is the usual case — still needs a destination. Do NOT escalate it to
+  - a real task whose ID names no milestone, OR names one this file does not
+    have (an ID saying M9 in a plan that stops at M5 — repair cannot create M9,
+    so that ID settles nothing) — a follow-up from a cross-cutting sweep is the
+    usual case — still needs a destination. Do NOT escalate it to
     /belmont:tech-plan expecting a new milestone: that skill forbids creating
     one for follow-ups, so the task comes straight back here unscheduled. File
     it under the HIGHEST-NUMBERED existing milestone whose work it touches — the

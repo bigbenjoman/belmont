@@ -6,7 +6,7 @@
 
 For every agent phase except `actionReplan` (tech-plan), the phase may only:
 
-1. Edit tasks **inside** its target milestone's `## M<N>:` heading.
+1. Edit tasks **inside** its target milestone's `### M<N>:` heading.
 2. Leave every other milestone's heading and task checkboxes exactly as they were before the shell-out.
 
 Any deviation — a new milestone heading added, a sibling milestone's checkbox flipped, a task state changed outside the target — is reverted and the agent's last commit is amended to carry only the in-scope edits.
