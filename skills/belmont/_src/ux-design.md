@@ -233,6 +233,37 @@ Steps 2–4 apply only when you derived a contract this session. Under either `N
 
 On a re-run, regenerate `design-preview.html` **only if a contract subsection changed**, and `ux-flows.html` **only if a screen or flow changed**. They have independent triggers on purpose.
 
+### Phase 6 - Adversarial review (only when you derived a contract)
+
+You have just produced the thing you were asked to produce, which is the worst possible position from which to judge it. Under either `N/A` mode there is nothing to review — skip to the hand-off. Otherwise, before the user sees anything, put the artifacts in front of reviewers whose job is to reject them.
+
+**One reviewer per authority, each on the section it enriched** — the same mapping the ladder already uses, so each reviewer holds the expertise the section was written with:
+
+| Reviewer | Reviews |
+|---|---|
+| `ui-designer` | Token Contract as rendered — palette, type, spacing, radius, elevation |
+| `ux-designer` | UX Strategy and State Inventory — are the states genuinely drawn, is any path a dead end |
+| `ux-copywriter` | Microcopy Rules against every string in the artifacts |
+| `ux-motion` | Motion Contract — bands, easing, reduced-motion, what is animated |
+
+A reviewer whose skill did not resolve this session still runs, against the tier-2 baseline for that section. Absent expertise is not absent review.
+
+**Run them in parallel sub-agents if your tool has them.** If it does not — no `Task` or equivalent — run each lens inline, one after another, in this session. Sequential is slower and still worth it; skipping is not an option.
+
+**How to brief them, because a badly briefed reviewer is worse than none:**
+
+- **Tell them to reject, not to assess.** "Review this" gets you praise. The brief is: *find what a working designer would refuse to sign off, and say so plainly.* One of these reviewers concluding the work is fine is a result; four of them concluding it is a failure of briefing.
+- **Tell them to judge what RENDERS, not what is written.** This is the trap. A reviewer reading `font-family: Fraunces, Georgia, serif` reports the typography as correct; the human opening the page sees Georgia, because nothing loaded Fraunces. Every reviewer must confirm that the colours, faces and spacing they are judging actually apply — a declared value nobody can see is a defect, not a design.
+- **Give them the real inputs**: the artifact path, `{base}/UX_DESIGN.md`, and the project's own token source. A reviewer without the tokens cannot tell a deliberate value from an invented one.
+
+**What you may do with the findings — the boundary matters more than the review:**
+
+- **Artifact findings: fix them now.** Off-scale spacing, an unrendered typeface, a state that was described rather than drawn, a string that breaks the Microcopy Rules. Fix, and say what you fixed.
+- **Contract findings: surface, never fix.** A reviewer arguing a token value is wrong, or the Accessibility Floor is too low, is arguing with a document a human approved. **You may not re-derive an approved contract** (CRITICAL RULE 4). Report it to the user, name the reviewer and the reasoning, and let them decide whether to re-run this skill. An adversarial pass that quietly rewrites an approved standard is the exact failure this skill exists to prevent.
+- **Disagreement is a finding.** Where a reviewer contradicts a decision the user made during the interview, the user's decision stands — record the objection under `## Open Design Questions` rather than acting on it or discarding it.
+
+Report the pass in one short block: which reviewers ran, what was fixed, what is being surfaced. A review nobody hears about is indistinguishable from one that never ran.
+
 ## Running headlessly
 
 `belmont auto` never invokes this skill — there is no auto action that reaches it. A user can still type its bare programmatic form into a non-interactive session, so handle that case explicitly.
