@@ -309,10 +309,29 @@ func detectOrphanViolations(slug, progress string) []validationViolation {
 		if label == "" {
 			label = t.Name
 		}
+		// The premise has to be accurate or the advice reads as nonsense on the
+		// two cases that are not "names a milestone that exists": a line with no
+		// parseable ID at all, and an ID naming a milestone this file does not
+		// have. Both land on the same destination rule — repair cannot create a
+		// milestone, so an ID naming an absent one settles nothing — but saying
+		// "its ID names no milestone" about `P1-M9-1` is simply false, and a
+		// report nobody believes is a report nobody reads.
+		named, _ := taskIDNamedMilestone(t.ID)
+		var premise string
+		switch {
+		case named != "" && present[named]:
+			premise = ""
+		case named != "":
+			premise = fmt.Sprintf("Its ID names %s, which this file does not have, and repair never creates a milestone, so", named)
+		case t.ID == "":
+			premise = "It carries no task ID, so"
+		default:
+			premise = "Its ID names no milestone, so"
+		}
 		advice := fmt.Sprintf(
-			"Its ID names no milestone, so its destination is a reading question, not a lookup: file it under the highest-numbered existing milestone whose work it touches — the last one whose outputs the fix depends on — or the final milestone in the plan if it is genuinely global. Never a new milestone. `%s` moves it once you have picked one.",
-			repairCmd)
-		if named, _ := taskIDNamedMilestone(t.ID); named != "" && present[named] {
+			"%s its destination is a reading question, not a lookup: file it under the highest-numbered existing milestone whose work it touches — the last one whose outputs the fix depends on — or the final milestone in the plan if it is genuinely global. Never a new milestone. `%s` moves it once you have picked one.",
+			premise, repairCmd)
+		if premise == "" {
 			advice = fmt.Sprintf(
 				"Its ID names %s, which this file already has, so `%s` can move it there — no milestone needs creating and `/belmont:tech-plan` is not involved.",
 				named, repairCmd)
@@ -440,11 +459,19 @@ func parseProgressSnapshot(path, content string) *progressSnapshot {
 	// Deliberately wider than `parseTaskID`, and NOT a missed conversion. This
 	// asks "what token identifies this line inside its milestone block" so the
 	// scope guard can tell whether a marker moved — not "what is this task's ID".
-	// Matching too much costs nothing here: a line keyed by a token that is not
-	// really an ID is still compared only against itself. Matching too little
-	// drops the line from TaskStates entirely, and an out-of-scope flip on it
-	// then passes the guard unseen. Narrowing this to the shared parser would
-	// weaken a runtime guard to tidy up a regex.
+	// Matching too little drops the line from TaskStates entirely, and an
+	// out-of-scope flip on it then passes the guard unseen. Narrowing this to the
+	// shared parser would weaken a runtime guard to tidy up a regex.
+	//
+	// What matching WIDE costs is bounded by one precondition, which is worth
+	// stating rather than assuming: the token must be unique within its block.
+	// TaskStates is keyed by it and is last-write-wins, so two lines sharing a
+	// token collapse to one entry — and `revertEvidenceMissing` then rewrites
+	// BOTH, which can downgrade an untouched earned `[v]`. That is not a cost of
+	// being wide as such (two genuinely duplicate task IDs collide identically,
+	// and `requireUnambiguousMilestones` has no equivalent for task lines); being
+	// wide only makes a collision easier to reach, e.g. two `- [?] Verification:`
+	// lines in one milestone.
 	taskRe := regexp.MustCompile(`(?m)^\s*-\s+\[(.)\]\s+(\S+?):`)
 
 	lines := strings.Split(content, "\n")
@@ -1057,9 +1084,14 @@ func shortSHA(sha string) string {
 // straight back — on exactly the projects where every ID is shared.
 //
 // `lookupCommitEvidence` stays the per-ID primitive for the mechanical tier,
-// which asks about one task at a time. Both read `%B` and both use
-// `commitTaskIDRe`'s word boundaries, so they cannot disagree about what counts
-// as a mention.
+// which asks about one task at a time. Both read `%B` and both use the same word
+// boundaries, so they cannot disagree about what counts as a mention — but that
+// only holds while both accept the same ID SHAPE. When this index still required
+// a `P\d+-` prefix and `parseTaskID` had been widened, every `[v]` carrying a
+// hand-written ID was reported by the audit as having no commit while
+// `lookupCommitEvidence` found one naming it verbatim, and the remedy on offer
+// was to demote a commit-backed verified task. Both sides now route through
+// `taskIDShape`.
 //
 // `git log` walks newest-first, so the first record naming an ID wins — the same
 // rule `lookupCommitEvidence` follows when it returns on its first match.
@@ -1078,7 +1110,10 @@ func commitNamedTaskIDs(root string) (map[string]commitEvidence, bool) {
 		}
 		sha := strings.TrimSpace(strings.TrimLeft(fields[0], "\n"))
 		subject := strings.TrimSpace(fields[1])
-		for _, m := range commitTaskIDRe.FindAllStringSubmatch(fields[2], -1) {
+		for _, m := range commitTokenRe.FindAllStringSubmatch(fields[2], -1) {
+			if !taskIDShapeRe.MatchString(m[2]) {
+				continue
+			}
 			if _, seen := ids[m[2]]; seen {
 				continue
 			}
@@ -1094,18 +1129,26 @@ func commitNamedTaskIDs(root string) (map[string]commitEvidence, bool) {
 	return ids, true
 }
 
-// commitTaskIDRe matches a Belmont task ID appearing in prose, with the same
-// word boundaries lookupCommitEvidence uses so the two cannot disagree about
-// what counts as a mention.
+// commitTokenRe harvests every MAXIMAL token from a commit message that could
+// be a task ID; `taskIDShapeRe` then decides which of them are. Splitting it
+// that way is what keeps the commit side and the file side agreeing: the ID
+// shape has exactly one definition (`taskIDShape` in state.go) and this pattern
+// contributes only the word boundaries.
+//
+// Harvesting maximal tokens and filtering is not the same as embedding the ID
+// shape here, and the difference matters. `feat-P1-M1-1` is one token, so it can
+// never be read as a mention of `P1-M1-1` — which `lookupCommitEvidence` also
+// rejects, so the audit and the per-ID primitive still cannot disagree. Encoding
+// the shape directly with a right-boundary group instead would drop the second
+// ID in `P1-M1-1 P1-M1-2`, because the boundary the first match consumed is the
+// one the second needs.
 //
 // The LEFT boundary is a capture group rather than a lookbehind, which RE2 does
-// not have — group 2 is the ID. Without it the pattern matched a task ID out of
-// the middle of a longer token (`feat-P1-M1-1`, `APP1-M1-1`), which
-// lookupCommitEvidence rejects, so the audit read a mention where the per-ID
-// primitive read none and a stale `[v]` went unreported. The right boundary
-// needs no assertion: the body already stops at the first character outside
-// `[A-Za-z0-9-]`, which is exactly lookupCommitEvidence's trailing class.
-var commitTaskIDRe = regexp.MustCompile(`(^|[^A-Za-z0-9-])(P\d+-[A-Za-z0-9][A-Za-z0-9-]*)`)
+// not have — group 2 is the token. Without it the pattern matched out of the
+// middle of a longer token (`feat-P1-M1-1`, `APP1-M1-1`). The right boundary
+// needs no assertion: the token is greedy and stops at the first character
+// outside `[A-Za-z0-9-]`, which is exactly lookupCommitEvidence's trailing class.
+var commitTokenRe = regexp.MustCompile(`(^|[^A-Za-z0-9-])([A-Za-z0-9][A-Za-z0-9-]*)`)
 
 // logEvidenceRevert prints a one-line summary per verify-guard revert batch.
 func logEvidenceRevert(feature, milestoneID string, missing []evidenceMissing) {

@@ -341,11 +341,32 @@ func isSectionBreak(line string) bool {
 //     runtime guards were happily treating as a task, and so never looked the
 //     task up in the commit log.
 //
-// The trailing `-\d+` is what keeps this from eating prose. `Note: something`
-// has no hyphen, `Fix the login: it breaks` has a space before the colon, and
-// `re-run: the suite` does not end in a number — none of them are task IDs, and
-// none of them match.
-var taskIDRe = regexp.MustCompile(`^(P\d+-[\w][\w-]*|[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-\d+):\s*(.+)$`)
+// Two things keep the second alternative out of prose, and both are needed:
+//
+//   - a trailing `-\d+`. `Note: something` has no hyphen, `Fix the login: it
+//     breaks` has a space before the colon, and `re-run: the suite` does not end
+//     in a number.
+//   - an UPPERCASE first letter. Without it the shape also matches ordinary
+//     technology tokens — `utf-8`, `sha-256`, `base-64` — and that is not
+//     harmless: such a token would become a task ID, and a commit merely
+//     mentioning it would then be evidence, letting the mechanical tier
+//     auto-write `[x]` for work nobody did. Hand-written task IDs are shouty
+//     because they are identifiers (`FWLUP-SWEEP-1`, `AUTH-1234`, `E2E-4`);
+//     lowercase hyphen-number tokens are overwhelmingly nouns. A lowercase
+//     hand-written ID simply keeps today's behaviour of not being recognised.
+//
+// taskIDShape is shared with `commitNamedTaskIDs`, which validates the tokens it
+// harvests out of commit messages against it. Those two MUST agree: when the
+// file side recognised an ID the commit side could not, every `[v]` carrying a
+// hand-written ID was reported by the audit as unproven while a commit named it
+// verbatim.
+const taskIDShape = `P\d+-[\w][\w-]*|[A-Z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-\d+`
+
+var taskIDRe = regexp.MustCompile(`^(` + taskIDShape + `):\s*(.+)$`)
+
+// taskIDShapeRe matches a bare token that is shaped like a task ID, with no
+// surrounding line context.
+var taskIDShapeRe = regexp.MustCompile(`^(?:` + taskIDShape + `)$`)
 
 // parseTaskID splits a task line's text into its ID and the remaining name.
 // Returns ok=false when the text carries no ID, in which case the whole text is
@@ -355,7 +376,7 @@ var taskIDRe = regexp.MustCompile(`^(P\d+-[\w][\w-]*|[A-Za-z][A-Za-z0-9]*(?:-[A-
 // `revertEvidenceMissing` in guards.go match a wider `(\S+?):`. That is not an
 // oversight and not a missed conversion — see the comment at those call sites.
 // They are answering "what token identifies this line inside its milestone
-// block", where matching too much is fail-safe (the flip is still tracked) and
+// block", where matching too little drops the line from flip tracking and
 // matching too little lets an out-of-scope edit through unseen.
 func parseTaskID(text string) (id, name string, ok bool) {
 	m := taskIDRe.FindStringSubmatch(text)

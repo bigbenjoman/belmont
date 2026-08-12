@@ -55,10 +55,25 @@ The rest follows from that:
   `**Evidence**` prose lives. `moveTaskLines` relocates
   `idx..taskBodyEnd(lines, idx)` — the same extent that anchors an insertion past
   the destination task's own body, and the same one `mergeProgressState` uses.
-  One definition of where a task ends. A bullet nested inside another moving
-  task's body is **refused out loud**, not moved: its lines already travel with
-  the enclosing block, so moving it again would emit them twice and duplicate a
-  task ID, which switches off every milestone-keyed reader.
+  One definition of where a task ends.
+- **…and the body is bounded by the task's OWN indent, not by column zero.** A
+  task line can itself be indented — a nested bullet is a real task that
+  `parseMilestones` returns and `collectRepairFindings` will flag. Ending the
+  body only at column zero runs it to the end of the *enclosing* list item, so
+  moving a nested bullet drags its siblings and its parent's `**Evidence**` into
+  another milestone: task lines nobody flagged silently change milestone, and a
+  task nobody named loses its proof. That is issue #33 again, pointed the other
+  way, and it breaks the "only touch the lines it flagged" bound while reporting
+  `warnings=[]`. Column-zero tasks — every task Belmont's templates emit — are
+  unaffected by the bound, which is why the defect survived the first round of
+  tests.
+- **A nested bullet is refused AS A SEPARATE ACTION, and the warning must not
+  claim it stayed put.** Its lines already travel with the enclosing block, so
+  moving it again would emit them twice and duplicate a task ID, which switches
+  off every milestone-keyed reader. But it does move — with its parent, to its
+  parent's destination — so the warning names that destination. "Left exactly
+  where it is" was a false report about a relocated task, i.e. the exact class of
+  statement this whole area exists to prevent.
 - **Ambiguous structure is refused, not guessed** — a repeated `### M<n>:`
   heading, same policy as both runtime guards.
 - **A misplaced task always has a destination, and repair states it.** "Move it
@@ -256,6 +271,15 @@ and proves nothing in either direction.
   the "where does a misplaced task go" ruling was written into all three paths
   that reach it (issue #34). Both regressions are mutation-tested: reverting the
   extent to the bullet alone fails three named tests.
+- 2026-08-12 — adversarial review of the above found that the block extent was
+  bounded by column zero rather than by the task's own indent, so moving a
+  NESTED bullet dragged its unflagged siblings and its parent's evidence into
+  another milestone with no warning — issue #33's mis-attribution pointed the
+  other way, and a silent breach of "only touch the lines it flagged".
+  `taskBodyEnd` is now indent-relative (identical for column-zero tasks, which
+  is every task Belmont's own templates emit). Also corrected the nested-bullet
+  warning, which said the line was "left exactly where it is" while it in fact
+  travelled with the enclosing block.
 - 2026-08-09 — round seven: the `[v]` audit applies the cross-feature ambiguity rule; `reviewable` carries one finding per line; the unresolved count subtracts orphans the review tier ruled are not tasks; `remaining` stops subtracting by line on the real run, which had hidden a cross-milestone finding the mechanical tier itself created; `evidence_available` reports the repository rather than the findings.
 
 - 2026-08-09 — added the `[v]`-without-evidence audit: the mirror of

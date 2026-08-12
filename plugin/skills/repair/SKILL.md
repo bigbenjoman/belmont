@@ -189,8 +189,10 @@ needs somewhere to land:
 
 - **Its ID names a milestone the file already has** → `move_milestone` to that
   milestone. Nothing else to decide.
-- **Its ID names no milestone** — a follow-up produced by a cross-cutting sweep
-  is the usual case — it still needs a destination. Do **not** escalate to
+- **Its ID names no milestone, or names one this file does not have** — a
+  follow-up produced by a cross-cutting sweep is the usual case, and an ID saying
+  `M9` in a plan that stops at M5 is the other. Repair cannot create a milestone,
+  so such an ID settles nothing. It still needs a destination. Do **not** escalate to
   `/belmont:tech-plan` expecting a new milestone: that skill forbids creating one
   for follow-ups, so the task returns here still counted by nothing. File it
   under the **highest-numbered existing milestone whose work it touches** — the
@@ -246,8 +248,18 @@ them. In Mode B nothing enforces them but you, and they matter more, not less.
   already exist is fine here — repair runs outside the auto loop, where the
   scope guard would revert it — but the destination must already exist and must
   not already hold that task ID.
+- **A task is its bullet PLUS its indented body — move both.** The
+  `**Verification**` / `**Evidence**` lines under a task belong to it. Move the
+  bullet alone and they stay behind and re-attach to the task now above them,
+  which is then credited with evidence it never earned while the task you moved
+  asserts done with nothing behind it. Nothing catches this: the file still
+  parses, the count is unchanged, `belmont validate` still reports clean. The CLI
+  moves the whole block for you — this bullet is for the hand-edit path, where
+  nothing does.
 - **Only touch the lines that were flagged.** Every other task in the file is
-  none of this skill's business, however wrong it looks.
+  none of this skill's business, however wrong it looks. A nested sub-bullet is a
+  task too: when you move its parent, it travels with it — that is correct, but
+  say so in your report rather than letting it move unremarked.
 - **Never change a task's text**, only its marker or its milestone. If the text
   is wrong, say so in your summary and leave it.
 

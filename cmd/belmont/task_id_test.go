@@ -37,6 +37,14 @@ func TestParseTaskIDAcceptsHandWrittenIDsWithoutEatingProse(t *testing.T) {
 		{"TODO: chase this", "", "TODO: chase this"},
 		{"re-run: the whole suite", "", "re-run: the whole suite"},
 		{"a plain task with no colon at all", "", "a plain task with no colon at all"},
+		// Lowercase technology tokens are shaped EXACTLY like a hand-written ID
+		// and are the reason the second alternative demands an uppercase initial.
+		// Accepting one is not cosmetic: it becomes a task ID, a commit merely
+		// mentioning it becomes evidence, and the mechanical tier writes `[x]`
+		// for work nobody did.
+		{"utf-8: normalise the encoding", "", "utf-8: normalise the encoding"},
+		{"sha-256: swap the digest", "", "sha-256: swap the digest"},
+		{"base-64: fix the padding", "", "base-64: fix the padding"},
 	}
 	for _, c := range cases {
 		id, name, ok := parseTaskID(c.text)
@@ -97,6 +105,38 @@ func TestRepairAsksTheCommitLogAboutAHandWrittenID(t *testing.T) {
 	}
 }
 
+// The file side and the commit side must accept the same ID shape.
+//
+// `auditVerifiedWithoutEvidence` skips only a task with no ID at all. Widening
+// `parseTaskID` therefore admits hand-written IDs INTO the audit — and while the
+// commit-side index still required a `P<n>-` prefix, every one of them was
+// reported as unproven while `lookupCommitEvidence` found a commit naming it
+// verbatim. The remedy the report offers is `set_marker "x"`, i.e. demoting a
+// commit-backed verified task. This drives the audit, not just the per-ID
+// primitive, because the two disagreeing IS the defect.
+func TestTheAuditAndTheCommitLogAgreeAboutAHandWrittenID(t *testing.T) {
+	root := gitFixture(t,
+		"## Milestones\n\n### M1: Work\n- [v] AUTH-1234: the auth fix\n- [v] P1-M1-1: the other one\n",
+		"AUTH-1234: land the auth fix", "P1-M1-1: land the other one")
+
+	if ev := lookupCommitEvidence(root, "AUTH-1234", ""); !ev.Found {
+		t.Fatalf("the per-ID primitive cannot see the commit either: %+v", ev)
+	}
+	if got := auditVerifiedWithoutEvidence(root, "demo", progressOf(t, root)); len(got) != 0 {
+		t.Errorf("audit accuses %d task(s) a commit names: %+v", len(got), got)
+	}
+
+	// The mirror: a hand-written ID with no commit must still be caught, or the
+	// fix above would just be "never audit these".
+	root2 := gitFixture(t,
+		"## Milestones\n\n### M1: Work\n- [v] AUTH-9999: never done\n",
+		"unrelated work")
+	got := auditVerifiedWithoutEvidence(root2, "demo", progressOf(t, root2))
+	if len(got) != 1 || got[0].TaskID != "AUTH-9999" {
+		t.Errorf("audit = %+v, want the uncommitted hand-written ID reported", got)
+	}
+}
+
 // The advice on an orphan is conditional, and that is the fix for the guidance
 // loop in issue #34. "Move it under its `### M<n>:` heading" is only actionable
 // when there is such a heading; when there is not, the reader escalates to
@@ -128,10 +168,10 @@ func TestOrphanAdviceNamesTheMilestoneWhenTheIDDoes(t *testing.T) {
 // be the same dead end.
 func TestOrphanAdviceRulesOnTheDestinationWhenTheIDNamesNone(t *testing.T) {
 	doc := "## Milestones\n\n### M1: Work\n- [x] P1-M1-1: a\n\n" +
-		"## Session History\n\n- [ ] FWLUP-SWEEP-1: found by a sweep\n- [ ] P1-M9-1: names a milestone that is not here\n"
+		"## Session History\n\n- [ ] FWLUP-SWEEP-1: found by a sweep\n- [ ] P1-M9-1: names a milestone that is not here\n- [ ] a bare bullet with no id at all\n"
 
 	v := detectOrphanViolations("demo", doc)
-	if len(v) != 2 {
+	if len(v) != 3 {
 		t.Fatalf("detectOrphanViolations = %+v", v)
 	}
 	for _, got := range v {
@@ -141,6 +181,17 @@ func TestOrphanAdviceRulesOnTheDestinationWhenTheIDNamesNone(t *testing.T) {
 		if !strings.Contains(got.Message, "Never a new milestone") {
 			t.Errorf("the rule does not close off the forbidden option:\n%s", got.Message)
 		}
+	}
+	// The premise has to be true of the line it is printed about, or the report
+	// stops being believed. Three different cases share one destination rule.
+	if !strings.Contains(v[0].Message, "Its ID names no milestone") {
+		t.Errorf("FWLUP-SWEEP-1 premise wrong:\n%s", v[0].Message)
+	}
+	if !strings.Contains(v[1].Message, "Its ID names M9, which this file does not have") {
+		t.Errorf("P1-M9-1 premise wrong — repair cannot create M9:\n%s", v[1].Message)
+	}
+	if !strings.Contains(v[2].Message, "It carries no task ID") {
+		t.Errorf("an ID-less line was told its ID names no milestone:\n%s", v[2].Message)
 	}
 	// The warning must stay a warning: a `- [ ]` bullet in a retro is not work,
 	// and this rule is on `belmont auto`'s startup path.
