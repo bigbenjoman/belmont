@@ -423,9 +423,17 @@ func syncFeatureStateAfterMerge(mainRoot, wtPath, slug string) {
 // land between a task and its own body, re-attaching the body to the inserted
 // line.
 //
-// The body is the run of lines indented DEEPER than the task line itself. A
-// blank line ends it, and so does any line at the task's own indent or
-// shallower.
+// The body is the run of lines indented DEEPER than the task line itself. It
+// ends at the first line at the task's own indent or shallower — a sibling
+// bullet, a column-zero heading, or EOF.
+//
+// A blank line does NOT end it. A task written as a loose list keeps its
+// `**Evidence**` behind a blank line, and stopping there strands exactly the
+// prose issue #33 is about: the tail re-attaches to the task now above it while
+// the moved task arrives asserting done with half its proof. A blank line never
+// extends the block on its own, though — only a following deeper-indented line
+// does — so a task at the end of a milestone does not swallow the separator
+// before the next heading.
 //
 // That bound is load-bearing for a task line that is itself indented — a nested
 // bullet. Stopping only at column zero would run to the end of the *enclosing*
@@ -446,11 +454,15 @@ func taskBodyEnd(lines []string, idx int) int {
 	end := idx
 	for j := idx + 1; j < len(lines); j++ {
 		if strings.TrimSpace(lines[j]) == "" {
-			break
+			// Keep looking, but do not extend the block yet: a trailing blank
+			// belongs to the document, not to the task.
+			continue
 		}
 		if lineIndentWidth(lines[j]) <= own {
 			break
 		}
+		// Deeper-indented: this line, and any blanks passed to reach it, are
+		// the task's own body.
 		end = j
 	}
 	return end
