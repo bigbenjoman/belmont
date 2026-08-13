@@ -133,6 +133,34 @@ spacing. That is not a reason to stop there for tokens: keep walking, and name
 both rungs, one per family — e.g.
 `storybook (<url>) — components & states; tailwind.config.ts — tokens`.
 
+**But read the index for a foundations section before you walk past it.** The
+index carries no token *values*; it routinely names the stories that do. A
+`*/Foundations/*`, `*/Design Tokens/*`, `*/Style*` or `*/Theme*` section —
+entries titled `Typography`, `Colors`, `Spacing`, `Border Radius`, `Effects` —
+is a team's *published, deployed token specification*, and it outranks project
+config, which is an implementation of that specification and can drift from it.
+A real one carries 29 named type styles with family, size, weight, leading and
+tracking on every rung; the `tailwind.config.ts` beside it declared a display
+serif that appears nowhere in the foundation. An agent that read only the config
+put a Windsor-ish serif on every heading of a product whose published
+typography is a single sans, and the reviewer's first words were about the font.
+
+A foundations **story** renders client-side, so a plain fetch of `iframe.html`
+returns Storybook's own shell — its chrome font, not the product's — and reading
+that as content is the client-rendered trap again. Three routes, in order:
+
+1. **You can render a page** (a browser tool, a screenshot you can view): open
+   `<storybook-url>/iframe.html?id=<entry-id>&viewMode=story` and read the
+   computed styles off the rendered specimens. This is the best typography
+   source available anywhere below a contract.
+2. **You cannot**: do **not** silently fall through to config as though the
+   foundation did not exist. Name the foundation stories you found, give the
+   user their URLs, take the values from config as a stand-in, and record the
+   substitution in `**Source**` and under `## Open Design Questions`.
+3. **Config and foundation disagree**: that is not a tie for you to break. Ask
+   the user, showing both — it is a question about which of two real artifacts
+   is current, and getting it wrong repaints every heading in the feature.
+
 0. **Master contract** — the Token Contract and Accessibility Floor in
    `.belmont/UX_DESIGN.md`.
 0b. **Sibling contract** — an approved `## Design Contract` in another
