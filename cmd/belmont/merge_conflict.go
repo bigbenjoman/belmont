@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -129,18 +130,38 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// file — while a stale `[ ]` quote hid theirs' genuine `[x]` and the
 	// completion was dropped under a green "conflicts auto-resolved". Same
 	// boundary every other reader uses; see isSectionBreak and issue #31.
+	// The ID is `taskIDShape`, the same definition parseTaskID and
+	// commitNamedTaskIDs use. It was `P\d+-…` only, so a hand-written ID was
+	// matched on neither side and silently took whichever side git left —
+	// see issue #38. A `P<n>-` ID behaves exactly as before; that alternative
+	// is first in the alternation.
 	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
-	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+(P\d+-[\w][\w-]*)`)
+	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+(` + taskIDShape + `)`)
 	theirsStates := make(map[string]string) // task ID → checkbox marker
+
+	// Theirs' task lines in document order, with the milestone each one sits
+	// in. Needed because a task present only in "theirs" has to be carried into
+	// the merged file rather than dropped (issue #43), and the block it belongs
+	// in is the one it was written in.
+	type theirsTask struct {
+		id        string
+		line      string
+		milestone string
+	}
+	var theirsOrder []theirsTask
+
 	theirsLines := strings.Split(string(theirsOut), "\n")
 	inRegion := false
+	theirsMS := ""
 	for _, line := range theirsLines {
-		if msHeaderRe.MatchString(line) {
+		if m := msHeaderRe.FindStringSubmatch(line); m != nil {
 			inRegion = true
+			theirsMS = "M" + m[1]
 			continue
 		}
 		if isSectionBreak(line) {
 			inRegion = false
+			theirsMS = ""
 			continue
 		}
 		if !inRegion {
@@ -148,6 +169,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		}
 		if m := taskRe.FindStringSubmatch(line); m != nil {
 			theirsStates[m[2]] = m[1]
+			theirsOrder = append(theirsOrder, theirsTask{id: m[2], line: line, milestone: theirsMS})
 		}
 	}
 
@@ -205,16 +227,31 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// Same region gate on the write side: a `[x]` quoted in ours' session log
 	// must not be rewritten to theirs' state either.
 	oursInRegion := false
+	oursMS := ""
+	oursSeen := make(map[string]bool)
+	// Where a task carried over from "theirs" gets spliced in: the index in
+	// `merged` of the LAST NON-BLANK line of that milestone's block. Tracking
+	// the last task bullet alone would splice a carried task between a task and
+	// its own indented `**Verification**` / `**Evidence**` body — the same class
+	// of stranding as issue #33 — and inserting at the block boundary instead
+	// would land it past the blank line that ends the list.
+	msInsertAfter := make(map[string]int)
 	for _, line := range oursLines {
-		if msHeaderRe.MatchString(line) {
+		if m := msHeaderRe.FindStringSubmatch(line); m != nil {
 			oursInRegion = true
+			oursMS = "M" + m[1]
 		} else if isSectionBreak(line) {
 			oursInRegion = false
+			oursMS = ""
+		}
+		if oursInRegion && oursMS != "" && strings.TrimSpace(line) != "" {
+			msInsertAfter[oursMS] = len(merged)
 		}
 		// Upgrade task checkboxes to the more-advanced state
 		if m := taskRe.FindStringSubmatch(line); oursInRegion && m != nil {
 			oursMarker := m[1]
 			taskID := m[2]
+			oursSeen[taskID] = true
 			if theirsMarker, ok := theirsStates[taskID]; ok {
 				oursRank, oursKnown := rank(oursMarker)
 				theirsRank, theirsKnown := rank(theirsMarker)
@@ -274,6 +311,57 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		}
 
 		merged = append(merged, line)
+	}
+
+	// Carry over every task that exists only in "theirs".
+	//
+	// The merge above walks "ours" and upgrades markers from a map built off
+	// "theirs", so a task line that "theirs" has and "ours" does not was never
+	// visited and never written — it was dropped, and the result committed under
+	// a green "conflicts auto-resolved". `.belmont/` is `--assume-unchanged`
+	// inside a worktree, so a dropped line is in no commit and unrecoverable;
+	// losing a `[!]` this way looks exactly like the question was answered.
+	// mergeProgressState already carries missing lines the other way for the
+	// same reason. See issue #43.
+	var carried []theirsTask
+	for _, tt := range theirsOrder {
+		if !oursSeen[tt.id] {
+			carried = append(carried, tt)
+		}
+	}
+	if len(carried) > 0 {
+		// A carried task whose milestone "ours" does not have cannot be placed.
+		// Escalate rather than append it somewhere plausible: the two sides
+		// disagree about structure, which is a reconciliation-agent question,
+		// and guessing here would be the silent-normalisation failure of #27
+		// wearing a different hat.
+		byMS := make(map[string][]string)
+		for _, tt := range carried {
+			if _, ok := msInsertAfter[tt.milestone]; !ok {
+				fmt.Fprintf(os.Stderr,
+					"  \033[33m⚠ %s: incoming task %s belongs to %s, which this side does not have — not auto-resolving; escalating to the reconciliation agent\033[0m\n",
+					relPath, tt.id, tt.milestone)
+				return false
+			}
+			byMS[tt.milestone] = append(byMS[tt.milestone], tt.line)
+		}
+
+		// Splice highest index first so the earlier insertion points stay valid.
+		msIDs := make([]string, 0, len(byMS))
+		for ms := range byMS {
+			msIDs = append(msIDs, ms)
+		}
+		sort.Slice(msIDs, func(i, j int) bool { return msInsertAfter[msIDs[i]] > msInsertAfter[msIDs[j]] })
+		for _, ms := range msIDs {
+			at := msInsertAfter[ms] + 1
+			tail := append([]string{}, merged[at:]...)
+			merged = append(merged[:at], byMS[ms]...)
+			merged = append(merged, tail...)
+		}
+
+		fmt.Fprintf(os.Stderr,
+			"  \033[36mⓘ %s: carried %d task line(s) present only in the incoming version\033[0m\n",
+			relPath, len(carried))
 	}
 
 	result := strings.Join(merged, "\n")

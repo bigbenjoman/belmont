@@ -491,14 +491,17 @@ func lineIndentWidth(line string) int {
 // that something needs attention. An unrecognised marker on either side is left
 // exactly as written and reported, never ranked; see issue #27.
 //
-// Known limitation: tasks are matched by ID, so a task line without a parseable
-// `P<n>-…` ID is left as the worktree wrote it and never reconciled. Same
-// constraint as resolveProgressConflict, which uses the same shape of regex.
-// Belmont's own templates always emit IDs, so this bites only hand-written
-// entries.
+// Tasks are matched by ID, and the ID is `taskIDShape` — the same definition
+// `parseTaskID` and `commitNamedTaskIDs` use. It used to be `P\d+-…` only, which
+// meant a hand-written ID like `FWLUP-SWEEP-1` was invisible here: never
+// reconciled, and left as whichever side happened to be the base. Since
+// `.belmont/` is `--assume-unchanged` in a worktree, this function is the only
+// transport home, so "not reconciled" meant "silently took one side" on the one
+// path state travels by. For a `P<n>-` prefixed ID the behaviour is unchanged —
+// that alternative is first in the alternation. See issue #38.
 func mergeProgressState(masterContent, worktreeContent string) (string, []string) {
 	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
-	taskRe := regexp.MustCompile(`^(\s*-\s+)\[(.)\](\s+)(P\d+-[\w][\w-]*)(.*)$`)
+	taskRe := regexp.MustCompile(`^(\s*-\s+)\[(.)\](\s+)(` + taskIDShape + `)(.*)$`)
 
 	type masterTask struct {
 		marker    string

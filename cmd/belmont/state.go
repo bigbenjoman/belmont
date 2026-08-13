@@ -856,20 +856,39 @@ func parseMilestoneNum(id string) int {
 	return n
 }
 
-// skipMilestoneInProgress marks all incomplete tasks in a milestone as done in PROGRESS.md.
-func skipMilestoneInProgress(root, feature, milestoneID string) error {
+// skipMilestoneInProgress marks a milestone's outstanding `[ ]` and `[>]` tasks
+// as done in PROGRESS.md. It returns the number of `[!]` tasks it deliberately
+// left alone, so the caller can say that the milestone is not actually finished.
+//
+// `[!]` is NOT swept. It means the work is waiting on a person, and rewriting it
+// to `[x]` both destroys the question and records no reason — `[x]` is treated as
+// finished by every stop condition (#30), so the milestone would read done with
+// the user's decision silently discarded. Skipping a milestone is a statement
+// about work an agent chose not to do; it is not an answer to a question that was
+// asked of somebody else. See issue #40.
+//
+// This is currently belt-and-braces: `checkHardGuardrails` pauses the run while
+// any `[!]` exists, and `actionSkipMilestone` is only ever emitted by the AI
+// decision path downstream of that guardrail, so no live path reaches here with a
+// blocker present. It is written this way because that guardrail is exactly what
+// issue #41 proposes to narrow.
+func skipMilestoneInProgress(root, feature, milestoneID string) (int, error) {
 	progressPath := filepath.Join(root, ".belmont", "features", feature, "PROGRESS.md")
 	content, err := os.ReadFile(progressPath)
 	if err != nil {
-		return fmt.Errorf("read PROGRESS.md: %w", err)
+		return 0, fmt.Errorf("read PROGRESS.md: %w", err)
 	}
 
 	lines := strings.Split(string(content), "\n")
 	msRe := regexp.MustCompile(`(?i)^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
-	taskRe := regexp.MustCompile(`^(\s*-\s+)\[[ >!]\](\s+.*)$`)
+	taskRe := regexp.MustCompile(`^(\s*-\s+)\[[ >]\](\s+.*)$`)
+	// Counted, not rewritten. canonicalMarker so `[!]` is recognised by the one
+	// definition of what a marker means, rather than a fourth raw-byte compare.
+	anyTaskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s`)
 
 	inTarget := false
 	changed := false
+	blockersLeft := 0
 	for i, line := range lines {
 		if m := msRe.FindStringSubmatch(line); len(m) >= 2 {
 			inTarget = ("M" + m[1]) == milestoneID
@@ -883,15 +902,24 @@ func skipMilestoneInProgress(root, feature, milestoneID string) error {
 			if taskMatch := taskRe.FindStringSubmatch(line); len(taskMatch) >= 3 {
 				lines[i] = taskMatch[1] + "[x]" + taskMatch[2]
 				changed = true
+				continue
+			}
+			if m := anyTaskRe.FindStringSubmatch(line); m != nil {
+				if st, ok := canonicalMarker(m[1]); ok && st == taskBlocked {
+					blockersLeft++
+				}
 			}
 		}
 	}
 
 	if !changed {
-		return fmt.Errorf("milestone %s not found or already done", milestoneID)
+		if blockersLeft > 0 {
+			return blockersLeft, fmt.Errorf("milestone %s has only blocked tasks — nothing to skip; they are waiting on a person", milestoneID)
+		}
+		return 0, fmt.Errorf("milestone %s not found or already done", milestoneID)
 	}
 
-	return os.WriteFile(progressPath, []byte(strings.Join(lines, "\n")), 0644)
+	return blockersLeft, os.WriteFile(progressPath, []byte(strings.Join(lines, "\n")), 0644)
 }
 
 func detectFwlupTasks(root, feature string, report statusReport) bool {
@@ -907,16 +935,6 @@ func detectFwlupTasks(root, feature string, report statusReport) bool {
 	return false
 }
 
-// extractMilestoneFromTaskID extracts the milestone ID from a task ID like "P5-M5-FWLUP-1" → "M5".
-func extractMilestoneFromTaskID(taskID string) string {
-	re := regexp.MustCompile(`P\d+-M(\d+)`)
-	m := re.FindStringSubmatch(taskID)
-	if len(m) >= 2 {
-		return "M" + m[1]
-	}
-	return ""
-}
-
 // detectFwlupTasksForMilestone checks for pending FWLUP tasks scoped to a specific milestone.
 func detectFwlupTasksForMilestone(root, feature string, report statusReport, milestoneID string) bool {
 	if milestoneID == "" {
@@ -926,8 +944,17 @@ func detectFwlupTasksForMilestone(root, feature string, report statusReport, mil
 	for _, t := range report.Tasks {
 		if t.Status == taskTodo || t.Status == taskInProgress {
 			if fwlupRe.MatchString(t.ID) || fwlupRe.MatchString(t.Name) {
-				// Tasks now carry their milestone ID from PROGRESS.md
-				if t.MilestoneID == milestoneID || extractMilestoneFromTaskID(t.ID) == milestoneID {
+				// Position first — the parser sets MilestoneID from the task's
+				// actual place in the file, so it is right whenever the two
+				// agree. The ID is the fallback for a task whose position and
+				// ID disagree, and it routes through taskIDNamedMilestone
+				// because that is the definition `belmont validate` reports
+				// against and `belmont repair` moves toward. A third answer
+				// here meant a `P<n>-FWLUP-M<k>-…` task was attributed to no
+				// milestone by this reader while the lint attributed it to
+				// M<k>; see issue #39.
+				named, _ := taskIDNamedMilestone(t.ID)
+				if t.MilestoneID == milestoneID || named == milestoneID {
 					return true
 				}
 			}

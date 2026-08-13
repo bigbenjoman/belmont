@@ -484,7 +484,7 @@ func TestListingCountsOrphansFromTheRealPipeline(t *testing.T) {
 
 	// Drive the real listing pipeline. Hand-building a featureSummary pins the
 	// renderer and leaves the population site free to return zero.
-	features := listFeaturesWithOverrides(filepath.Join(root, ".belmont", "features"), 0, nil)
+	features := listFeaturesWithOverrides(filepath.Join(root, ".belmont", "features"), 0, nil, "", nil)
 	if len(features) != 1 {
 		t.Fatalf("features = %d, want 1", len(features))
 	}
