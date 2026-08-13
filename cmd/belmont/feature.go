@@ -10,9 +10,22 @@ import (
 	"strings"
 )
 
-// listFeaturesWithOverrides is like listFeatures but allows worktree path overrides.
-// The overrides map slug → worktree feature path for features with active worktrees.
-func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverrides map[string]string) []featureSummary {
+// listFeaturesWithOverrides is like listFeatures but reads live state from any
+// active worktrees.
+//
+// Two shapes, because auto has two. `worktreeOverrides` maps slug → worktree
+// feature dir for serial and multi-feature runs, where one worktree owns a whole
+// feature. `perMilestoneLive` maps milestone ID → worktree feature dir for
+// single-feature-parallel runs, where each milestone has its own worktree and
+// master stays the baseline.
+//
+// The second is why this takes more than the one map. `loadAutoWorktrees`
+// collapses a parallel run to ONE representative directory — the alphabetically
+// first milestone's — so this listing rendered a single worktree's PROGRESS.md
+// as the whole feature and every other in-flight milestone was invisible. Since
+// the listing now prints a pointer to `belmont blockers`, which reads
+// per-milestone correctly, the two could disagree mid-run. See issue #42.
+func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverrides map[string]string, liveFeature string, perMilestoneLive map[string]string) []featureSummary {
 	entries, err := os.ReadDir(featuresDir)
 	if err != nil {
 		return nil
@@ -24,8 +37,11 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 		}
 		slug := entry.Name()
 		featurePath := filepath.Join(featuresDir, slug)
-		// If there's an active worktree for this feature, read state from there instead
-		if override, ok := worktreeOverrides[slug]; ok {
+		// In single-feature-parallel mode the live feature keeps MASTER as its
+		// baseline and is overlaid milestone by milestone below. Swapping in a
+		// representative worktree here is what collapsed the view.
+		parallelLive := perMilestoneLive != nil && slug == liveFeature
+		if override, ok := worktreeOverrides[slug]; ok && !parallelLive {
 			featurePath = override
 		}
 		prdPath := filepath.Join(featurePath, "PRD.md")
@@ -52,6 +68,12 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 		if progressContent, err := os.ReadFile(progressPath); err == nil {
 			milestones = parseMilestones(string(progressContent))
 			orphaned = len(orphanedTaskLines(string(progressContent)))
+		}
+		if parallelLive {
+			// Each milestone from its own worktree, master for the rest —
+			// the same overlay `belmont status --feature` and `belmont
+			// blockers` already use, so all three agree during a run.
+			milestones = overlayLiveMilestones(milestones, perMilestoneLive)
 		}
 
 		tasks := flattenTasks(milestones, maxName)

@@ -120,11 +120,20 @@ func runLoop(cfg loopConfig) error {
 
 		// 6. Handle SKIP_MILESTONE (state mutation, no tool call)
 		if action.Type == actionSkipMilestone {
-			skipErr := skipMilestoneInProgress(cfg.Root, cfg.Feature, action.MilestoneID)
+			blockersLeft, skipErr := skipMilestoneInProgress(cfg.Root, cfg.Feature, action.MilestoneID)
 			if skipErr != nil {
 				fmt.Fprintf(os.Stderr, "\033[31m  ✗ Failed to skip milestone: %s\033[0m\n\n", skipErr)
 			} else {
-				fmt.Fprintf(os.Stderr, "\033[32m  ✓ Skipped milestone %s\033[0m\n\n", action.MilestoneID)
+				fmt.Fprintf(os.Stderr, "\033[32m  ✓ Skipped milestone %s\033[0m\n", action.MilestoneID)
+				// Say what was left rather than letting the milestone read as
+				// finished. A skipped milestone holding a `[!]` is not done —
+				// the marker is a question for the user, and nothing here can
+				// answer it.
+				if blockersLeft > 0 {
+					fmt.Fprintf(os.Stderr, "\033[33m    %d blocked task(s) left as [!] — %s is not finished; see belmont blockers --feature %s\033[0m\n",
+						blockersLeft, action.MilestoneID, cfg.Feature)
+				}
+				fmt.Fprintln(os.Stderr)
 			}
 			entry := historyEntry{
 				Action:       *action,

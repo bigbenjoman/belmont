@@ -367,7 +367,7 @@ func extractProductName(prdPath string) string {
 }
 
 func listFeatures(featuresDir string, maxName int) []featureSummary {
-	return listFeaturesWithOverrides(featuresDir, maxName, nil)
+	return listFeaturesWithOverrides(featuresDir, maxName, nil, "", nil)
 }
 
 // parseMasterTableColumns finds column indices by header name in the master PROGRESS.md features table.
