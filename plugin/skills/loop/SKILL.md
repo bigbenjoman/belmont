@@ -199,9 +199,16 @@ If you are running in Claude Code, start Claude Code's built-in **`/loop`** skil
          than a silent leftover that reads as done.
        - human-gated → already `[!]`; leave it exactly as it is.
      Settling is safe precisely because `[-]` and `[!]` are both reversible
-     by the user: nothing is lost, it is parked where `belmont blockers`
-     shows it and they can reopen it. Leaving a `[ ]` behind is the unsafe
-     option — it looks like scheduled work and is nobody's decision.
+     by the user, and each is parked somewhere they will find it — but they
+     are NOT the same somewhere. A `[!]` is listed by `belmont blockers`. A
+     `[-]` is NOT: that command is the queue of open questions, and it
+     excludes withdrawn work on purpose. A `[-]` is recorded in
+     `## Decisions Log`, keeps its body on the task line in PROGRESS.md, and
+     is named again by the final verdict in step 5. Never point the user at
+     `belmont blockers` to find a deferral — they will see only the `[!]`s
+     and reasonably conclude nothing else was parked. Leaving a `[ ]` behind
+     is the unsafe option — it looks like scheduled work and is nobody's
+     decision.
      Deferral NEVER means creating a milestone — see the milestone-structure
      rule above.
   4. Fix the blocking follow-ups in ONE batch, not one at a time.
@@ -263,8 +270,13 @@ If you are running in Claude Code, start Claude Code's built-in **`/loop`** skil
          unverified tasks is NOT finished; status warns and names reverify.)
        - Milestones the circuit breaker bounded. It defers everything still
          classified blocking, so its deferrals may include real defects.
-         Name them — they are [-] in PROGRESS.md, listed in
-         `## Decisions Log`, with detail in NOTES.md `## Polish` — and name
+         Name them — they are [-] in PROGRESS.md with their bodies intact,
+         listed in `## Decisions Log` as bounded. Do NOT send the user to
+         NOTES.md `## Polish` for these, and do NOT send them to
+         `belmont blockers`: only step 3's polish deferrals move their
+         detail to NOTES.md, and neither command nor heading carries
+         bounded work. Bounded work is not polish — that distinction is
+         the whole point of the settle rule's wording. Then name
          /belmont:debug-manual <feature> as the next step, NOT
          `belmont reverify`: these are open defects, not unrecorded
          verifications.
@@ -442,9 +454,16 @@ If you are running in Codex, start Goal mode with **`/goal`** and use the same i
          than a silent leftover that reads as done.
        - human-gated → already `[!]`; leave it exactly as it is.
      Settling is safe precisely because `[-]` and `[!]` are both reversible
-     by the user: nothing is lost, it is parked where `belmont blockers`
-     shows it and they can reopen it. Leaving a `[ ]` behind is the unsafe
-     option — it looks like scheduled work and is nobody's decision.
+     by the user, and each is parked somewhere they will find it — but they
+     are NOT the same somewhere. A `[!]` is listed by `belmont blockers`. A
+     `[-]` is NOT: that command is the queue of open questions, and it
+     excludes withdrawn work on purpose. A `[-]` is recorded in
+     `## Decisions Log`, keeps its body on the task line in PROGRESS.md, and
+     is named again by the final verdict in step 5. Never point the user at
+     `belmont blockers` to find a deferral — they will see only the `[!]`s
+     and reasonably conclude nothing else was parked. Leaving a `[ ]` behind
+     is the unsafe option — it looks like scheduled work and is nobody's
+     decision.
      Deferral NEVER means creating a milestone — see the milestone-structure
      rule above.
   4. Fix the blocking follow-ups in ONE batch, not one at a time.
@@ -506,8 +525,13 @@ If you are running in Codex, start Goal mode with **`/goal`** and use the same i
          unverified tasks is NOT finished; status warns and names reverify.)
        - Milestones the circuit breaker bounded. It defers everything still
          classified blocking, so its deferrals may include real defects.
-         Name them — they are [-] in PROGRESS.md, listed in
-         `## Decisions Log`, with detail in NOTES.md `## Polish` — and name
+         Name them — they are [-] in PROGRESS.md with their bodies intact,
+         listed in `## Decisions Log` as bounded. Do NOT send the user to
+         NOTES.md `## Polish` for these, and do NOT send them to
+         `belmont blockers`: only step 3's polish deferrals move their
+         detail to NOTES.md, and neither command nor heading carries
+         bounded work. Bounded work is not polish — that distinction is
+         the whole point of the settle rule's wording. Then name
          belmont:debug-manual <feature> as the next step, NOT
          `belmont reverify`: these are open defects, not unrecorded
          verifications.
