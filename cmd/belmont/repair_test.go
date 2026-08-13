@@ -420,6 +420,290 @@ func TestRepairMovesIntoAnEmptyMilestone(t *testing.T) {
 	t.Errorf("M3 is gone:\n%s", got)
 }
 
+// A task is a bullet PLUS its body. Moving the bullet alone produces two false
+// statements from one move — the body re-attaches to whatever task now precedes
+// it, and the task that moved arrives with its evidence removed — and nothing
+// downstream notices: the file parses, the count is unchanged, `belmont
+// validate` reports no violations. This is issue #33, and the fixture is its
+// repro: on a real 11,948-line file it re-attributed a Stripe test-clock
+// measurement to a neighbouring task.
+func TestRepairMoveCarriesTheTaskBodyWithItsBullet(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [v] P0-M1-1: a task that belongs here.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [v] P0-M2-1: a single-line task, nothing underneath it.\n" +
+		"- [v] P0-M1-2: filed under M2, ID names M1.\n" +
+		"  **Verification**: this line is the task's body.\n" +
+		"  **Evidence**: measured on a real test clock; this is the proof.\n" +
+		"- [v] P0-M2-2: the task that follows.\n" +
+		"\n## Decisions Log\n"
+
+	findings := collectRepairFindings(doc)
+	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 6, TaskID: "P0-M1-2", Action: repairMoveMilestone, Milestone: "M1", Reason: "its ID names M1"},
+	})
+	if len(rejected) != 0 {
+		t.Fatalf("unexpected refusal: %+v", rejected)
+	}
+	got, applied, warnings := applyRepairPlans(doc, plans, "2026-08-12")
+	if len(warnings) != 0 || len(applied) != 1 {
+		t.Fatalf("warnings=%v applied=%d", warnings, len(applied))
+	}
+
+	block := "- [v] P0-M1-2: filed under M2, ID names M1.\n" +
+		"  **Verification**: this line is the task's body.\n" +
+		"  **Evidence**: measured on a real test clock; this is the proof."
+	if !strings.Contains(got, block) {
+		t.Fatalf("the bullet and its body were separated:\n%s", got)
+	}
+	// …and separated is not the only failure: the body must not ALSO still be
+	// sitting where it was, which is what a copy rather than a move would do.
+	if n := strings.Count(got, "**Evidence**"); n != 1 {
+		t.Errorf("the evidence line appears %d times, want 1:\n%s", n, got)
+	}
+	if strings.Index(got, block) > strings.Index(got, "### M2: Second") {
+		t.Errorf("the block landed in M2 rather than M1:\n%s", got)
+	}
+	// The single-line task above it is the one that silently inherited the
+	// evidence in the reported bug.
+	if strings.Contains(got, "nothing underneath it.\n  **") {
+		t.Errorf("P0-M2-1 inherited a body it never had:\n%s", got)
+	}
+}
+
+// The anchor side of the same rule. A block moved into a milestone whose last
+// task has its own body must land after that body, not between the anchor task
+// and its evidence — otherwise the move fixes one stranding by causing another.
+func TestRepairMoveLandsPastTheAnchorTasksOwnBody(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [v] P0-M1-1: the anchor.\n" +
+		"  **Evidence**: the anchor's own proof.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [v] P0-M1-2: filed under M2, ID names M1.\n" +
+		"  **Evidence**: the moved task's proof.\n" +
+		"\n## Decisions Log\n"
+
+	findings := collectRepairFindings(doc)
+	plans, _ := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 6, TaskID: "P0-M1-2", Action: repairMoveMilestone, Milestone: "M1", Reason: "its ID names M1"},
+	})
+	got, _, warnings := applyRepairPlans(doc, plans, "2026-08-12")
+	if len(warnings) != 0 {
+		t.Fatalf("warnings: %v", warnings)
+	}
+	want := "- [v] P0-M1-1: the anchor.\n" +
+		"  **Evidence**: the anchor's own proof.\n" +
+		"- [v] P0-M1-2: filed under M2, ID names M1.\n" +
+		"  **Evidence**: the moved task's proof."
+	if !strings.Contains(got, want) {
+		t.Fatalf("the moved block split the anchor from its body:\n%s", got)
+	}
+}
+
+// A bullet nested inside another moving task's body is carried by the enclosing
+// block already. Moving it a second time would emit its lines twice and
+// duplicate a task ID, which switches off every milestone-keyed reader — so it
+// is refused out loud instead.
+func TestRepairRefusesToMoveABulletInsideAnotherMovingTask(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [ ] P1-M1-1: the anchor.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [ ] P1-M1-2: the outer task.\n" +
+		"  - [ ] P1-M1-3: a bullet inside the outer task's body.\n" +
+		"\n## Session History\n"
+
+	findings := collectRepairFindings(doc)
+	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 5, TaskID: "P1-M1-2", Action: repairMoveMilestone, Milestone: "M1", Reason: "ID names M1"},
+		{Line: 6, TaskID: "P1-M1-3", Action: repairMoveMilestone, Milestone: "M1", Reason: "ID names M1"},
+	})
+	if len(rejected) != 0 {
+		t.Fatalf("unexpected refusal at the gate: %+v", rejected)
+	}
+	got, applied, warnings := applyRepairPlans(doc, plans, "2026-08-12")
+
+	if n := strings.Count(got, "P1-M1-3"); n != 1 {
+		t.Fatalf("the nested bullet was emitted %d times, want 1:\n%s", n, got)
+	}
+	if len(applied) != 1 || applied[0].Finding.TaskID != "P1-M1-2" {
+		t.Errorf("applied = %+v, want only the enclosing task", applied)
+	}
+	var said bool
+	for _, w := range warnings {
+		if strings.Contains(w, "inside the body of another task being moved") {
+			said = true
+		}
+	}
+	if !said {
+		t.Errorf("the refusal was silent; warnings = %v", warnings)
+	}
+}
+
+// The block extent is bounded by the task's OWN indent, not by column zero.
+//
+// A nested bullet is a real task — parseMilestones returns it and
+// collectRepairFindings flags it — so it can be the subject of a move. Ending
+// its body at column zero instead would run to the end of the ENCLOSING list
+// item, carrying its siblings and its parent's evidence into another milestone:
+// task lines nobody flagged change milestone, a task nobody named loses its
+// proof, and `warnings` is empty. Issue #33's mis-attribution, pointed the other
+// way, and a silent breach of "only touch the lines it flagged".
+func TestRepairMoveOfANestedBulletLeavesItsSiblingsAlone(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [ ] P1-M1-1: the anchor.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [ ] P1-M2-1: parent task.\n" +
+		"  - [ ] P1-M1-9: sub-task whose ID names M1.\n" +
+		"  - [ ] P1-M2-2: a sibling nobody asked to move.\n" +
+		"  **Evidence**: the parent's own proof.\n" +
+		"\n## Session History\n"
+
+	findings := collectRepairFindings(doc)
+	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 6, TaskID: "P1-M1-9", Action: repairMoveMilestone, Milestone: "M1", Reason: "its ID names M1"},
+	})
+	if len(rejected) != 0 {
+		t.Fatalf("unexpected refusal: %+v", rejected)
+	}
+	got, applied, warnings := applyRepairPlans(doc, plans, "2026-08-12")
+	if len(applied) != 1 || len(warnings) != 0 {
+		t.Fatalf("applied=%d warnings=%v", len(applied), warnings)
+	}
+
+	m1 := got[strings.Index(got, "### M1:"):strings.Index(got, "### M2:")]
+	if strings.Contains(m1, "P1-M2-2") {
+		t.Errorf("an unflagged sibling was moved to M1:\n%s", got)
+	}
+	if strings.Contains(m1, "the parent's own proof") {
+		t.Errorf("the parent's evidence was moved to M1:\n%s", got)
+	}
+	if !strings.Contains(m1, "P1-M1-9") {
+		t.Errorf("the flagged task did not move:\n%s", got)
+	}
+	// The parent keeps everything that was never named.
+	m2 := got[strings.Index(got, "### M2: Second"):]
+	for _, want := range []string{"P1-M2-1", "P1-M2-2", "the parent's own proof"} {
+		if !strings.Contains(m2, want) {
+			t.Errorf("M2 lost %q:\n%s", want, got)
+		}
+	}
+}
+
+// A task written as a loose list keeps its evidence behind a blank line. The
+// block has to span it, or #33 fires on that shape: the tail stays behind and
+// re-attaches to the task now above it, while the moved task arrives with half
+// its proof. Same bug, one blank line away from the fixture that reported it.
+//
+// The mirror matters as much: a blank line must not extend the block on its
+// own, or a task at the end of a milestone swallows the separator before the
+// next heading and the move deletes a blank line from the document.
+func TestRepairMoveSpansABlankLineInsideATaskBody(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [v] P0-M1-1: anchor.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [v] P0-M2-1: a single-line task.\n" +
+		"- [v] P0-M1-2: filed under M2, id names M1.\n" +
+		"  **Verification**: first body line.\n" +
+		"\n" +
+		"  **Evidence**: after a blank line.\n" +
+		"\n" +
+		"## Session History\n"
+
+	findings := collectRepairFindings(doc)
+	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 6, TaskID: "P0-M1-2", Action: repairMoveMilestone, Milestone: "M1", Reason: "id names M1"},
+	})
+	if len(rejected) != 0 {
+		t.Fatalf("unexpected refusal: %+v", rejected)
+	}
+	got, _, warnings := applyRepairPlans(doc, plans, "2026-08-13")
+	if len(warnings) != 0 {
+		t.Fatalf("warnings: %v", warnings)
+	}
+
+	want := "- [v] P0-M1-2: filed under M2, id names M1.\n" +
+		"  **Verification**: first body line.\n" +
+		"\n" +
+		"  **Evidence**: after a blank line."
+	if !strings.Contains(got, want) {
+		t.Fatalf("the block did not span the blank line:\n%s", got)
+	}
+	if strings.Index(got, want) > strings.Index(got, "### M2: Second") {
+		t.Errorf("the block landed in M2:\n%s", got)
+	}
+	// The single-line task must not inherit the tail.
+	m2 := got[strings.Index(got, "### M2: Second"):]
+	if strings.Contains(m2, "**Evidence**") || strings.Contains(m2, "**Verification**") {
+		t.Errorf("body prose stranded in M2:\n%s", got)
+	}
+	// …and the trailing blank stayed behind in M2 rather than travelling as
+	// part of the block: the separator before the section break survives.
+	if !strings.Contains(got, "a single-line task.\n\n## Session History") {
+		t.Errorf("the blank line before the section break was eaten:\n%s", got)
+	}
+	// The block itself ends at the evidence line, not at the blank after it.
+	if !strings.Contains(got, "**Evidence**: after a blank line.\n\n### M2: Second") {
+		t.Errorf("the block boundary is wrong at the destination:\n%s", got)
+	}
+}
+
+// The mirror of the above, on the anchor side: a trailing blank must not be
+// pulled into the block of the milestone's last task.
+func TestTaskBodyEndDoesNotSwallowTheTrailingBlank(t *testing.T) {
+	lines := []string{
+		"### M1: First",
+		"- [x] P0-M1-1: task",
+		"  body line",
+		"",
+		"### M2: Second",
+	}
+	if got := taskBodyEnd(lines, 1); got != 2 {
+		t.Errorf("taskBodyEnd = %d, want 2 (the body line, not the blank)", got)
+	}
+	// No body at all: the task is its own block.
+	if got := taskBodyEnd([]string{"- [x] a", "", "- [x] b"}, 0); got != 0 {
+		t.Errorf("taskBodyEnd = %d, want 0", got)
+	}
+}
+
+// The refusal warning must not claim a line stayed put when it travelled with
+// the block enclosing it. A false report about a moved task is the same class of
+// defect as the move that prompted this whole change.
+func TestRepairNestedRefusalNamesWhereTheLineActuallyWent(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [ ] P1-M1-1: the anchor.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [ ] P1-M1-2: the outer task.\n" +
+		"  - [ ] P1-M1-3: nested inside the outer task's body.\n" +
+		"\n## Session History\n"
+
+	findings := collectRepairFindings(doc)
+	plans, _ := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 5, TaskID: "P1-M1-2", Action: repairMoveMilestone, Milestone: "M1", Reason: "ID names M1"},
+		{Line: 6, TaskID: "P1-M1-3", Action: repairMoveMilestone, Milestone: "M1", Reason: "ID names M1"},
+	})
+	got, _, warnings := applyRepairPlans(doc, plans, "2026-08-12")
+
+	joined := strings.Join(warnings, " | ")
+	if strings.Contains(joined, "left exactly where it is") {
+		t.Errorf("the warning claims the line stayed put: %s", joined)
+	}
+	if !strings.Contains(joined, "travels to M1") {
+		t.Errorf("the warning does not say where the line went: %s", joined)
+	}
+	// And it really did go there, exactly once.
+	m1 := got[strings.Index(got, "### M1:"):strings.Index(got, "### M2:")]
+	if !strings.Contains(m1, "P1-M1-3") || strings.Count(got, "P1-M1-3") != 1 {
+		t.Errorf("nested line placement is wrong:\n%s", got)
+	}
+}
+
 // ----------------------------------------------------------------------------
 // End to end, through the command
 // ----------------------------------------------------------------------------

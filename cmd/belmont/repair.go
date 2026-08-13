@@ -389,16 +389,25 @@ func taskIDsClaimedElsewhere(root, slug string) (claimed map[string]bool, unread
 		}
 		// Every task line, in region or not: a sibling's stray copy of the ID
 		// makes the commit just as ambiguous as an in-region one.
-		for _, m := range repairAnyTaskIDRe.FindAllStringSubmatch(string(data), -1) {
-			out[m[1]] = true
+		for _, line := range strings.Split(string(data), "\n") {
+			m := repairAnyTaskLineRe.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			if id, _, ok := parseTaskID(m[1]); ok {
+				out[id] = true
+			}
 		}
 	}
 	sort.Strings(unreadable)
 	return out, unreadable
 }
 
-// repairAnyTaskIDRe matches the task ID on any checkbox line.
-var repairAnyTaskIDRe = regexp.MustCompile(`(?m)^\s*-\s+\[.\]\s+(P\d+-[\w][\w-]*):`)
+// repairAnyTaskLineRe matches any checkbox line and captures its text. The ID
+// then comes from `parseTaskID`, so this side of the ambiguity check accepts
+// exactly the IDs the finding side does — a sibling claiming `FWLUP-SWEEP-1`
+// has to be visible here, or the ambiguity it creates is invisible.
+var repairAnyTaskLineRe = regexp.MustCompile(`^\s*-\s+\[.\]\s+(.+)$`)
 
 // mechanicalRepairs returns the actions the commit log settles on its own.
 //
@@ -784,19 +793,31 @@ func repairLabel(f repairFinding) string {
 	return fmt.Sprintf("PROGRESS.md:%d", f.Line)
 }
 
-// moveTaskLines relocates the lines in `moves` (line index -> destination
-// milestone ID) under the destination milestone, preserving each line verbatim.
+// moveTaskLines relocates the tasks in `moves` (line index -> destination
+// milestone ID) under the destination milestone, preserving every line verbatim.
+//
+// A task is a bullet PLUS its body — the indented continuation lines beneath
+// it, which is where `**Verification**` and `**Evidence**` prose lives. Moving
+// the bullet alone turns one task into two false statements: the body stays
+// behind and silently re-attaches to whatever task now precedes it, crediting
+// that task with evidence it never earned, while the task that moved arrives
+// asserting done with nothing behind it. Nothing catches it afterwards — the
+// file still parses, the task count is unchanged, and `belmont validate`
+// reports no violations. See issue #33.
+//
+// The extent of a task's body is `taskBodyEnd`, the same reading that anchors
+// an insertion past the destination task's own body and the same one
+// `mergeProgressState` uses. One definition of where a task ends.
 //
 // Anchoring follows `mergeProgressState`: after the destination's last task
-// line (past its indented body, see taskBodyEnd), or after its header when it
-// holds no tasks yet — otherwise the first
-// task moved into an empty milestone has nowhere to land. Region boundaries are
-// `isSectionBreak`, like every other reader.
+// line (past its indented body), or after its header when it holds no tasks
+// yet — otherwise the first task moved into an empty milestone has nowhere to
+// land. Region boundaries are `isSectionBreak`, like every other reader.
 //
-// Returns the new lines, warnings, and the indices of moves that could not be
-// placed (destination absent). A move that cannot be placed leaves the line
-// exactly where it was: repair never deletes a task line, and never creates a
-// milestone to receive one.
+// Returns the new lines, warnings, and the starting indices of moves that could
+// not be placed. A move that cannot be placed leaves its whole block exactly
+// where it was: repair never deletes a task line, and never creates a milestone
+// to receive one.
 func moveTaskLines(lines []string, moves map[int]string) ([]string, []string, []int) {
 	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
 	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+`)
@@ -821,27 +842,66 @@ func moveTaskLines(lines []string, moves map[int]string) ([]string, []string, []
 
 	var warnings []string
 	var dropped []int
-	// Resolve anchors first: a line being moved OUT cannot serve as the anchor
-	// for a line being moved IN, because it will not be emitted.
-	moving := map[int]bool{}
-	for idx := range moves {
-		moving[idx] = true
-	}
-	insertAfter := map[int][]int{} // anchor index -> moved line indices
+
 	var order []int
 	for idx := range moves {
 		order = append(order, idx)
 	}
 	sort.Ints(order)
+
+	// Extents first. `moving` holds every line of every block, not just the
+	// bullets, so an anchor landing anywhere inside a block is recognised as a
+	// line that will not be emitted where it currently sits.
+	//
+	// A bullet inside another moving task's body is refused AS A SEPARATE ACTION
+	// rather than moved twice: its lines are already carried by the enclosing
+	// block, so emitting them again would duplicate a task ID and switch off
+	// every milestone-keyed reader.
+	//
+	// Note what the warning must NOT say. The line does not stay where it is — it
+	// travels with the block enclosing it, to that block's destination. Only the
+	// separate move failed. Reporting a real relocation as "left exactly where it
+	// is" would be a false statement about a moved task, which is the class of
+	// bug this whole change exists to remove.
+	blockEnd := map[int]int{}
+	moving := map[int]bool{}
+	var placeable []int
+	coveredTo := -1
+	coveringDest := ""
 	for _, idx := range order {
+		if idx <= coveredTo {
+			warnings = append(warnings, fmt.Sprintf(
+				"the task at line %d sits inside the body of another task being moved, so it travels to %s with that task instead of being moved on its own — separate the two first if it belongs somewhere else",
+				idx+1, coveringDest))
+			dropped = append(dropped, idx)
+			continue
+		}
+		end := taskBodyEnd(lines, idx)
+		blockEnd[idx] = end
+		for i := idx; i <= end; i++ {
+			moving[i] = true
+		}
+		coveredTo = end
+		coveringDest = moves[idx]
+		placeable = append(placeable, idx)
+	}
+
+	// Resolve anchors second: a line being moved OUT cannot serve as the anchor
+	// for a block being moved IN, because it will not be emitted.
+	insertAfter := map[int][]int{} // anchor index -> moved block start indices
+	for _, idx := range placeable {
 		dest := moves[idx]
 		anchor, ok := lastTaskIdx[dest]
 		if ok && moving[anchor] {
 			anchor, ok = lastHeaderIdx[dest]
 		} else if ok {
-			// Past the task's indented body, so the moved line cannot land
-			// between the anchor task and its own continuation lines.
+			// Past the anchor task's indented body, so the moved block cannot
+			// land between that task and its own continuation lines.
 			anchor = taskBodyEnd(lines, anchor)
+			if moving[anchor] {
+				// The anchor's body runs into a block that is leaving.
+				anchor, ok = lastHeaderIdx[dest]
+			}
 		}
 		if !ok {
 			anchor, ok = lastHeaderIdx[dest]
@@ -851,7 +911,9 @@ func moveTaskLines(lines []string, moves map[int]string) ([]string, []string, []
 				"milestone %s is not in this PROGRESS.md, so the line at %d was left exactly where it is — repair never creates a milestone",
 				dest, idx+1))
 			dropped = append(dropped, idx)
-			delete(moving, idx)
+			for i := idx; i <= blockEnd[idx]; i++ {
+				delete(moving, i)
+			}
 			continue
 		}
 		insertAfter[anchor] = append(insertAfter[anchor], idx)
@@ -864,9 +926,10 @@ func moveTaskLines(lines []string, moves map[int]string) ([]string, []string, []
 		}
 		out = append(out, line)
 		for _, moved := range insertAfter[i] {
-			out = append(out, lines[moved])
+			out = append(out, lines[moved:blockEnd[moved]+1]...)
 		}
 	}
+	sort.Ints(dropped)
 	return out, warnings, dropped
 }
 
@@ -1022,10 +1085,29 @@ task at all", and the repository answers all four.
   - It is waiting on something identifiable            -> set_marker "!"
   - It is not a task: a retro bullet, a quoted log line, a table row that
     happens to look like a checkbox                    -> leave
+  - It is a real task sitting in the wrong place       -> move_milestone
   - The code does not settle it                        -> escalate
 
 Never guess. "escalate" is a real answer and is always better than a marker
 nobody can justify — a wrong state here is the bug this command exists to fix.
+
+WHERE A MISPLACED TASK GOES. This is the step people loop on, so it has a rule:
+
+  - "task_outside_milestone" or "cross_milestone_task_id" whose ID names a
+    milestone the file ALREADY has -> move_milestone to that milestone. Done.
+  - a real task whose ID names no milestone, OR names one this file does not
+    have (an ID saying M9 in a plan that stops at M5 — repair cannot create M9,
+    so that ID settles nothing) — a follow-up from a cross-cutting sweep is the
+    usual case — still needs a destination. Do NOT escalate it to
+    /belmont:tech-plan expecting a new milestone: that skill forbids creating
+    one for follow-ups, so the task comes straight back here unscheduled. File
+    it under the HIGHEST-NUMBERED existing milestone whose work it touches — the
+    last one whose outputs the fix depends on — or the final milestone in the
+    plan when it is genuinely global. Name the milestones it touches in your
+    reason. Filing it under the earliest one instead re-opens work that later
+    milestones already built on, which is the failure the milestone-immutability
+    rule exists to prevent.
+  - only when you cannot tell what it touches -> escalate.
 
 ACTIONS (this set is closed; the reasons are not):
   {"line": <int>, "task_id": "<id>", "action": "set_marker",     "marker": "x|>| |!", "reason": "<what in the code says so>"}

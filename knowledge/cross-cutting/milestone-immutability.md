@@ -6,7 +6,9 @@
 
 ## Invariant
 
-Only `/belmont:tech-plan` may add, remove, rename, or re-parent a `## M<N>:` heading in PROGRESS.md. Every other skill (implement, verify, next, debug-auto, triage) may only edit tasks **inside** existing milestone headings.
+Only `/belmont:tech-plan` may add, remove, rename, or re-parent a `### M<N>:` heading in PROGRESS.md. Every other skill (implement, verify, next, debug-auto, triage) may only edit tasks **inside** existing milestone headings.
+
+**Milestone headings are level 3.** The partial said `## M<N>:` in two places (the issue reported four) while the parser, `validate`'s expected-structure output and every real file use `### M<n>:`. That is not cosmetic: a level-2 heading at column zero is exactly what *ends* the milestones region (`isSectionBreak`), so an agent following the partial literally would both fail to create a milestone and silently orphan every task after it — manufacturing more of the finding this entry's routing rules exist to answer. Fixed 2026-08-12 (issue #34).
 
 **Exception**: interactive `/belmont:debug-manual` may edit spec prose (PRD/TECH_PLAN/NOTES/PROGRESS task text and follow-up `[x]` flips) in place under human-gated per-edit approval. The structural rules above (no new/renamed/removed milestones, no polish-pattern naming) still apply to `debug-manual`. See [cross-cutting/debug-spec-reconciliation.md](debug-spec-reconciliation.md) for the rationale and bounds.
 
@@ -14,6 +16,7 @@ Routing for discovered work:
 
 - **Follow-up from M<N>'s own implement/verify cycle** → new `[ ]` task inside M<N>.
 - **Follow-up blocked by work that will land in a later M<N+k>** → new `[!]` task inside M<N>, one-line reason naming M<N+k>. Reopens as `[ ]` when the blocker lifts.
+- **Follow-up from a cross-cutting sweep, belonging to no single milestone** → new `[ ]` task inside the **highest-numbered existing milestone whose work it touches**; the last milestone in the plan if it is genuinely global. **Highest, not earliest.** The earliest milestone it touches is the intuitive answer and it is wrong: the fix edits files the later milestones already imported, so filing it there makes it a sibling racing its own downstream — the identical failure this entry bans a "polish from M<N>" milestone for. The honest dependency edge is the last milestone whose outputs the fix depends on.
 - **Cosmetic / nice-to-have item the user may never want** → append to `NOTES.md` under `## Polish`. Not a milestone task.
 - **Never a new milestone.** Not "M<last+1>: Polish", not "M<N>-FIX", not "MX: Deviations from M<N>", not "MY: Verification Fixes". Even if existing PROGRESS.md already contains such a milestone from a prior run, do not add to it and do not create siblings.
 
@@ -33,6 +36,7 @@ With broken enforcement (one layer regressed but others intact): the regressed l
 
 ## Don't re-do
 
+- **Leave the cross-cutting case unruled because "it depends".** It was unruled until 2026-08-12 and the absence was not neutral — it was a loop. `belmont validate` / `belmont repair` say a task outside every milestone must move under a `### M<n>:` heading and escalate structural work to `/belmont:tech-plan`; `tech-plan` says follow-ups never get a new milestone; this partial says that rule supersedes everything else and then lists no destination for a follow-up belonging to no single milestone. Three correct instructions, followed in order, return you to the finding you started with, and the task stays counted by nothing. On the reporting project that was 40 tasks from one P1/P2 audit sweep — nine open, one flagged P1 and live in production, all invisible to scheduling. **Any executable ruling beats none**; the one chosen is above. See issue #34.
 - **`implement.md:135-137` with the "create a new milestone with the next sequential number" permission.** This was the exact loophole that produced the M5 milestone in about-2. Removed; replaced with "always extend the current milestone." If you're tempted to add an "escape hatch" for cross-milestone work, the correct escape hatch is `[!]` with a reason, not a new milestone.
 - **Allowing `triage`'s `defer_and_proceed` to create polish milestones.** The post-verify-triage prompt explicitly forbids this now. Deferral means NOTES.md or same-milestone `[!]`, never a new milestone.
 - **Per-milestone PROGRESS fragment files** (`M1.md`, `M2.md`, …). Architecturally cleaner (scope violation becomes structurally impossible for checkbox flips). Rejected as a bigger refactor than skill-prose + runtime guard combined. Revisit only if the runtime guard proves fiddly; the two approaches are redundant-but-harmless if both adopted.
@@ -56,3 +60,4 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestDetectViolations_Polis
 - 2026-04-22 — migrated from LEARNINGS.md to knowledge/ tree.
 - 2026-05-11 — `debug-manual` switched from `milestone-immutability.md` to `debug-scope-rules.md`; spec-text edits permitted in interactive sessions under per-edit user approval; structural prohibitions unchanged. See [debug-spec-reconciliation.md](debug-spec-reconciliation.md).
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
+- 2026-08-12 — ruled on the cross-cutting follow-up (issue #34): highest-numbered milestone it touches, last in the plan if global, and why "earliest" is the wrong intuition. Corrected the partial's milestone headings from level 2 to level 3, which was manufacturing orphans rather than merely reading oddly. Recorded leaving the case unruled as a rejected option.

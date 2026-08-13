@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 )
@@ -41,12 +40,6 @@ import (
 // Full mode never truncates: the whole point of the command is that the
 // question survives intact.
 const blockerSummaryNameCap = 110
-
-// siblingTaskRe matches any checkbox line, indented or not. taskDetail stops at
-// one: `taskBodyEnd` alone only ends a body at a blank or column-zero line, so
-// under a nested list (`  - [!] …` / `  - [ ] …`) it would swallow the next
-// task and every task after it into the first one's body.
-var siblingTaskRe = regexp.MustCompile(`^\s*-\s+\[.\]\s`)
 
 func truncateRunes(s string, max int) string {
 	r := []rune(s)
@@ -325,10 +318,20 @@ func buildBlockers(root, feature string) (blockersReport, error) {
 	return report, nil
 }
 
-// taskDetail returns the indented continuation lines belonging to the task on
-// 1-based line `line`, with their common indent stripped. Blank interior lines
-// are dropped rather than preserved: this is a queue to read, not a document to
-// round-trip, and `taskBodyEnd` already stops at the first blank line.
+// taskDetail returns the continuation lines belonging to the task on 1-based
+// line `line`, with their indent stripped.
+//
+// The extent is `taskBodyEnd` and nothing else. That helper bounds a body by the
+// task's OWN indent, so a sibling checkbox at the same indent already ends the
+// block — an earlier version of this function carried its own sibling-checkbox
+// guard on top, which is now both redundant and wrong: a bullet nested INSIDE a
+// task's body travels with the block enclosing it (see `moveTaskLines`), and the
+// guard would have truncated the question at it.
+//
+// Note a blank line does not end a body: a loose-list task keeps its
+// `**Evidence**` behind one. That is what this command wants — the whole
+// question, not the first paragraph of it. Blank lines are dropped from the
+// output because this is a queue to read, not a document to round-trip.
 func taskDetail(lines []string, line int) []string {
 	idx := line - 1
 	if idx < 0 || idx >= len(lines) {
@@ -340,9 +343,6 @@ func taskDetail(lines []string, line int) []string {
 	}
 	var out []string
 	for _, l := range lines[idx+1 : end+1] {
-		if siblingTaskRe.MatchString(l) {
-			break
-		}
 		if trimmed := strings.TrimSpace(l); trimmed != "" {
 			out = append(out, trimmed)
 		}

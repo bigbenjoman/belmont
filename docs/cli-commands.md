@@ -151,6 +151,12 @@ What it will not do, whoever proposes it:
 - **Create, rename or remove a milestone.** That is `/belmont:tech-plan` alone.
   Moving a task between milestones that already exist is allowed here, because
   repair runs outside the auto loop where the scope guard would revert it.
+- **Split a task from its body.** A move carries the whole block — the bullet
+  plus the indented `**Verification**` / `**Evidence**` lines beneath it. Moving
+  the bullet alone would credit the wrong task with the evidence and leave the
+  moved one asserting done with nothing behind it, with the file still parsing
+  and `belmont validate` still clean. A bullet nested inside another task being
+  moved is refused rather than moved twice.
 - **Touch a line it did not flag**, or a line that changed since it was scanned.
 - **Run against an ambiguous file.** A repeated `### M<n>:` heading makes every
   milestone-keyed lookup arbitrary; repair refuses, as both runtime guards do.
@@ -178,6 +184,8 @@ remembered. The JSON shape is `{"repairs": [{"line": N, "task_id": "...",
 **Warnings** (exit code `0`, auto continues):
 
 - **Task lines outside any milestone.** A `## ` heading at column zero ends the milestones region, so a checkbox line below it is counted by nothing and never scheduled. Reported with its line number because losing it silently is the bug this exists to prevent — but a `- [ ]` bullet in a retro is not work, so it does not stop a run.
+
+  The advice on each one is **conditional**, because "move it under its `### M<n>:` heading" only helps when there is such a heading. If the task's ID names a milestone the file already has, the warning says so and points at `belmont repair`, which moves between existing milestones. If it names none — the usual shape of a follow-up produced by a cross-cutting audit — the warning gives the destination rule instead: file it under the **highest-numbered existing milestone whose work it touches**, or the last milestone in the plan if it is genuinely global. Never a new milestone. Escalating that case to `/belmont:tech-plan` used to be a dead end, since that skill forbids a new milestone for follow-ups and the task came back unscheduled.
 
 ```bash
 belmont validate                            # Scan every feature

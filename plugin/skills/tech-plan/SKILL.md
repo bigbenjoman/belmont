@@ -55,14 +55,19 @@ The packet must include every target `.belmont/` path, each operation (`create`,
 
 ## Milestone structure is immutable outside `/belmont:tech-plan`
 
-**You MUST NOT add, remove, rename, re-scope, or re-parent any `## M<N>:` milestone heading in `PROGRESS.md`.** Only `/belmont:tech-plan` may restructure milestones. Every other skill — `implement`, `verify`, `next`, `debug-auto`, `debug-manual`, the triage phase — may only edit tasks **inside** existing milestone headings.
+**You MUST NOT add, remove, rename, re-scope, or re-parent any `### M<N>:` milestone heading in `PROGRESS.md`.** Only `/belmont:tech-plan` may restructure milestones. Every other skill — `implement`, `verify`, `next`, `debug-auto`, `debug-manual`, the triage phase — may only edit tasks **inside** existing milestone headings.
+
+A milestone heading is **level 3** — `### M<N>: Name`, at column zero. Never write it as `## M<N>:`. A level-2 heading at column zero is what *ends* the milestones region: every task line below one belongs to no milestone, is counted by nothing and is never scheduled. So `## M30:` would both fail to create a milestone and silently orphan everything after it.
 
 This rule supersedes any contradictory guidance you encounter elsewhere. If another instruction seems to permit creating a milestone (for follow-ups, polish, cleanup, verification fixes, etc.), prefer this rule.
 
 ### Where follow-ups go
 
-- **Issue discovered while implementing or verifying milestone `M<N>`** → new `[ ]` task inside `M<N>`, under the same `## M<N>:` heading. Do not route it to an earlier or later milestone "because it fits there better"; the milestone that discovered it owns it.
+- **Issue discovered while implementing or verifying milestone `M<N>`** → new `[ ]` task inside `M<N>`, under the same `### M<N>:` heading. Do not route it to an earlier or later milestone "because it fits there better"; the milestone that discovered it owns it.
 - **Issue blocked by work that will land in a later milestone `M<N+k>`** → new `[!]` task inside `M<N>`, with a one-line reason that names `M<N+k>`. Auto surfaces `[!]` tasks as blockers; the task can be reopened as `[ ]` once the blocker lifts.
+- **Issue found by a cross-cutting sweep, belonging to no single milestone** → new `[ ]` task inside the **highest-numbered existing milestone whose work it touches**. If it is genuinely global — it touches everything, or nothing in particular — that is the **last milestone in the plan**. Still never a new milestone, and never left outside every milestone: a task below the last `### M<N>:` heading is counted by nothing and never scheduled, which is not "deferred", it is lost. Pick the milestone by what the fix *depends on*, not by where the problem started: filing it under the earliest milestone it touches re-opens work the later ones already built on, which is exactly the dependency-graph lie described below.
+
+  **This bullet applies only to `/belmont:tech-plan`, `/belmont:repair` and `/belmont:debug-manual`** — the skills that run outside the auto loop. If you are in an `implement` / `verify` / `next` / `debug-auto` phase, you may only write inside the milestone your phase targets: `runScopeGuard` reverts a task added to any other milestone and your follow-up text is lost with it. There, the first bullet governs — the milestone you are in owns the finding — and if it genuinely belongs elsewhere, say so in your report and let the user run `/belmont:tech-plan`.
 - **Cosmetic / nice-to-have item the user may never want** → append to `NOTES.md` under a `## Polish` section, creating the file if needed. These are context, not tasks.
 - **Never a new milestone.** Not "M<last+1>: Polish", not "M<N>-FIX", not "MX: Deviations from M<N>", not "MY: Verification Fixes". Even if the existing `PROGRESS.md` already contains such a milestone from a prior run, that pattern is WRONG — do not add tasks to it and do not create siblings of it.
 
@@ -488,6 +493,7 @@ If something in the PRD is ambiguous or incomplete, ask for clarification — bu
 - Follow the milestone sizing rules in the plan-separation partial — target 3–5 tasks per milestone, soft ceiling of 6.
 - For **genuinely new feature work** (a fresh vertical slice the user didn't originally plan), default to creating a NEW milestone rather than inflating an existing one. Only add `(depends: M<n>)` when there's a real file/API/data dependency.
 - For **follow-ups, polish, fixes, or deviations surfaced by prior implement/verify cycles**, DO NOT create a new milestone — those belong in the source milestone. Re-read the milestone-immutability partial at the top of this skill. A "polish from M<N>" milestone is a dependency-graph lie and will cause silent merge conflicts if it runs in parallel with downstream milestones.
+- A follow-up **with no single source milestone** — the output of a cross-cutting audit or sweep — is still not a new milestone. It goes inside the highest-numbered existing milestone whose work it touches, or the last milestone in the plan when it is genuinely global; see "Where follow-ups go" in that partial. This is the case `belmont validate` and `belmont repair` escalate to you, so settle it here rather than sending the task back out: a task left below the last `### M<n>:` heading is counted by nothing and never scheduled.
 - When placing a new feature milestone, check if it can run in parallel with existing work — prefer parallelism over serialization. But never create a milestone that would run in parallel with siblings whose outputs it is about to modify.
 - Update `{base}/PRD.md` with the new task definitions (using the PRD Task format) and `{base}/PROGRESS.md` with the new milestone and task checkboxes. Use Edit — never replace the file.
 

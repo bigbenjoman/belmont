@@ -421,18 +421,58 @@ func syncFeatureStateAfterMerge(mainRoot, wtPath, slug string) {
 // list item is that item's body — the same Markdown reading that fixed issue
 // #31 for `  ## ` headings — so splicing directly after the task line would
 // land between a task and its own body, re-attaching the body to the inserted
-// line. A blank or column-zero line ends the block.
+// line.
+//
+// The body is the run of lines indented DEEPER than the task line itself. It
+// ends at the first line at the task's own indent or shallower — a sibling
+// bullet, a column-zero heading, or EOF.
+//
+// A blank line does NOT end it. A task written as a loose list keeps its
+// `**Evidence**` behind a blank line, and stopping there strands exactly the
+// prose issue #33 is about: the tail re-attaches to the task now above it while
+// the moved task arrives asserting done with half its proof. A blank line never
+// extends the block on its own, though — only a following deeper-indented line
+// does — so a task at the end of a milestone does not swallow the separator
+// before the next heading.
+//
+// That bound is load-bearing for a task line that is itself indented — a nested
+// bullet. Stopping only at column zero would run to the end of the *enclosing*
+// list item, so a nested task's "body" would swallow its siblings and its
+// parent's own `**Evidence**` lines. `moveTaskLines` then relocates all of it,
+// which moves task lines nobody flagged and strips a task that was never named
+// of its evidence — the same mis-attribution as issue #33, pointed the other
+// way, and in silent violation of repair's "only touch the lines it flagged"
+// bound.
+//
+// A task line at column zero is unaffected: every indented line is deeper than
+// indent 0, and every unindented one is not, which is exactly the old rule.
 func taskBodyEnd(lines []string, idx int) int {
+	if idx < 0 || idx >= len(lines) {
+		return idx
+	}
+	own := lineIndentWidth(lines[idx])
 	end := idx
 	for j := idx + 1; j < len(lines); j++ {
-		line := lines[j]
-		if strings.TrimSpace(line) == "" ||
-			(!strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t")) {
+		if strings.TrimSpace(lines[j]) == "" {
+			// Keep looking, but do not extend the block yet: a trailing blank
+			// belongs to the document, not to the task.
+			continue
+		}
+		if lineIndentWidth(lines[j]) <= own {
 			break
 		}
+		// Deeper-indented: this line, and any blanks passed to reach it, are
+		// the task's own body.
 		end = j
 	}
 	return end
+}
+
+// lineIndentWidth counts a line's leading whitespace characters. Tabs count as
+// one, like spaces: Belmont only needs "deeper than", and a real PROGRESS.md
+// does not mix the two within one task's block.
+func lineIndentWidth(line string) int {
+	return len(line) - len(strings.TrimLeft(line, " \t"))
 }
 
 // mergeProgressState reconciles master's PROGRESS.md with a worktree's copy,

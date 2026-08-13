@@ -216,17 +216,19 @@ func TestRenderBlockersSummaryTruncatesLongNamesOnly(t *testing.T) {
 	}
 }
 
-func TestTaskDetailStopsAtBlankAndColumnZero(t *testing.T) {
+func TestTaskDetailSpansABlankLineAndStopsAtTheOwnIndent(t *testing.T) {
+	// A blank does not end a body — a loose-list task keeps its **Evidence**
+	// behind one, and a blocker's whole question is the point of this command.
 	lines := []string{
 		"- [!] P0-1: Blocked",
 		"  body one",
 		"  body two",
 		"",
-		"  not mine — after a blank line",
+		"  still mine — a blank does not end the body",
 	}
 	got := taskDetail(lines, 1)
-	if len(got) != 2 || got[0] != "body one" || got[1] != "body two" {
-		t.Fatalf("taskDetail = %#v", got)
+	if len(got) != 3 || got[2] != "still mine — a blank does not end the body" {
+		t.Fatalf("taskDetail = %#v, want all three body lines", got)
 	}
 
 	lines = []string{
@@ -481,7 +483,7 @@ func TestRenderBlockersSeparatesFeatures(t *testing.T) {
 
 // Under a nested list, taskBodyEnd alone does not stop at a sibling task —
 // every following task would be swallowed into the first one's body.
-func TestTaskDetailStopsAtAnIndentedSiblingTask(t *testing.T) {
+func TestTaskDetailStopsAtASiblingTaskViaOwnIndent(t *testing.T) {
 	lines := []string{
 		"  - [!] P0-1: Blocked",
 		"    needs a person",

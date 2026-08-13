@@ -102,7 +102,7 @@ Runs verification and code review on all completed tasks.
 
 ## `loop`
 
-**Claude Code only.** Drives a single feature to completion from inside the Claude Code REPL, advancing it milestone-by-milestone without you re-typing each skill. Usage: `/belmont:loop <feature-name>`.
+**Claude Code or Codex.** Drives a single feature to completion from inside the interactive REPL, advancing it milestone-by-milestone without you re-typing each skill. Usage: `/belmont:loop <feature-name>` in Claude Code, or `$belmont:loop <feature-name>` / `belmont:loop <feature-name>` in Codex.
 
 - Resolves `<feature-name>` to one feature slug (prompts if omitted or ambiguous), then runs a self-paced loop where each iteration:
   0. **Pick the target milestone** — the first one holding a `[ ]`, `[>]` or `[x]` task, and name it explicitly downstream. Neither `belmont status` nor `/belmont:implement` will do this for you: both keep returning a milestone whose only live work is `[!]`, forever
@@ -111,7 +111,6 @@ Runs verification and code review on all completed tasks.
   3. **Triage** — classify each follow-up as **human-gated**, blocking, or deferrable. Human-gated is checked first and outranks the others: it means the missing thing is a *person* (an approval, a product ruling, a credential, a console action), so the task is marked `[!]`, logged in `## Decisions Log`, and never fixed, deferred or swept. Deferrable ones are withdrawn as `[-]` with their detail moved to `NOTES.md` under `## Polish`. Circuit breaker: after two fix rounds, defer everything still classified blocking — human-gated tasks are never swept
   4. **Batch fix** — one `/belmont:next <feature>` in BATCH MODE covering every `[ ]` FWLUP in the milestone (`[!]` tasks are skipped), then a *focused* re-verify (fixed tasks + build/tests + previously-failing criteria only), then back to triage
   5. `belmont status --feature <feature>` — stop if every milestone is verified, otherwise continue
-- Delegates to Claude Code's built-in `/loop` skill (self-paced via `ScheduleWakeup`), which is why it is installed **only for Claude Code** — other CLIs don't have those mechanics. It is written as a real `.claude/commands/belmont/loop.md` command and is deliberately kept off the shared `.agents/skills/` surface so other tools never list it.
 - Stays scoped to the one named feature — never starts unrelated work, never edits milestone structure. Deferral routes to `[-]` plus `NOTES.md`, or a same-milestone `[!]`, never a new milestone and **never a deleted checkbox line** — a deletion does not survive `mergeProgressState` and records no reason.
 - **A blocked task does not stop the loop** — in this skill. `[!]` is usually a question queued for a person, so step 0 of the recipe selects past a milestone whose only live work is `[!]` to the next one holding a `[ ]`/`[>]`/`[x]`, and the loop stops only when every remaining pending task is `[!]`. Step 0 exists because nothing else does this: `belmont status` and `/belmont:implement` both keep naming the blocked milestone. The loop never clears, answers, or withdraws a human-gated `[!]` (the two `[!]`s with a checkable reopen condition — a later-milestone dependency, or a reconciliation-agent merge blocker — are exempt). On stop it reports the queue with `belmont blockers --feature <feature> --summary`.
   - **`belmont auto` does the opposite, on purpose.** It PAUSEs the whole feature on the first `[!]` (`decideLoopAction` Rule 1). Headless, nobody is watching, so the question has to reach a person before anything else runs. Do not read this bullet as describing `belmont auto`, despite the alias.
@@ -121,6 +120,8 @@ Runs verification and code review on all completed tasks.
 - Preflight routes rather than guesses: a feature that is entirely `[x]` with no pending milestone goes to `belmont reverify --feature <feature>`, not into the loop — iteration step 1 would have nothing to implement.
 - **Every milestone verified is the only success case.** A task left at `[x]` means verification found issues, errored, or lost its flips — all failures — so the run reports INCOMPLETE and names them. The loop never reports a feature complete over unverified work.
 - The interactive counterpart to the headless `belmont auto` CLI (also aliased `belmont loop`). Use `/belmont:loop` to stay in the REPL and watch/steer; use `belmont auto` for fully headless, parallel, worktree-based execution. **Auto is the faster path** — parallel worktrees and a fresh context per phase. Loop's advantage is that you are present to steer, so it optimises for not wasting your session rather than for parallelism.
+- Delegates to the host tool's long-running primitive: Claude Code's built-in `/loop`, or Codex Goal mode via `/goal`. Other shared-surface CLIs do not have matching interactive loop mechanics, so Belmont keeps `loop` hidden unless Claude Code or Codex is selected for the install.
+- The interactive counterpart to the headless `belmont auto` CLI (also aliased `belmont loop`). Use `/belmont:loop` or `$belmont:loop` to stay in the REPL and watch/steer; use `belmont auto` for fully headless, parallel, worktree-based execution.
 
 ## `debug`
 
@@ -241,8 +242,18 @@ skill body for interactive use:
 - never deletes a task line (dropped work is `[-]` withdrawn, reason in
   `## Decisions Log`)
 - never creates, renames or removes a milestone; may move a task between
-  milestones that already exist
+  milestones that already exist, carrying the task's whole block — the bullet
+  plus the indented body beneath it — rather than the bullet alone
 - never touches a line it did not flag, or a line that changed since it scanned
+
+A misplaced task always gets a destination, which is the step people used to
+loop on. If its ID names a milestone the file already has, it moves there. If it
+names none — the usual shape of a follow-up from a cross-cutting sweep — it goes
+under the **highest-numbered existing milestone whose work it touches**, or the
+last milestone in the plan if it is genuinely global. Never a new milestone
+(`/belmont:tech-plan` forbids one for follow-ups, so escalating there was a dead
+end) and never left outside every milestone, where it is counted by nothing and
+never scheduled.
 
 See [cli-commands.md](cli-commands.md) for the CLI half.
 

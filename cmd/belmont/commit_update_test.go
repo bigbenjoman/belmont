@@ -348,7 +348,7 @@ func TestLinkClaudeCommands_PrunesStaleEntries(t *testing.T) {
 	}
 }
 
-func TestLinkClaudeCommands_WritesClaudeOnlyAsRealFile(t *testing.T) {
+func TestLinkClaudeCommands_WritesOffSurfaceSkillAsRealFile(t *testing.T) {
 	dir := t.TempDir()
 	skillsTarget := filepath.Join(dir, ".agents/skills/belmont")
 	mustWrite(t, filepath.Join(skillsTarget, "implement/SKILL.md"), "---\nname: implement\ndescription: x\n---\nbody\n")
@@ -366,8 +366,8 @@ func TestLinkClaudeCommands_WritesClaudeOnlyAsRealFile(t *testing.T) {
 		t.Errorf("implement.md should be a symlink, got %v / err %v", st.Mode(), err)
 	}
 
-	// The claude-only skill is a REAL file (not a symlink) with the supplied
-	// content — it has no .agents/skills/belmont/loop/ target to point at.
+	// The off-surface skill is a REAL file (not a symlink) with the supplied
+	// content because it has no .agents/skills/belmont/loop/ target to point at.
 	loopPath := filepath.Join(dir, ".claude/commands/belmont/loop.md")
 	st, err := os.Lstat(loopPath)
 	if err != nil {
@@ -391,7 +391,7 @@ func TestLinkClaudeCommands_WritesClaudeOnlyAsRealFile(t *testing.T) {
 		t.Errorf("loop must not appear under .agents/skills/belmont/")
 	}
 
-	// Re-running is idempotent and the claude-only file survives the prune.
+	// Re-running is idempotent and the off-surface file survives the prune.
 	if err := linkClaudeCommands(dir, skillsTarget, extra); err != nil {
 		t.Fatalf("second linkClaudeCommands: %v", err)
 	}
@@ -400,15 +400,136 @@ func TestLinkClaudeCommands_WritesClaudeOnlyAsRealFile(t *testing.T) {
 	}
 }
 
-func TestSyncSkillsFolderDir_SkipsClaudeOnly(t *testing.T) {
+func TestResolveSharedSurfaceSkills(t *testing.T) {
+	cases := []struct {
+		name     string
+		tools    []string
+		existing bool // loop/ already installed in the target
+		want     bool
+	}{
+		{"cursor only, fresh", []string{"cursor"}, false, false},
+		{"codex publishes", []string{"codex"}, false, true},
+		// Claude runs loop, but off-surface as a real command file — selecting
+		// it must not expose loop to the seven other CLIs reading the same dir.
+		{"claude alone does not publish", []string{"claude"}, false, false},
+		{"claude plus codex", []string{"claude", "codex"}, false, true},
+		{"no tools, fresh", nil, false, false},
+		// Stickiness: an installed copy is evidence a publishing tool was
+		// selected at some point, on some machine. Without this, `belmont
+		// update` (which resolves --tools all to *detected* tools) would prune
+		// loop/ on a machine with no codex on PATH, commit the removal, and
+		// flap it back on the next update from a Codex machine.
+		{"cursor keeps an installed copy", []string{"cursor"}, true, true},
+		{"no tools keeps an installed copy", nil, true, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			target := t.TempDir()
+			if tc.existing {
+				mustWrite(t, filepath.Join(target, "loop/SKILL.md"), "---\nname: loop\n---\nbody\n")
+			}
+			got := resolveSharedSurfaceSkills(target, tc.tools)
+			if got["loop"] != tc.want {
+				t.Errorf("resolveSharedSurfaceSkills(%v, existing=%v)[loop] = %v, want %v", tc.tools, tc.existing, got["loop"], tc.want)
+			}
+			// Unconditional skills are never gated.
+			if !skillVisibleOnSharedSurface("implement", got) {
+				t.Errorf("implement must always be visible on the shared surface")
+			}
+		})
+	}
+}
+
+// The off-surface Claude command exists precisely when the skill is NOT on the
+// shared surface. Without this, a mutation that makes
+// `needsOffSurfaceClaudeCommand` unconditional leaves the whole suite green
+// while shipping the skill body twice — once as `.agents/skills/belmont/loop/`
+// and once as a real `.claude/commands/belmont/loop.md`.
+func TestCollectOffSurfaceClaudeCommandsSource_RespectsSharedSurface(t *testing.T) {
+	src := t.TempDir()
+	body := "---\nname: loop\ndescription: drive a feature\n---\nloop body\n"
+	mustWrite(t, filepath.Join(src, "loop/SKILL.md"), body)
+	mustWrite(t, filepath.Join(src, "implement/SKILL.md"), "---\nname: implement\n---\nbody\n")
+
+	// Published: Claude reads it from the shared surface, so no real file.
+	if got := collectOffSurfaceClaudeCommandsSource(src, map[string]bool{"loop": true}); len(got) != 0 {
+		t.Errorf("loop is on the shared surface — no off-surface command should be collected, got %v", got)
+	}
+	// Not published: Claude has nothing to symlink to, so it needs the content.
+	got := collectOffSurfaceClaudeCommandsSource(src, map[string]bool{})
+	if got["loop"] != body {
+		t.Errorf("off-surface loop command content = %q, want %q", got["loop"], body)
+	}
+	// Unconditional skills are never off-surface, whatever the decision says.
+	if _, ok := got["implement"]; ok {
+		t.Errorf("implement is unconditional and must never be collected as off-surface")
+	}
+}
+
+// End-to-end guard on the same invariant, through the real `runInstall`
+// ordering: the shared-surface decision and the Claude command shape are
+// derived from one resolution, so `.claude/commands/belmont/loop.md` is a
+// symlink exactly when `.agents/skills/belmont/loop/` exists. This is the
+// assertion that catches a regression at the *call sites* (threading the wrong
+// map into the syncs or the collectors), which no unit-level test can see.
+func TestRunInstall_ClaudeLoopCommandShapeMatchesSharedSurface(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("install regenerates skills via bash; not available")
+	}
+	src, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("resolve source root: %v", err)
+	}
+	if !dirExists(filepath.Join(src, "skills", "belmont", "_src")) {
+		t.Skip("no skill sources at repo root")
+	}
+
+	cases := []struct {
+		tools         string
+		wantPublished bool
+	}{
+		{"claude", false},      // Claude alone: off-surface real command file.
+		{"claude,codex", true}, // Codex publishes: Claude gets the symlink.
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.tools, func(t *testing.T) {
+			project := t.TempDir()
+			if err := runInstall([]string{"--source", src, "--project", project, "--tools", tc.tools, "--no-prompt"}); err != nil {
+				t.Fatalf("install --tools %s: %v", tc.tools, err)
+			}
+
+			published := fileExists(filepath.Join(project, ".agents", "skills", "belmont", "loop", "SKILL.md"))
+			if published != tc.wantPublished {
+				t.Errorf("--tools %s: loop on shared surface = %v, want %v", tc.tools, published, tc.wantPublished)
+			}
+
+			cmdPath := filepath.Join(project, ".claude", "commands", "belmont", "loop.md")
+			st, err := os.Lstat(cmdPath)
+			if err != nil {
+				t.Fatalf("--tools %s: Claude must always get a loop command: %v", tc.tools, err)
+			}
+			isSymlink := st.Mode()&os.ModeSymlink != 0
+			if isSymlink != published {
+				shape := "real file"
+				if isSymlink {
+					shape = "symlink"
+				}
+				t.Errorf("--tools %s: loop.md is a %s but shared surface published = %v — the two decisions disagree",
+					tc.tools, shape, published)
+			}
+		})
+	}
+}
+
+func TestSyncSkillsFolderDir_HidesLoopWithoutCodex(t *testing.T) {
 	src := t.TempDir()
 	dst := t.TempDir()
 	mustWrite(t, filepath.Join(src, "implement/SKILL.md"), "---\nname: implement\n---\nbody\n")
 	mustWrite(t, filepath.Join(src, "loop/SKILL.md"), "---\nname: loop\n---\nbody\n")
-	// Plant a stale loop copy in the target from a hypothetical older install.
-	mustWrite(t, filepath.Join(dst, "loop/SKILL.md"), "old\n")
 
-	if err := syncSkillsFolderDir(src, dst); err != nil {
+	if err := syncSkillsFolderDir(src, dst, resolveSharedSurfaceSkills(dst, []string{"cursor"})); err != nil {
 		t.Fatalf("syncSkillsFolderDir: %v", err)
 	}
 
@@ -416,7 +537,50 @@ func TestSyncSkillsFolderDir_SkipsClaudeOnly(t *testing.T) {
 		t.Errorf("implement should be synced: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dst, "loop/SKILL.md")); err == nil {
-		t.Errorf("claude-only loop must be skipped AND any stale copy pruned from .agents/skills/")
+		t.Errorf("loop must be skipped on a fresh install for tools that cannot run it")
+	}
+}
+
+// A copy already on the shared surface survives an install from a machine that
+// cannot detect a publishing tool — and is refreshed from source rather than
+// left stale. This is the `belmont update` git-flap regression: update re-runs
+// `install --no-prompt --tools all`, which resolves to *detected* tools.
+func TestSyncSkillsFolderDir_KeepsInstalledLoopWithoutCodex(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+	mustWrite(t, filepath.Join(src, "implement/SKILL.md"), "---\nname: implement\n---\nbody\n")
+	mustWrite(t, filepath.Join(src, "loop/SKILL.md"), "---\nname: loop\n---\nnew body\n")
+	// A Codex teammate committed this; this machine has no codex on PATH.
+	mustWrite(t, filepath.Join(dst, "loop/SKILL.md"), "old body\n")
+
+	if err := syncSkillsFolderDir(src, dst, resolveSharedSurfaceSkills(dst, []string{"cursor"})); err != nil {
+		t.Fatalf("syncSkillsFolderDir: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dst, "loop/SKILL.md"))
+	if err != nil {
+		t.Fatalf("installed loop copy must survive a non-publishing install: %v", err)
+	}
+	if string(got) != "---\nname: loop\n---\nnew body\n" {
+		t.Errorf("installed loop copy should be refreshed from source, got %q", got)
+	}
+}
+
+func TestSyncSkillsFolderDir_InstallsLoopForCodex(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+	mustWrite(t, filepath.Join(src, "implement/SKILL.md"), "---\nname: implement\n---\nbody\n")
+	mustWrite(t, filepath.Join(src, "loop/SKILL.md"), "---\nname: loop\n---\nbody\n")
+
+	if err := syncSkillsFolderDir(src, dst, resolveSharedSurfaceSkills(dst, []string{"codex"})); err != nil {
+		t.Fatalf("syncSkillsFolderDir: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dst, "implement/SKILL.md")); err != nil {
+		t.Errorf("implement should be synced: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "loop/SKILL.md")); err != nil {
+		t.Errorf("loop should be synced for Codex installs: %v", err)
 	}
 }
 
@@ -474,6 +638,49 @@ func TestLinkOpencodeCommands_GeneratesWrapperPerSkill(t *testing.T) {
 	after, _ := os.ReadFile(filepath.Join(dir, ".opencode/command/belmont/implement.md"))
 	if string(before) != string(after) {
 		t.Errorf("wrapper content changed on idempotent re-run")
+	}
+}
+
+// A `--tools codex,opencode` install puts loop on the shared surface, but
+// opencode has no /loop or /goal to delegate to — so it must not get a
+// first-class `/belmont/loop` command, and any stale one is pruned.
+func TestLinkOpencodeCommands_SkipsSkillsOpencodeCannotRun(t *testing.T) {
+	dir := t.TempDir()
+	skillsTarget := filepath.Join(dir, ".agents/skills/belmont")
+	mustWrite(t, filepath.Join(skillsTarget, "implement/SKILL.md"), "---\nname: implement\ndescription: x\n---\nbody\n")
+	mustWrite(t, filepath.Join(skillsTarget, "loop/SKILL.md"), "---\nname: loop\ndescription: drive a feature\n---\nbody\n")
+	// Stale command from an install made before the filter existed.
+	mustWrite(t, filepath.Join(dir, ".opencode/command/belmont/loop.md"), "stale\n")
+
+	if err := linkOpencodeCommands(dir, skillsTarget); err != nil {
+		t.Fatalf("linkOpencodeCommands: %v", err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(dir, ".opencode/command/belmont/loop.md")); err == nil {
+		t.Errorf("opencode must not carry a /belmont/loop command — it cannot run loop")
+	}
+	if _, err := os.Lstat(filepath.Join(dir, ".opencode/command/belmont/implement.md")); err != nil {
+		t.Errorf("runnable skills should still get a command: %v", err)
+	}
+}
+
+// The mirror: Claude CAN run loop, so when a co-selected Codex install put it
+// on the shared surface, Claude gets the normal symlink (no off-surface file).
+func TestLinkClaudeCommands_LinksLoopWhenOnSharedSurface(t *testing.T) {
+	dir := t.TempDir()
+	skillsTarget := filepath.Join(dir, ".agents/skills/belmont")
+	mustWrite(t, filepath.Join(skillsTarget, "loop/SKILL.md"), "---\nname: loop\ndescription: drive a feature\n---\nbody\n")
+
+	if err := linkClaudeCommands(dir, skillsTarget, nil); err != nil {
+		t.Fatalf("linkClaudeCommands: %v", err)
+	}
+
+	st, err := os.Lstat(filepath.Join(dir, ".claude/commands/belmont/loop.md"))
+	if err != nil {
+		t.Fatalf("expected /belmont:loop command: %v", err)
+	}
+	if st.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("loop.md should be a symlink when loop is on the shared surface")
 	}
 }
 

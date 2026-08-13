@@ -48,10 +48,19 @@ func runInstall(args []string) error {
 		return err
 	}
 
-	// claude-only skill command content (name -> SKILL.md), written as real
-	// `.claude/commands/belmont/<skill>.md` files since these skills are kept
-	// off the shared `.agents/skills/` surface. Populated per install mode.
-	var claudeOnlyCmds map[string]string
+	skillsTarget := filepath.Join(projectRoot, ".agents", "skills", "belmont")
+
+	// One decision, made before either sync path runs and reused by both plus
+	// the off-surface Claude command collection: which conditional skills
+	// belong on this project's shared surface. Reads the *current* install
+	// state, so a machine that can't detect Codex doesn't prune a `loop/` a
+	// Codex teammate committed. See resolveSharedSurfaceSkills.
+	sharedSurface := resolveSharedSurfaceSkills(skillsTarget, selectedTools)
+
+	// Off-surface Claude command content (name -> SKILL.md), written as real
+	// `.claude/commands/belmont/<skill>.md` files when a conditional skill is
+	// kept off the shared `.agents/skills/` surface for this install.
+	var offSurfaceClaudeCmds map[string]string
 
 	if useEmbedded {
 		fmt.Println("Installing agents to .agents/belmont/...")
@@ -60,14 +69,13 @@ func runInstall(args []string) error {
 		}
 		fmt.Println("")
 
-		skillsTarget := filepath.Join(projectRoot, ".agents", "skills", "belmont")
 		fmt.Println("Installing skills to .agents/skills/belmont/...")
 		// Phase 2: skills are folder layout (<name>/SKILL.md) only. The
 		// agentskills.io standard, auto-discovered by every supported CLI.
-		if err := syncEmbeddedSkillsFolderDir(embeddedSkills, "skills/belmont", skillsTarget); err != nil {
+		if err := syncEmbeddedSkillsFolderDir(embeddedSkills, "skills/belmont", skillsTarget, sharedSurface); err != nil {
 			return err
 		}
-		claudeOnlyCmds = collectClaudeOnlyCommandsEmbedded(embeddedSkills, "skills/belmont")
+		offSurfaceClaudeCmds = collectOffSurfaceClaudeCommandsEmbedded(embeddedSkills, "skills/belmont", sharedSurface)
 		fmt.Println("")
 	} else {
 		sourceRoot, err := resolveSourceRoot(source)
@@ -99,12 +107,11 @@ func runInstall(args []string) error {
 		}
 		fmt.Println("")
 
-		skillsTarget := filepath.Join(projectRoot, ".agents", "skills", "belmont")
 		fmt.Println("Installing skills to .agents/skills/belmont/...")
-		if err := syncSkillsFolderDir(skillsSource, skillsTarget); err != nil {
+		if err := syncSkillsFolderDir(skillsSource, skillsTarget, sharedSurface); err != nil {
 			return err
 		}
-		claudeOnlyCmds = collectClaudeOnlyCommandsSource(skillsSource)
+		offSurfaceClaudeCmds = collectOffSurfaceClaudeCommandsSource(skillsSource, sharedSurface)
 		fmt.Println("")
 	}
 
@@ -117,7 +124,7 @@ func runInstall(args []string) error {
 	}
 
 	for _, tool := range selectedTools {
-		if err := setupTool(projectRoot, tool, claudeOnlyCmds); err != nil {
+		if err := setupTool(projectRoot, tool, offSurfaceClaudeCmds); err != nil {
 			return err
 		}
 		fmt.Println("")
@@ -151,11 +158,11 @@ func runInstall(args []string) error {
 			case "claude":
 				fmt.Println("  Claude Code  .claude/agents/belmont -> ../../.agents/belmont")
 				fmt.Println("               .claude/commands/belmont/<skill>.md -> ../../../.agents/skills/belmont/<skill>/SKILL.md (per-skill)")
-				fmt.Println("               .claude/commands/belmont/loop.md (Claude-only — drives a feature to completion via /loop)")
+				fmt.Println("               .claude/commands/belmont/loop.md (real file when loop is kept off .agents/skills/)")
 				fmt.Println("    Use: /belmont:working-backwards, /belmont:product-plan, /belmont:tech-plan, /belmont:implement, /belmont:next, /belmont:verify, /belmont:loop, /belmont:debug, /belmont:debug-auto, /belmont:debug-manual, /belmont:status")
 			case "codex":
 				fmt.Println("  Codex        .agents/skills/belmont/<name>/SKILL.md (auto-discovered)")
-				fmt.Println("    Use: prompt belmont:<skill> — Codex resolves via /skills")
+				fmt.Println("    Use: $belmont or prompt belmont:<skill> — loop delegates to /goal")
 			case "cursor":
 				fmt.Println("  Cursor       .agents/skills/belmont/<name>/SKILL.md (auto-discovered)")
 				fmt.Println("    Use: prompt belmont:<skill> — Cursor loads via Agent Skills")
@@ -217,7 +224,12 @@ func runInstall(args []string) error {
 // Stale skill folders (present in target but not in source) are removed.
 // Flat .md files at the target's top level are left alone — Phase 2's parallel
 // output keeps them around during transition; step 2.7 drops them.
-func syncSkillsFolderDir(sourceDir, targetDir string) error {
+//
+// `sharedSurface` is the per-conditional-skill decision from
+// resolveSharedSurfaceSkills — it already accounts for what is installed in
+// targetDir, so a skill published by an earlier install is refreshed here
+// rather than pruned by a machine whose tool detection can't see it.
+func syncSkillsFolderDir(sourceDir, targetDir string, sharedSurface map[string]bool) error {
 	if err := ensureDir(targetDir); err != nil {
 		return err
 	}
@@ -231,10 +243,12 @@ func syncSkillsFolderDir(sourceDir, targetDir string) error {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "references" {
 			continue
 		}
-		// Claude-only skills are not exposed on the shared `.agents/skills/`
-		// surface. Skipping here (without recording in sourceFolders) also lets
-		// the stale-prune below remove any copy left by an older install.
-		if claudeOnlySkills[entry.Name()] {
+		// Conditional skills are exposed on the shared `.agents/skills/`
+		// surface only when this project publishes them (a selected tool that
+		// can run them, or a copy an earlier install already put there).
+		// Skipping here (without recording in sourceFolders) also lets the
+		// stale-prune below remove a copy this project no longer publishes.
+		if !skillVisibleOnSharedSurface(entry.Name(), sharedSurface) {
 			continue
 		}
 		skillSrc := filepath.Join(sourceDir, entry.Name(), "SKILL.md")
@@ -306,7 +320,7 @@ func syncSkillsFolderDir(sourceDir, targetDir string) error {
 }
 
 // syncEmbeddedSkillsFolderDir is the embed.FS counterpart of syncSkillsFolderDir.
-func syncEmbeddedSkillsFolderDir(embedFS embed.FS, root string, targetDir string) error {
+func syncEmbeddedSkillsFolderDir(embedFS embed.FS, root string, targetDir string, sharedSurface map[string]bool) error {
 	if err := ensureDir(targetDir); err != nil {
 		return err
 	}
@@ -320,10 +334,11 @@ func syncEmbeddedSkillsFolderDir(embedFS embed.FS, root string, targetDir string
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "references" {
 			continue
 		}
-		// Claude-only skills are not exposed on the shared `.agents/skills/`
-		// surface (see claudeOnlySkills). Skipping here also lets the
-		// stale-prune below remove any copy left by an older install.
-		if claudeOnlySkills[entry.Name()] {
+		// Conditional skills are not exposed on the shared `.agents/skills/`
+		// surface unless this project publishes them (see
+		// resolveSharedSurfaceSkills). Skipping here also lets the stale-prune
+		// below remove a copy this project no longer publishes.
+		if !skillVisibleOnSharedSurface(entry.Name(), sharedSurface) {
 			continue
 		}
 		skillPath := root + "/" + entry.Name() + "/SKILL.md"
@@ -418,7 +433,7 @@ func syncEmbeddedSkillsFolderDir(embedFS embed.FS, root string, targetDir string
 	return nil
 }
 
-func setupTool(projectRoot, tool string, claudeOnlyCmds map[string]string) error {
+func setupTool(projectRoot, tool string, offSurfaceClaudeCmds map[string]string) error {
 	switch tool {
 	case "claude":
 		fmt.Println("Linking Claude Code...")
@@ -442,7 +457,7 @@ func setupTool(projectRoot, tool string, claudeOnlyCmds map[string]string) error
 		// `references/<file>.md` paths still resolve correctly because Claude
 		// reads through the symlink and the references/ subdir lives next to
 		// the resolved SKILL.md.
-		if err := linkClaudeCommands(projectRoot, skillsTarget, claudeOnlyCmds); err != nil {
+		if err := linkClaudeCommands(projectRoot, skillsTarget, offSurfaceClaudeCmds); err != nil {
 			return err
 		}
 	case "codex":
@@ -508,16 +523,22 @@ func setupTool(projectRoot, tool string, claudeOnlyCmds map[string]string) error
 // `<commandsRelDir>/<skill>.md` via the write callback (symlink for Claude
 // Code, generated wrapper file for opencode).
 //
+// `tool` is the tool this palette belongs to. Conditional skills the tool
+// cannot run (`skillRunnableByTool`) are skipped even when they are present on
+// the shared surface because a co-selected tool put them there — otherwise a
+// `--tools codex,opencode` install would hand opencode a `/belmont/loop`
+// command it has no primitive to fulfil.
+//
 // `extra` holds commands for skills that are NOT present in `skillsTarget`
-// (claude-only skills, deliberately kept off the shared `.agents/skills/`
-// surface): each is written as a real file with the given content. Pass nil
-// when there are none. extras are folded into the `wanted` set so the prune
-// pass below doesn't delete them.
+// because they were conditionally kept off the shared `.agents/skills/`
+// surface for this install: each is written as a real file with the given
+// content. Pass nil when there are none. extras are folded into the `wanted`
+// set so the prune pass below doesn't delete them.
 //
 // Stale .md entries inside the commands dir (left over from removed or
-// renamed skills) are pruned so the slash-command surface always matches
-// the current skill set.
-func syncSkillCommands(projectRoot, skillsTarget, commandsRelDir string, write func(cmdPath, skillFile, skill string) error, extra map[string]string) error {
+// renamed skills, or from a skill this tool may no longer run) are pruned so
+// the slash-command surface always matches the current skill set.
+func syncSkillCommands(projectRoot, skillsTarget, commandsRelDir, tool string, write func(cmdPath, skillFile, skill string) error, extra map[string]string) error {
 	commandsDir := filepath.Join(projectRoot, commandsRelDir)
 	if err := os.MkdirAll(commandsDir, 0o755); err != nil {
 		return fmt.Errorf("create commands dir: %w", err)
@@ -539,6 +560,11 @@ func syncSkillCommands(projectRoot, skillsTarget, commandsRelDir string, write f
 		if strings.HasPrefix(name, "_") || strings.HasPrefix(name, ".") {
 			continue
 		}
+		// A conditional skill this tool cannot run never gets a command here,
+		// even when it is on the shared surface for a co-selected tool.
+		if !skillRunnableByTool(name, tool) {
+			continue
+		}
 		skillFile := filepath.Join(skillsTarget, name, "SKILL.md")
 		if _, err := os.Stat(skillFile); err != nil {
 			continue
@@ -550,11 +576,19 @@ func syncSkillCommands(projectRoot, skillsTarget, commandsRelDir string, write f
 		wanted[name+".md"] = true
 	}
 
-	// Claude-only (or otherwise off-surface) skills: write their command file
-	// as a real file from the supplied content. A pre-existing symlink at the
-	// path (e.g. from an older install where the skill lived under
-	// `.agents/skills/`) is removed first so we don't write through it.
+	// Off-surface skills: write their command file as a real file from the
+	// supplied content. A pre-existing symlink at the path (e.g. from an older
+	// install where the skill lived under `.agents/skills/`) is removed first
+	// so we don't write through it.
 	for name, content := range extra {
+		// The extras map is the one route that bypasses the walk above, so it
+		// takes the same runnability check. Unreachable today (only Claude is
+		// handed extras, and it can run everything in
+		// offSurfaceClaudeCommandSkills) — the guard is here so the filter is
+		// total rather than true-by-coincidence.
+		if !skillRunnableByTool(name, tool) {
+			continue
+		}
 		cmdPath := filepath.Join(commandsDir, name+".md")
 		wanted[name+".md"] = true
 		if st, err := os.Lstat(cmdPath); err == nil {
@@ -571,7 +605,7 @@ func syncSkillCommands(projectRoot, skillsTarget, commandsRelDir string, write f
 		if err := os.WriteFile(cmdPath, []byte(content), 0o644); err != nil {
 			return err
 		}
-		fmt.Printf("  + %s (claude-only)\n", filepath.Join(commandsRelDir, name+".md"))
+		fmt.Printf("  + %s (off-surface command)\n", filepath.Join(commandsRelDir, name+".md"))
 	}
 
 	// Prune stale .md entries that no longer match a skill.

@@ -174,10 +174,35 @@ For each finding, read the task text, then look for what it names in the
 | Something replaced it, it was folded into other work, or the feature it belonged to is gone | `withdraw` (+ reason) |
 | It is waiting on something you can name | `set_marker` `"!"` |
 | It is not a task at all — a retro bullet, a quoted log line, a table row shaped like a checkbox | `leave` |
+| It is a real task sitting in the wrong place | `move_milestone` (see below) |
 | The code does not settle it | `escalate` |
 
 `escalate` is a real answer and is always better than a marker you cannot
 justify. A wrong state here is the exact bug this command exists to fix.
+
+### Where a misplaced task goes
+
+This is the step people loop on, so it has a rule.
+
+A task **outside every milestone**, or one **filed under the wrong milestone**,
+needs somewhere to land:
+
+- **Its ID names a milestone the file already has** → `move_milestone` to that
+  milestone. Nothing else to decide.
+- **Its ID names no milestone, or names one this file does not have** — a
+  follow-up produced by a cross-cutting sweep is the usual case, and an ID saying
+  `M9` in a plan that stops at M5 is the other. Repair cannot create a milestone,
+  so such an ID settles nothing. It still needs a destination. Do **not** escalate to
+  `/belmont:tech-plan` expecting a new milestone: that skill forbids creating one
+  for follow-ups, so the task returns here still counted by nothing. File it
+  under the **highest-numbered existing milestone whose work it touches** — the
+  last one whose outputs the fix depends on — or the final milestone in the plan
+  when it is genuinely global. Say which milestones it touches in your reason.
+- **Only when you cannot tell what it touches** → `escalate`.
+
+Filing it under the *earliest* milestone it touches instead re-opens work that
+later milestones already built on — the same dependency-graph lie the
+milestone-immutability rule bans a "polish from M\<N>" milestone for.
 
 **A commit naming the task ID proves the work happened.** That is what tier 1
 already used. It cannot prove the reverse — no commit means no commit, not "not
@@ -223,8 +248,18 @@ them. In Mode B nothing enforces them but you, and they matter more, not less.
   already exist is fine here — repair runs outside the auto loop, where the
   scope guard would revert it — but the destination must already exist and must
   not already hold that task ID.
+- **A task is its bullet PLUS its indented body — move both.** The
+  `**Verification**` / `**Evidence**` lines under a task belong to it. Move the
+  bullet alone and they stay behind and re-attach to the task now above them,
+  which is then credited with evidence it never earned while the task you moved
+  asserts done with nothing behind it. Nothing catches this: the file still
+  parses, the count is unchanged, `belmont validate` still reports clean. The CLI
+  moves the whole block for you — this bullet is for the hand-edit path, where
+  nothing does.
 - **Only touch the lines that were flagged.** Every other task in the file is
-  none of this skill's business, however wrong it looks.
+  none of this skill's business, however wrong it looks. A nested sub-bullet is a
+  task too: when you move its parent, it travels with it — that is correct, but
+  say so in your report rather than letting it move unremarked.
 - **Never change a task's text**, only its marker or its milestone. If the text
   is wrong, say so in your summary and leave it.
 
