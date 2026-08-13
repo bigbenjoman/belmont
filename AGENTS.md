@@ -163,24 +163,34 @@ stale worktree cannot silently revive dropped work. This state exists because
 its absence *is* issue #27: with no way to say "we decided not to do this", a
 user invented `[-]`, and every unrecognised marker then parsed as todo.
 
-**`[!]` is a decision queue, not a failure — and it is the one marker no agent
-may clear.** Every other state describes work an agent can move; `[!]` means the
-missing input is a *person* (an approval, a product or architecture ruling, a
-credential, a console action, a spec change owned by `/belmont:tech-plan`). Two
-opposite mistakes follow from forgetting that, and both were observed on one
-feature. **Stopping on it** strands every independent milestone behind one
-unanswered question — a loop must move past a `[!]` to the next milestone whose
-deps are satisfied, and halt only when *every* remaining pending task is `[!]`.
-**Grinding at it** is worse: a human-gated follow-up misfiled as "blocking"
-burns fix rounds that cannot succeed and then trips the circuit breaker, which
-defers it as polish — so classify human-gated *before* blocking (the test is not
-severity, it is whether the missing thing is a person), never count such an
-attempt as a fix round, and never let a circuit breaker sweep one. Clearing a
-`[!]` to make a milestone read complete is the `[v]`-without-evidence failure
-with a different marker and **no guard behind it** — no Go code audits a `[!]`
-that disappeared. `belmont blockers` is the surface: it exists because 19 of
-them accumulated in one overnight run and were visible only as truncated lines
-at the bottom of `belmont status`. See
+**`[!]` is a decision queue, not a failure.** It usually means the missing input
+is a *person* (an approval, a product or architecture ruling, a credential, a
+console action, a spec change owned by `/belmont:tech-plan`) — and that kind no
+skill may clear. **Not all of them are:** `_partials/milestone-immutability.md`
+mints a `[!]` for work blocked on a later milestone `M<N+k>` (reopen as `[ ]`
+once it verifies) and the reconciliation agent clears one when the other side of
+a merge is `[x]`/`[v]`, so any absolute "never touch a `[!]`" rule contradicts a
+partial the same skills `@include`. The reason line is what tells them apart.
+Two opposite mistakes follow from forgetting this, both observed on one feature.
+**Stopping on it** strands every independent milestone behind one unanswered
+question — and note nothing routes around it for free: `nextMilestone` returns
+the first not-all-done milestone and `implement.md` picks the first holding any
+non-`[v]` task, so a `[!]` re-targets the same milestone forever unless the
+caller names one explicitly. **Grinding at it** is worse: a human-gated follow-up
+misfiled as "blocking" burns fix rounds that cannot succeed and then trips the
+circuit breaker, which defers it as polish — so classify human-gated *before*
+blocking (the test is not severity, it is whether the missing thing is a
+person), never count such an attempt as a fix round, and never let a circuit
+breaker sweep one. Clearing a human-gated `[!]` to make a milestone read
+complete is the `[v]`-without-evidence failure with a different marker and **no
+guard behind it** — no Go code audits a `[!]` that disappeared, and
+`skipMilestoneInProgress` will rewrite one to `[x]` outright. **These rules
+describe `/belmont:loop`. `belmont auto` deliberately does the opposite** —
+`decideLoopAction` Rule 1 PAUSEs the whole feature on the first `[!]`, which is
+the right headless answer; changing that is a behaviour change needing its own
+eval. `belmont blockers` is the surface: it exists because 19 of them
+accumulated in one overnight run and `belmont status` showed their headlines but
+never the indented body where the question lives. See
 [`knowledge/cross-cutting/human-gated-blockers.md`](knowledge/cross-cutting/human-gated-blockers.md).
 
 **One definition per structural concept — see [`knowledge/cross-cutting/progress-md-parsing.md`](knowledge/cross-cutting/progress-md-parsing.md).** PROGRESS.md is read by ~8 independent code paths. Two shipped bugs (#27, #31) came from each path inlining its own answer to "what does this marker mean?" and "where does the milestones region end?", and in both cases every copy was wrong identically. Marker semantics live in `canonicalMarker`; the region boundary lives in `isSectionBreak`, which matches a level-2 heading **at column zero only** — never trim before testing, because `  ## Foo` indented under a list item is that item's body. Anything unplaceable is surfaced, never dropped: unreadable markers become `taskUnknown`, and task lines outside every milestone are reported by `orphanedTaskLines`.

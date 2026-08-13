@@ -262,3 +262,245 @@ func TestFeatureListingCapsBlockersAndPointsAtTheCommand(t *testing.T) {
 		t.Errorf("listing should name the overflow and the command:\n%s", out)
 	}
 }
+
+// --- Live-run state -------------------------------------------------------
+//
+// These cover the branch that carried two shipped bugs and had zero tests: the
+// queue read during an active `belmont auto` run.
+
+func writeAutoJSON(t *testing.T, root, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, ".belmont"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".belmont", "auto.json"), []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// In single-feature-parallel mode each MILESTONE has its own worktree.
+// `loadAutoWorktrees` collapses that map to one representative directory, so
+// reading through it hid every blocker except the representative's — while
+// `belmont status --feature` showed them and pointed the reader here.
+func TestBuildBlockersReadsEveryMilestoneWorktree(t *testing.T) {
+	root := t.TempDir()
+	master := "### M1: One\n\n- [ ] P0-1: A\n\n### M2: Two\n\n- [ ] P0-2: B\n"
+	writeBlockerFeature(t, root, "auth", "# PRD: Auth\n", master)
+
+	wt1 := filepath.Join(root, "..", "wt-m1")
+	wt2 := filepath.Join(root, "..", "wt-m2")
+	for _, w := range []struct{ path, progress string }{
+		{wt1, "### M1: One\n\n- [ ] P0-1: A\n\n### M2: Two\n\n- [ ] P0-2: B\n"},
+		// M2's worktree raised the blocker, with a body, at a different line
+		// number from master's copy.
+		{wt2, "# notes\n# notes\n\n### M1: One\n\n- [ ] P0-1: A\n\n### M2: Two\n\n- [!] P0-2: B\n  Needs Ben to approve the prod apply.\n"},
+	} {
+		dir := filepath.Join(w.path, ".belmont", "features", "auth")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "PROGRESS.md"), []byte(w.progress), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAutoJSON(t, root, `{"active":true,"mode":"single-feature-parallel","feature":"auth",
+		"worktrees":{"M1":{"path":"`+wt1+`"},"M2":{"path":"`+wt2+`"}}}`)
+
+	report, err := buildBlockers(root, "auth")
+	if err != nil {
+		t.Fatalf("buildBlockers: %v", err)
+	}
+	if report.Count != 1 {
+		t.Fatalf("expected M2's worktree blocker, got %d: %+v", report.Count, report.Blockers)
+	}
+	b := report.Blockers[0]
+	if b.TaskID != "P0-2" || b.Milestone != "M2" {
+		t.Errorf("wrong task: %+v", b)
+	}
+	if b.Line != 10 {
+		t.Errorf("line = %d, want 10 (the worktree's line, not master's 7)", b.Line)
+	}
+	if b.LiveFrom == "" {
+		t.Error("LiveFrom should name the worktree the line lives in")
+	}
+	if !strings.Contains(strings.Join(b.Detail, " "), "approve the prod apply") {
+		t.Errorf("detail should come from the worktree copy: %#v", b.Detail)
+	}
+	if !strings.Contains(b.Path, "wt-m2") {
+		t.Errorf("path = %q, should point at the worktree file", b.Path)
+	}
+}
+
+// A half-cleaned worktree must not take master's blockers down with it.
+func TestBuildBlockersFallsBackToMasterWhenOverrideUnreadable(t *testing.T) {
+	root := t.TempDir()
+	writeBlockerFeature(t, root, "auth", "# PRD: Auth\n", "### M1: One\n\n- [!] P0-1: Rotate the credentials\n")
+
+	empty := filepath.Join(root, "..", "wt-empty")
+	if err := os.MkdirAll(filepath.Join(empty, ".belmont", "features", "auth"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeAutoJSON(t, root, `{"active":true,"mode":"multi-feature","worktrees":{"auth":{"path":"`+empty+`"}}}`)
+
+	report, err := buildBlockers(root, "auth")
+	if err != nil {
+		t.Fatalf("buildBlockers: %v", err)
+	}
+	if report.Count != 1 || report.Blockers[0].TaskID != "P0-1" {
+		t.Fatalf("master's blocker should survive an unreadable override: %+v", report)
+	}
+	if len(report.Skipped) != 0 {
+		t.Errorf("feature was recoverable, should not be reported skipped: %v", report.Skipped)
+	}
+}
+
+func TestBuildBlockersReportsUnreadableFeature(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".belmont", "features", "broken")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	} // no PROGRESS.md at all
+
+	report, err := buildBlockers(root, "")
+	if err != nil {
+		t.Fatalf("buildBlockers: %v", err)
+	}
+	if len(report.Skipped) != 1 || report.Skipped[0] != "broken" {
+		t.Fatalf("skipped = %v, want [broken]", report.Skipped)
+	}
+	out := renderBlockers(report, false, false)
+	if !strings.Contains(out, "Could not read PROGRESS.md for: broken") {
+		t.Errorf("an unreadable feature must be stated, not silent:\n%s", out)
+	}
+}
+
+// --- Orphans --------------------------------------------------------------
+
+// A `[!]` outside every milestone is invisible to parseMilestones. Dropping it
+// made this command print an affirmative all-clear about a file it could not
+// fully read — the one thing a decision queue must never do.
+func TestBuildBlockersSurfacesOrphanedBlockers(t *testing.T) {
+	root := t.TempDir()
+	writeBlockerFeature(t, root, "orphan", "# PRD: Orphan\n",
+		"### M1: One\n\n- [v] P0-1: Done\n\n## Session History\n\n- [!] P0-9: Rotate the production credentials\n  Needs an operator with console access.\n")
+
+	report, err := buildBlockers(root, "orphan")
+	if err != nil {
+		t.Fatalf("buildBlockers: %v", err)
+	}
+	if len(report.Unplaced) != 1 {
+		t.Fatalf("unplaced = %+v, want the orphaned blocker", report.Unplaced)
+	}
+	if report.Count != 1 {
+		t.Errorf("count = %d, orphans must be counted", report.Count)
+	}
+	if report.Unplaced[0].TaskID != "P0-9" {
+		t.Errorf("wrong orphan: %+v", report.Unplaced[0])
+	}
+	if len(report.Unplaced[0].Detail) != 1 {
+		t.Errorf("orphan should carry its body: %#v", report.Unplaced[0].Detail)
+	}
+
+	out := renderBlockers(report, false, false)
+	if strings.Contains(out, "Nothing is waiting on you") {
+		t.Errorf("must not print an all-clear when an orphaned blocker exists:\n%s", out)
+	}
+	if !strings.Contains(out, "Outside any milestone") {
+		t.Errorf("orphans need their own block:\n%s", out)
+	}
+}
+
+// --- Rendering ------------------------------------------------------------
+
+// --summary is documented as one line per blocker, and the loop skill calls it
+// so a 19-item queue is a scannable handover. It must not emit two.
+func TestRenderBlockersSummaryIsOneLinePerBlocker(t *testing.T) {
+	root := t.TempDir()
+	writeBlockerFeature(t, root, "alpha", "# PRD: Alpha\n", blockerProgress)
+	report, err := buildBlockers(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := renderBlockers(report, false, true)
+	n := 0
+	for _, line := range strings.Split(sum, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "[!] ") {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 blocker lines, got %d:\n%s", n, sum)
+	}
+	for _, line := range strings.Split(sum, "\n") {
+		if strings.Contains(line, "PROGRESS.md:") && !strings.Contains(line, "[!]") {
+			t.Errorf("summary emitted a second line for a blocker: %q", line)
+		}
+	}
+	if !strings.Contains(sum, "PROGRESS.md:8)") {
+		t.Errorf("summary should carry the location inline:\n%s", sum)
+	}
+}
+
+func TestRenderBlockersPrintsTheRealPath(t *testing.T) {
+	root := t.TempDir()
+	writeBlockerFeature(t, root, "alpha", "# PRD: Alpha\n", blockerProgress)
+	report, err := buildBlockers(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(".belmont", "features", "alpha", "PROGRESS.md") + ":8"
+	out := renderBlockers(report, false, false)
+	if !strings.Contains(out, want) {
+		t.Errorf("render should name the file the line is in (%s):\n%s", want, out)
+	}
+}
+
+func TestRenderBlockersSeparatesFeatures(t *testing.T) {
+	root := t.TempDir()
+	writeBlockerFeature(t, root, "zulu", "# PRD: Zulu\n", "### M1: One\n\n- [!] P0-1: Zulu blocker\n")
+	writeBlockerFeature(t, root, "alpha", "# PRD: Alpha\n", "### M1: One\n\n- [!] P0-1: Alpha blocker\n")
+	report, err := buildBlockers(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := renderBlockers(report, false, false)
+	if !strings.Contains(out, "Alpha (alpha)") || !strings.Contains(out, "Zulu (zulu)") {
+		t.Errorf("both feature headers should render:\n%s", out)
+	}
+	if strings.Index(out, "Alpha (alpha)") > strings.Index(out, "Zulu (zulu)") {
+		t.Errorf("features should render in slug order:\n%s", out)
+	}
+}
+
+// --- taskDetail edge cases ------------------------------------------------
+
+// Under a nested list, taskBodyEnd alone does not stop at a sibling task —
+// every following task would be swallowed into the first one's body.
+func TestTaskDetailStopsAtAnIndentedSiblingTask(t *testing.T) {
+	lines := []string{
+		"  - [!] P0-1: Blocked",
+		"    needs a person",
+		"  - [ ] P0-2: Next task",
+		"    its own body",
+	}
+	got := taskDetail(lines, 1)
+	if len(got) != 1 || got[0] != "needs a person" {
+		t.Fatalf("taskDetail = %#v, want just the blocker's own body", got)
+	}
+}
+
+// The detail view's pointer line is the route to this command; nothing asserted
+// it existed.
+func TestStatusDetailViewNamesTheBlockersCommand(t *testing.T) {
+	report := statusReport{
+		FeatureSlug: "alpha",
+		TaskCounts:  map[string]int{},
+		Milestones: []milestone{{ID: "M1", Name: "One", Tasks: []task{
+			{ID: "P0-1", Name: "Rotate the credentials", Status: taskBlocked},
+		}}},
+	}
+	out := renderStatus(report, false, false)
+	if !strings.Contains(out, "belmont blockers --feature alpha") {
+		t.Errorf("detail view should name the command with the slug:\n%s", out)
+	}
+}

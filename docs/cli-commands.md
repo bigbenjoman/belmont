@@ -56,18 +56,20 @@ belmont version                         # Show version, commit, build date
 
 ## The decision queue: `belmont blockers`
 
-`[!]` is the one marker no agent can clear. It means the work is waiting on a
-person — an approval, a product ruling, a credential, a console action, a spec
-change that belongs to `/belmont:tech-plan`. Belmont has always protected it
-(`mergeProgressState` never ranks over `[!]` from either direction, and no skill
-may flip one), but protecting a signal is not the same as surfacing it.
+`[!]` usually means the work is waiting on a person — an approval, a product
+ruling, a credential, a console action, a spec change that belongs to
+`/belmont:tech-plan` — and that kind no skill may clear. (Two `[!]`s carry a
+condition an agent *can* check: one raised against a later milestone, and one
+the reconciliation agent raised over a merge. The reason line says which.)
+`mergeProgressState` never ranks over `[!]` from either direction, but
+protecting a signal is not the same as surfacing it.
 
 A long run banks them up. Each `[!]` task carries a paragraph explaining what is
-being asked and of whom, and until now the only place they appeared was the tail
-of `belmont status` — one truncated line each, interleaved with progress counts,
-spread across however many features are in flight. The person who has to answer
-them read them one line at a time, in the middle of a report about something
-else.
+being asked and of whom — and that paragraph is exactly what `belmont status`
+never showed. It listed every blocker's headline, in both views, interleaved
+with progress counts and spread across however many features are in flight; the
+person who had to answer them read them one headline at a time, in the middle of
+a report about something else.
 
 `belmont blockers` prints them together, grouped by feature and milestone, with
 the indented body intact:
@@ -79,10 +81,20 @@ belmont blockers --summary                # one line each — the scannable view
 belmont blockers --format json            # machine-readable
 ```
 
-It reports and never writes. Answering a blocker means editing the marker in
-PROGRESS.md yourself, or letting `/belmont:next` pick the task up once the input
-exists — a command that both raised a question and resolved it would be free to
-guess at the answer.
+It reports and never writes — a command that both raised a question and resolved
+it would be free to guess at the answer. Answering a blocker means flipping the
+marker to `[ ]` yourself in the file the output names; `/belmont:next` only ever
+selects a `[ ]` task, so it cannot act on one while it is still `[!]`.
+
+During an active `belmont auto` run the paths printed are inside the run's
+worktrees, and the output says so: master's copy has different line numbers, and
+an edit made there is overwritten by `mergeProgressState` when the worktree
+merges. Use `belmont steer`, or edit the worktree file.
+
+Blocked task lines sitting **outside** every milestone are reported in their own
+section. They are invisible to `parseMilestones` and therefore to every count in
+Belmont, and a decision queue that printed "nothing is waiting on you" about a
+file it could not fully read would be worse than no queue at all.
 
 `belmont status` names it: the `--feature` detail view lists every blocker and
 then points here, and the multi-feature listing prints the first three per

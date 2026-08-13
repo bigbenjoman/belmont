@@ -252,6 +252,7 @@ When dispatching sub-agents (Step 3 below), apply the tier overrides per `dispat
 
 ## Step 1: Find Next Milestone
 
+0. **If the invocation names a milestone explicitly** (e.g. "IMPLEMENT MILESTONE M11"), use that one and skip the selection below — do not re-derive it. A caller that names a milestone has already ruled out the one you would pick: a milestone whose only live tasks are `[!]` stays pending by rule 3 forever, so first-pending selection returns it on every invocation and the work behind it is never reached.
 1. Read `{base}/PROGRESS.md` and find the Milestones section
 2. A milestone is **complete** if every task that is still live is marked `[v]` (verified). `[-]` withdrawn tasks are resolved — skip them, they neither block completion nor count towards it
 3. A milestone is **pending** if any task is `[ ]`, `[>]`, `[x]`, or `[!]`

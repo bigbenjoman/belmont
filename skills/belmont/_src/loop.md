@@ -38,11 +38,24 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
 
 ```
 /loop Drive the <feature> Belmont feature to completion. Each iteration:
-  1. Run /belmont:implement <feature> to build the next pending milestone.
-     Append: "MILESTONE-SCOPED IMPLEMENTATION: only implement tasks in
+  0. PICK THE TARGET MILESTONE <M>, and do not assume the status check
+     picked it for you. `belmont status` names the first milestone that is
+     not fully verified, and /belmont:implement independently selects the
+     first milestone holding any task that is not [v] or [-]. A [!] task
+     satisfies both forever, so a milestone whose ONLY live work is [!]
+     is named again on every iteration and neither tool will ever move on.
+     So: confirm the named milestone has at least one [ ], [>] or [x] task.
+     If it has none, walk down PROGRESS.md's milestone headings to the
+     first one that does, and use that. If NO milestone has one, every
+     remaining pending task is [!] — go straight to the blocked-task rule
+     below and stop. Name <M> explicitly in every append below; never let
+     a sub-skill re-derive it.
+  1. Run /belmont:implement <feature> to build milestone <M>.
+     Append: "IMPLEMENT MILESTONE <M>. This names the milestone
+     explicitly and supersedes your own Step 1 selection — do not
+     re-derive it. MILESTONE-SCOPED IMPLEMENTATION: only implement tasks in
      milestone <M>. Do NOT flip checkboxes, add/remove tasks, or edit notes
      for any other milestone — treat their state as read-only context."
-     (Substitute the milestone the status check named.)
   2. ALWAYS run /belmont:verify <feature> — there is no skip. Only verify
      writes [v], so a skipped milestone can never reach a verified state,
      and every milestone must. Append:
@@ -156,9 +169,16 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
   BLOCKED TASKS DO NOT STOP THE LOOP. A `[!]` is a question queued for a
   person; it is not a failure, not a stall, and not a reason to abandon
   work that has nothing to do with it. A milestone holding one can never
-  read complete, so DO NOT wait on it — move to the next milestone whose
-  dependencies are satisfied and keep going. Never flip a `[!]` to any
-  other marker to unblock yourself, and never guess the answer. Stop for
+  read complete, so DO NOT wait on it — step 0 already routed you past it.
+  Never flip a HUMAN-GATED `[!]` to any other marker to unblock yourself,
+  and never guess the answer. Two `[!]` tasks are NOT human-gated and may
+  be reopened as `[ ]`, because their reason names the condition and you
+  can check it: one whose reason names a later milestone `M<N+k>` (the
+  milestone-structure rule above mints these), once `M<N+k>` reads
+  verified; and one the reconciliation agent raised over a merge, once the
+  other side is `[x]`/`[v]`. If the reason names a PERSON, it is not one
+  of these — leave it. If the reason names nothing checkable, leave it and
+  say so in the report. Stop for
   the user ONLY when every remaining pending task in the feature is `[!]`:
   at that point there is nothing an agent can do, and continuing just
   re-reads the same file. When you stop for that reason, or for any other,
@@ -183,6 +203,8 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
        work is `[!]` trips this on its own; the blocked-task rule above is
        what makes the report say WHY, so report the blocker queue rather
        than "no progress".
+    d. The user steers you to stop, change features, or do other work.
+       Stop immediately — this outranks every other rule here.
   These counters must live ON DISK, not in your head — this loop survives
   compaction and a remembered count does not. Nothing else records them, so
   after every failed phase and every blocking-issue-survived-a-fix-round,
@@ -194,7 +216,7 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
 
 When delegating, you are invoking the `/loop` skill — follow its self-pacing guidance (it uses `ScheduleWakeup` to re-enter the task between milestones, surviving context compaction). Each iteration advances exactly one milestone, so the loop converges as milestones flip to verified.
 
-**If the `/loop` skill is unavailable** in this Claude Code build, fall back to driving the cycle inline: run steps 1–5 yourself in sequence, then repeat from step 1 for the next milestone, using `ScheduleWakeup` to self-pace between milestones. Stop on the same conditions — all of them, including the blocked-queue one.
+**If the `/loop` skill is unavailable** in this Claude Code build, fall back to driving the cycle inline: run steps 0–5 yourself in sequence, then repeat from step 0 for the next milestone, using `ScheduleWakeup` to self-pace between milestones. Stop on the same conditions — all of them, including the blocked-queue one.
 
 ## Stop conditions
 
@@ -204,9 +226,8 @@ The loop stops — no further iteration — when any of these holds. Each is sta
 
 - The status check in step 5 shows every milestone verified — **the only success case**. There is no successful run that leaves an `[x]`: step 2 never skips verification, so a task at `[x]` means verification found issues, errored, or lost its flips.
 - The status check in step 5 shows any remaining `[x]`, or the step-3 circuit breaker fired this session — report **INCOMPLETE**, name those tasks, and say they need investigation rather than a plain `belmont reverify`.
-- Every remaining pending task in the feature is `[!]` — the decision queue is all that is left. A single `[!]`, or a whole blocked milestone, is **not** a stop: the loop moves past it to the next milestone whose dependencies are satisfied. Belmont has never had a way for an agent to answer a `[!]`, and stopping the entire feature at the first one strands every milestone that did not depend on it.
-- Any of the counted conditions (a) three consecutive phase failures, (b) the same milestone failing verification twice, or (c) no state change across two iterations.
-- The user steers you to stop, change features, or do other work.
+- Every remaining pending task in the feature is `[!]` — the decision queue is all that is left. A single `[!]`, or a whole blocked milestone, is **not** a stop: step 0 selects past it. Belmont has no way for an agent to answer a human-gated `[!]`, and stopping the whole feature at the first one strands every milestone that did not depend on it.
+- Any of the counted conditions (a) three consecutive phase failures, (b) the same milestone failing verification twice, (c) no state change across two iterations, or (d) the user steers you to stop, change features, or do other work.
 
 On stop, report: the feature, which milestones completed this run, the final status, and — if `belmont status` warned about done-but-unverified tasks — say so explicitly and name `belmont reverify --feature <feature>` as the recovery. If any `[!]` tasks exist, report them with `belmont blockers --feature <feature> --summary`: they are the work the user has to do before the feature can finish, and a count buried in a status dump is not a handover.
 
@@ -215,5 +236,5 @@ On stop, report: the feature, which milestones completed this run, the final sta
 - **One feature only.** Never let an iteration pull in a different feature or unrelated refactor. The recipe's final line ("Do not start unrelated work") is load-bearing.
 - **Do not edit milestone structure.** This skill orchestrates the existing implement/verify/next/status skills — it never adds, renames, or removes milestones. The canonical rule and the routing for discovered work are stated above; the triage step in particular must never turn a deferral into a milestone.
 - **Respect each underlying skill's rules.** `/belmont:implement`, `/belmont:verify`, and `/belmont:next` enforce their own scope guards, evidence checks, and feature-detection prompts. Do not bypass them; just sequence them.
-- **`[!]` belongs to the user.** The loop may *write* one — that is what triage's human-gated class does — but it may never clear one, answer one on the user's behalf, or convert one to `[-]` to make a milestone read complete. `mergeProgressState` already refuses to rank over `[!]` from either direction; this is the same rule at the skill layer. `belmont blockers` is how you show them.
+- **A human-gated `[!]` belongs to the user.** The loop may *write* one — that is what triage's human-gated class does — but it may never clear one, answer it on the user's behalf, or convert it to `[-]` to make a milestone read complete. `mergeProgressState` refuses to rank over `[!]` from either direction; this is the same rule at the skill layer. Two `[!]` writers are **not** human-gated and carry their own reopen condition — the milestone-structure rule's later-milestone dependency, and the reconciliation agent's merge blocker — and the recipe names both. Tell them apart by the reason on the task; that is what the reason is for. `belmont blockers` is how you show the rest.
 - **Deferral is a marker, not an edit.** Withdrawn work is `[-]` plus a `## Decisions Log` line. Never express it by deleting the checkbox — see the recipe's step 3 for why that does not survive Belmont's own merge model.
