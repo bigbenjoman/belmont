@@ -42,6 +42,7 @@ Curated operational knowledge for working on Belmont itself. Scan the table belo
 | [cross-cutting/codex-plan-handoff.md](cross-cutting/codex-plan-handoff.md) | skills, cli | touch `codex-plan-apply`, the `BELMONT_PLAN_PACKET` emit logic in `product-plan`/`tech-plan`, or design how a tool-specific skill is scoped to one CLI without mechanical install gating |
 | [cross-cutting/design-authority.md](cross-cutting/design-authority.md) | agents, skills | touch `{base}/UX_DESIGN.md`, the `## Design Contract` section or who may write it, `runDesignAuthorityGuard`, `_src/ux-design.md`'s gate or migration prompt, `design-authority-baseline.md`, the design-agent skip condition in `implement.md`, `verification-agent.md`'s Phase 2 branches or its `no design references` escape clause, or the design tier's meaning in `models-yaml-format.md` |
 | [cross-cutting/ux-design-phase.md](cross-cutting/ux-design-phase.md) | skills, agents, cli | add or reorder a planning phase, move a question between `product-plan` / `ux-design` / `tech-plan`, change the State Inventory's unit or the surface→component mapping, touch the HTML review artifacts, or wire a new skill into the install/hand-off chain |
+| [cross-cutting/brand-foundation.md](cross-cutting/brand-foundation.md) | skills, agents | touch the ladder's bottom rungs (`2b` repo sweep, `3` brand foundation), `brand-foundation-set.md`, the Brand foundation stage in `_src/ux-design.md`, the typeface overuse or licence gates, the palette construction rule, or the tells list |
 
 ### Meta
 
