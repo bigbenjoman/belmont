@@ -246,15 +246,48 @@ that as content is the client-rendered trap again. Three routes, in order:
    named, disarms it.
 2. **Project config** — `tailwind.config.*`, CSS custom properties in
    `globals.css`, `components.json`, theme files.
-3. **Nothing exists** → establish the tier-2 defaults below and set
-   `**Source**: none — established here`.
 
-On a greenfield project rungs 0–2 may all be empty — `tailwind.config.*` and
+2b. **What the repo already does, and what the brand already is.** Reached when
+    rung 2's named files are absent, or present but carrying no design
+    decisions, *and there is still code*. **A reset is not a design**: a
+    `globals.css` holding only `box-sizing`, margin zeroing, a system font
+    stack and `list-style: none` has decided nothing, and treating its
+    existence as rung 2 stops the ladder on a file that supplies no token
+    family at all. The test is whether a colour, a type scale or a spacing
+    step was *chosen*, not whether a file is present.
+    Do not fall through to rung 3 while a repo full of decisions sits unread —
+    a project without a config file is not a project without a design.
+
+    - **Brand assets first, because they are the strongest evidence and nobody
+      looks at them.** A logo or wordmark SVG's `fill`/`stop-color` values are
+      the brand palette, stated by whoever drew it. Also `favicon.svg`, the OG
+      image, `<meta name="theme-color">`, `manifest.json`'s `theme_color` and
+      `background_color`, and any `apple-touch-icon`. These outrank anything you
+      would derive.
+    - **Then what the code actually does.** Rank the colour literals and utility
+      classes across the repo by frequency and take the top cluster as the de
+      facto palette; do the same for the type sizes, spacing steps and radii in
+      real use. Read the fonts genuinely loaded — `next/font`, an `@font-face`,
+      a stylesheet link — rather than the ones a config names.
+    - Report it as *this is what your code already does*, not as a proposal, and
+      name it in `**Source**` as what it is (`repo sweep — logo.svg fills,
+      most-used utilities`). Frequency is evidence, not authority: where the
+      sweep is contradictory or thin, say so and ask rather than averaging it
+      into a scale nobody chose.
+
+3. **Nothing exists at all** — no contract, no Storybook, no config, no code, no
+   Figma → this is the **brand foundation** case, not a defaults case. Run the
+   *Brand foundation* stage in `ux-design.md` before the feature interview,
+   establish the foundation with the user, write it to the master
+   `.belmont/UX_DESIGN.md`, and set `**Source**: none — established here`. The
+   tier-2 baseline rules below remain the floor everything must clear; they are
+   not a substitute for the decisions.
+
+On a greenfield project rungs 0–2b may all be empty — `tailwind.config.*` and
 `globals.css` do not exist until code is written, and the styling approach is
-chosen later, in `/belmont:tech-plan`. That is the expected first-feature case:
-fall to rung 3 and set `**Source**: none — established here`. The contract
-records token **values**, not their expression, so nothing is lost by fixing them
-before the stack is chosen.
+chosen later, in `/belmont:tech-plan`. That is the expected first-feature case.
+The contract records token **values**, not their expression, so nothing is lost
+by fixing them before the stack is chosen.
 
 ---
 

@@ -290,6 +290,30 @@ The examples in each mechanism are examples. Palette, type pairing, elevation an
 
 Do this for what you are deciding *this session*. A value a ladder rung already supplies was decided elsewhere and is not being put to a vote — showing it is reporting, not asking.
 
+### Phase 3b - Brand foundation (only on an empty ladder)
+
+Run this **only** when rungs 0 through 2b are all empty — no master or sibling contract, no Storybook, no config, no code to sweep, no Figma. It runs **before** the feature interview, because every screen you are about to draw inherits its answers. Its output is the master `.belmont/UX_DESIGN.md`, so it happens once per project and every later feature reads it at rung 0 rather than re-deciding it.
+
+Say what is happening and why, in one line: there is nothing to reuse, so the first feature of this project also establishes its brand foundation, and that is a bigger decision than the feature.
+
+**Derive from the product, never from taste.** The PRD holds the audience, the category, the tone and often the brand words; `.belmont/PRD.md` holds the vision. A tutoring product parents use while anxious is not a trading terminal is not a children's game. Read those first and say what you took from them — a direction you cannot trace back to something the product actually is, is decoration.
+
+**Fix the Accessibility Floor before the palette, not after.** Choose the floor, then derive hues that can meet it: a primary that cannot reach 4.5:1 on white is not a brand decision you get to make, and discovering that after approval means repainting everything.
+
+**Offer complete directions, not sliders.** Present a small number — two or three — of *internally coherent* directions, each with a name, a one-line rationale tied to the product, its palette with semantic roles assigned (action, danger, success, neutrals — a palette without semantics is decoration), its type family and ramp, and its radius and elevation character. Draw each one as a **real screen from this feature**, not as swatch soup: the same screen, three times, is the only comparison that means anything. This is a mechanism-2 question in its purest form — publish the page, hand over the link, then ask.
+
+**Typography, conservatively.** Prefer one family with a full weight range over a display pairing: it is harder to get wrong, it ages better, and it is what most good products actually do. Where you propose a pairing, justify it by role rather than by mood. Every candidate must be one you can legally embed in the artifacts as a `@font-face` — a face the reviewer cannot see is not a candidate.
+
+**Start from the curated set below, and depart from it only for a reason you state.** The set exists because an unconstrained choice reliably lands on the same handful of defaults; the escape exists because the product's own evidence sometimes genuinely points elsewhere. Going outside it is allowed and must be said out loud on the page, with what in the product pushed you there.
+
+**Read `references/brand-foundation-set.md`** for that set — the families, the palette starting points, what each is for, and the rules for departing from it. Read it only on this branch; it is worth nothing to a feature with a contract.
+
+**Avoid the tells.** AI-originated design has a recognisable look, and its reputation is deserved. Do not produce, *by default*: an indigo or violet primary in the `#6366f1`/`#7c3aed` neighbourhood; purple-to-pink or blue-to-purple gradients as brand furniture; glassmorphism and blurred colour blobs; a dark hero with a single neon accent; Inter (or its near-clones) selected for everything because it is the safe answer; a uniform large radius on every surface; emoji standing in for iconography. None of these is banned — each is a legitimate choice when the product's evidence leads there, and then you say so on the page. What is banned is arriving at them **by default**, which is what makes work look generated rather than designed.
+
+**Then check it is a design and not a mood.** Two tests before you put it to the user: does every value have a reason you could give a client out loud, and would this direction still make sense for this product if the trend that produced it disappeared? A direction that fails either is one you assembled rather than chose.
+
+The foundation is approved through the same gate as everything else — the structured question tool, against the rendered page — and only then written to `.belmont/UX_DESIGN.md`. Then run the feature interview normally, with rung 0 now populated by what the user just approved.
+
 ### Phase 4 - Approval (MANDATORY)
 
 This phase applies only when you derived a contract. Under either `N/A` mode there is nothing to approve — go straight to Phase 5 and write the header block.
@@ -340,7 +364,7 @@ Steps 2–4 apply only when you derived a contract this session. Under either `N
 
 **Draw the themes the project actually ships — and only those.** If `globals.css` or the theme config defines a dark palette that a user can genuinely reach — especially one that changes the accent rather than merely inverting the neutrals — the frames that carry state (notices, errors, empty) must be drawn in it too. A documented theme that no artifact ever shows is a theme nobody has reviewed.
 
-**The frames never follow the viewer's system theme.** Pin them. A mockup exists to show the product as it ships, so a `prefers-color-scheme: dark` rule that repaints the frames means the reviewer sees a dark product on a dark laptop and a light one on the machine next to it — and if the project ships light only, they are reviewing a theme that does not exist. Where the interview established a single shipped theme, commit to it explicitly and paint every colour rather than inheriting any. Theme-awareness is a property the surrounding document may have; it is never a property of the drawings inside it, and a dark page arriving unasked is a decision nobody made.
+**Neither file follows the viewer's system theme — not the frames, and not the document around them.** Both pages commit to one presentation and paint every colour explicitly: no `prefers-color-scheme` rule anywhere, no inherited ground, no transparent `body`. A mockup exists to show the product as it ships, so a page that repaints itself means the reviewer sees a dark product on a dark laptop and a light one on the machine beside it, and on a light-only product they are reviewing a theme that does not exist. Publishing platforms that render pages in the viewer's theme explicitly permit a page to commit to a single look, provided it paints its own background and colours — do that. If the general artifact-design guidance you loaded asks for theme-aware pages, this rule overrides it here: these two files are specimens of somebody else's design system, not general web pages, and a whole document arriving dark unasked is a decision nobody made. Where the project genuinely ships a dark theme, draw it as *extra frames explicitly labelled dark*, beside the light ones, never as a mode the page slips into.
 
 **Show how surfaces arrive.** A sheet, dialog, drawer or overlay is drawn as it presents — dimmed backdrop, the sheet with its handle, the frame it sits in. Seventeen identical flat rectangles assert an interaction rather than showing one.
 
