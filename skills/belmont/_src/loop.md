@@ -50,6 +50,13 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      remaining pending task is [!] — go straight to the blocked-task rule
      below and stop. Name <M> explicitly in every append below; never let
      a sub-skill re-derive it.
+     THIS IS ALSO HOW A BACKLOG DRAINS. Selecting the FIRST milestone with
+     workable tasks means the oldest unsettled work is always next, so a
+     PROGRESS.md that already carries a large accumulated follow-up backlog
+     — from before the settle rule below existed — is worked milestone by
+     milestone, oldest first, and each is settled before anything newer is
+     started. Do not skip ahead to the newest milestone because it looks
+     like the real work; the backlog IS the real work until it is settled.
   1. Run /belmont:implement <feature> to build milestone <M>.
      Append: "IMPLEMENT MILESTONE <M>. This names the milestone
      explicitly and supersedes your own Step 1 selection — do not
@@ -113,17 +120,45 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      reason and shows up in no count. `[-]` is excluded from both counts,
      never offered as next work, does not stop a milestone reading complete,
      and wins from either side of a merge. That is what it is for.
-     CIRCUIT BREAKER: if two fix rounds have already run for this milestone,
-     defer EVERYTHING still classified blocking — as `[-]` with a Decisions
-     Log line, same as above — and go to step 5. Human-gated tasks are NOT
-     swept: they stay `[!]`.
+     CIRCUIT BREAKER: if two fix rounds have already run for this milestone
+     IN THIS LOOP SESSION, stop fixing and SETTLE the milestone (below).
+     The count is per milestone PER SESSION and starts at zero each run. A
+     session beginning after the user has answered decisions or reopened
+     work carries a fresh mandate, and inheriting the previous run's count
+     would defer the very work they just asked for. This session's count
+     lives in {base}/NOTES.md under `## Loop decisions`; the milestone's
+     whole history is MILESTONE-<M>.done.md, one `# Milestone:` heading per
+     pass, which is the durable record and survives compaction better than
+     the ledger does.
+     SETTLE THE MILESTONE BEFORE LEAVING IT. A milestone is left only when
+     EVERY task in it reads `[v]`, `[-]` or `[!]`. Never move on with a
+     `[ ]`, `[>]` or `[x]` still in it, whether the breaker fired or the
+     work simply ran out. **This is the rule that stops follow-ups
+     accumulating.** Without it each milestone leaks its unfinished tail
+     into a backlog that grows for the life of the feature: on the run that
+     motivated this skill, 92 of 165 task lines were verification-generated
+     follow-ups, most of them `[ ]` sitting in milestones the loop had long
+     since left. Settle in ONE batch, not one at a time:
+       - `[ ]` still classified blocking → `[-]`, with a `## Decisions Log`
+         line saying it was bounded, NOT that it was polish.
+       - `[x]` that the milestone's final verify would not promote → `[!]`,
+         naming what verification objected to. An agent tried and could not
+         clear it inside its rounds, so it is a question for the user rather
+         than a silent leftover that reads as done.
+       - human-gated → already `[!]`; leave it exactly as it is.
+     Settling is safe precisely because `[-]` and `[!]` are both reversible
+     by the user: nothing is lost, it is parked where `belmont blockers`
+     shows it and they can reopen it. Leaving a `[ ]` behind is the unsafe
+     option — it looks like scheduled work and is nobody's decision.
      Deferral NEVER means creating a milestone — see the milestone-structure
      rule above.
   4. Fix the blocking follow-ups in ONE batch, not one at a time.
      Run /belmont:next <feature> and append: "BATCH MODE: implement ALL
-     pending FWLUP tasks in <M> sequentially. Pending means `[ ]` — SKIP
-     every `[!]`, which is waiting on a person and cannot be closed by
-     working harder. For each: find it, create the MILESTONE file, dispatch
+     pending FWLUP tasks in <M> sequentially — the milestone's ENTIRE
+     outstanding set, including follow-ups filed in earlier passes or
+     earlier sessions, not only the ones this verify produced. Pending
+     means `[ ]` — SKIP every `[!]`, which is waiting on a person and
+     cannot be closed by working harder. For each: find it, create the MILESTONE file, dispatch
      to the implementation agent, process results, archive MILESTONE, then
      continue to the next pending FWLUP. Stop when no `[ ]` FWLUP tasks
      remain in <M>. Only work on FWLUP tasks belonging to <M>;
@@ -145,7 +180,9 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      /belmont:status <feature> if the CLI is unavailable: that skill loads
      ~6KB of its own instructions before shelling out to the same command,
      and this step runs once per milestone.
-     CONTINUE to the next milestone unless a STOP condition below fires.
+     CONTINUE to the next milestone — once the current one is SETTLED per
+     step 3, every task in it `[v]`, `[-]` or `[!]` — unless a STOP
+     condition below fires.
      Neither a task still at [x] nor a fired circuit breaker is a stop.
      Both BOUND A MILESTONE, not the run. Halting the whole feature because
      one milestone hit its bound strands every milestone that had nothing

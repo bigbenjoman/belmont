@@ -22,7 +22,14 @@ Apply these rules in order:
 
 0. **Human-gated follow-ups are removed from this decision entirely.** Mark each one `[!]` in `{{.FeatureBase}}/PROGRESS.md`, leave its body and its PRD section exactly where they are, and record one line in `## Decisions Log` naming what is being asked and of whom. Do NOT list them in `blocking_tasks` or `deferred_tasks`. Do NOT attempt them — an attempt that cannot succeed is not a fix round and must not count toward rule 1. The auto loop pauses the run on the next iteration when it sees a `[!]`, which is the correct headless outcome: nobody is watching, so the question has to reach a person before anything else happens. Then classify whatever remains under the rules below.
 
-1. **If fix round >= 2**: Choose `defer_and_proceed` for ALL remaining follow-ups. After 2 rounds of fixing, remaining issues are not worth another cycle. Defer everything still classified blocking. Never sweep a human-gated `[!]` — it stays `[!]`.
+1. **If fix round >= 2**: Choose `defer_and_proceed` and **settle the milestone**. The count is per milestone per run and starts at zero each time — a run beginning after the user has answered decisions or reopened work carries a fresh mandate.
+
+   Settling means **no task in the milestone is left `[ ]`, `[>]` or `[x]`**. Every one reads `[v]`, `[-]` or `[!]` before the milestone is left. This is what stops follow-ups accumulating: without it each milestone leaks its unfinished tail into a backlog that grows for the life of the feature. In one batch:
+   - `[ ]` still classified blocking → `[-]`, with a `## Decisions Log` line saying it was **bounded, not judged unimportant**.
+   - `[x]` that verification would not promote → `[!]`, naming what verification objected to. It is a question for the user, not a leftover that reads as done.
+   - human-gated → already `[!]`; leave it.
+
+   Never sweep a human-gated `[!]`. Both `[-]` and `[!]` are reversible by the user, which is what makes settling safe; a `[ ]` left behind is not, because it looks like scheduled work and is nobody's decision.
 
 2. **If ALL follow-ups are deferrable**: Choose `defer_and_proceed`. Move them to NOTES.md and let the milestone stay complete.
 
