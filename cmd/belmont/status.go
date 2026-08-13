@@ -179,7 +179,8 @@ func buildStatus(root string, maxName int, feature string) (statusReport, error)
 	}
 
 	// Feature listing mode (default)
-	features := listFeaturesWithOverrides(featuresDir, maxName, worktreeOverrides)
+	listLiveFeature, listPerMilestoneLive := loadAutoWorktreeStateByMilestone(root)
+	features := listFeaturesWithOverrides(featuresDir, maxName, worktreeOverrides, listLiveFeature, listPerMilestoneLive)
 	if features == nil {
 		features = []featureSummary{}
 	}
