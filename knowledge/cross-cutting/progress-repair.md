@@ -56,6 +56,14 @@ The rest follows from that:
   `idx..taskBodyEnd(lines, idx)` — the same extent that anchors an insertion past
   the destination task's own body, and the same one `mergeProgressState` uses.
   One definition of where a task ends.
+- **A blank line does not end a task's body.** A task written as a loose list
+  keeps its `**Evidence**` behind a blank line, and stopping there strands
+  exactly the prose #33 is about — same bug, one blank line away from the
+  fixture that reported it. `taskBodyEnd` continues past a blank while the next
+  non-blank line is still deeper-indented, but a blank never extends the block
+  on its own, so a task at the end of a milestone does not swallow the separator
+  before the next heading. Both directions are mutation-pinned; the mirror
+  failure deletes a blank line from the document on every move.
 - **…and the body is bounded by the task's OWN indent, not by column zero.** A
   task line can itself be indented — a nested bullet is a real task that
   `parseMilestones` returns and `collectRepairFindings` will flag. Ending the
@@ -271,6 +279,12 @@ and proves nothing in either direction.
   the "where does a misplaced task go" ruling was written into all three paths
   that reach it (issue #34). Both regressions are mutation-tested: reverting the
   extent to the bullet alone fails three named tests.
+- 2026-08-13 — `taskBodyEnd` spans a blank line inside a task body. Without it
+  #33 still fired on a loose-list task: the tail after the blank stranded under
+  the preceding task, which is the reported bug one blank line away from the
+  reported fixture. A blank still never extends the block on its own. Deferred
+  work filed rather than left as prose: #38 (the two merge readers) and #39 (two
+  disagreeing milestone-from-ID matchers).
 - 2026-08-12 — adversarial review of the above found that the block extent was
   bounded by column zero rather than by the task's own indent, so moving a
   NESTED bullet dragged its unflagged siblings and its parent's evidence into

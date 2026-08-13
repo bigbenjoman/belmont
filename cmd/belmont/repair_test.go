@@ -593,6 +593,84 @@ func TestRepairMoveOfANestedBulletLeavesItsSiblingsAlone(t *testing.T) {
 	}
 }
 
+// A task written as a loose list keeps its evidence behind a blank line. The
+// block has to span it, or #33 fires on that shape: the tail stays behind and
+// re-attaches to the task now above it, while the moved task arrives with half
+// its proof. Same bug, one blank line away from the fixture that reported it.
+//
+// The mirror matters as much: a blank line must not extend the block on its
+// own, or a task at the end of a milestone swallows the separator before the
+// next heading and the move deletes a blank line from the document.
+func TestRepairMoveSpansABlankLineInsideATaskBody(t *testing.T) {
+	doc := "### M1: First\n" +
+		"- [v] P0-M1-1: anchor.\n" +
+		"\n" +
+		"### M2: Second\n" +
+		"- [v] P0-M2-1: a single-line task.\n" +
+		"- [v] P0-M1-2: filed under M2, id names M1.\n" +
+		"  **Verification**: first body line.\n" +
+		"\n" +
+		"  **Evidence**: after a blank line.\n" +
+		"\n" +
+		"## Session History\n"
+
+	findings := collectRepairFindings(doc)
+	plans, rejected := validateRepairPlans(doc, findings, []repairAction{
+		{Line: 6, TaskID: "P0-M1-2", Action: repairMoveMilestone, Milestone: "M1", Reason: "id names M1"},
+	})
+	if len(rejected) != 0 {
+		t.Fatalf("unexpected refusal: %+v", rejected)
+	}
+	got, _, warnings := applyRepairPlans(doc, plans, "2026-08-13")
+	if len(warnings) != 0 {
+		t.Fatalf("warnings: %v", warnings)
+	}
+
+	want := "- [v] P0-M1-2: filed under M2, id names M1.\n" +
+		"  **Verification**: first body line.\n" +
+		"\n" +
+		"  **Evidence**: after a blank line."
+	if !strings.Contains(got, want) {
+		t.Fatalf("the block did not span the blank line:\n%s", got)
+	}
+	if strings.Index(got, want) > strings.Index(got, "### M2: Second") {
+		t.Errorf("the block landed in M2:\n%s", got)
+	}
+	// The single-line task must not inherit the tail.
+	m2 := got[strings.Index(got, "### M2: Second"):]
+	if strings.Contains(m2, "**Evidence**") || strings.Contains(m2, "**Verification**") {
+		t.Errorf("body prose stranded in M2:\n%s", got)
+	}
+	// …and the trailing blank stayed behind in M2 rather than travelling as
+	// part of the block: the separator before the section break survives.
+	if !strings.Contains(got, "a single-line task.\n\n## Session History") {
+		t.Errorf("the blank line before the section break was eaten:\n%s", got)
+	}
+	// The block itself ends at the evidence line, not at the blank after it.
+	if !strings.Contains(got, "**Evidence**: after a blank line.\n\n### M2: Second") {
+		t.Errorf("the block boundary is wrong at the destination:\n%s", got)
+	}
+}
+
+// The mirror of the above, on the anchor side: a trailing blank must not be
+// pulled into the block of the milestone's last task.
+func TestTaskBodyEndDoesNotSwallowTheTrailingBlank(t *testing.T) {
+	lines := []string{
+		"### M1: First",
+		"- [x] P0-M1-1: task",
+		"  body line",
+		"",
+		"### M2: Second",
+	}
+	if got := taskBodyEnd(lines, 1); got != 2 {
+		t.Errorf("taskBodyEnd = %d, want 2 (the body line, not the blank)", got)
+	}
+	// No body at all: the task is its own block.
+	if got := taskBodyEnd([]string{"- [x] a", "", "- [x] b"}, 0); got != 0 {
+		t.Errorf("taskBodyEnd = %d, want 0", got)
+	}
+}
+
 // The refusal warning must not claim a line stayed put when it travelled with
 // the block enclosing it. A false report about a moved task is the same class of
 // defect as the move that prompted this whole change.
