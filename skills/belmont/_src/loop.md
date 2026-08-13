@@ -164,7 +164,9 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
   re-reads the same file. When you stop for that reason, or for any other,
   report the queue with `belmont blockers --feature <feature> --summary`
   (drop --summary when the user needs the full question) and say plainly
-  that the feature cannot finish until those are answered.
+  that the feature cannot finish until those are answered. A feature
+  holding a `[!]` is INCOMPLETE, never complete — the same rule as `[x]`
+  in this step, for the same reason: the work is not settled.
   COUNTED STOP CONDITIONS — track these across iterations; when one fires,
   stop and report rather than scheduling another iteration:
     a. Three consecutive phase failures (any mix of implement/verify/next).
