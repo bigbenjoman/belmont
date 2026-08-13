@@ -172,32 +172,47 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      criteria. Do NOT re-run Lighthouse. Do NOT re-check visual specs unless
      a FWLUP addressed UI. Do NOT create new Polish-level issues."
      Return to step 3 to triage whatever that re-verify surfaced.
-  5. Check whether work remains: run `belmont status --feature <feature>`.
-     Do NOT use --format json here — it is ~3x larger and grows with task
-     count. Only fall back to /belmont:status <feature> if the CLI is
-     unavailable: that skill must load ~6KB of its own instructions before
-     it even shells out to the same command, and this step runs once per
-     milestone. STOP only when every milestone is verified — the "Next
-     Milestone" line reads None AND status prints no done-but-unverified
-     warning ("Next Milestone: None" alone is not enough, because [x]
-     counts as done) — or when status still reports tasks
-     done-but-unverified after a re-verify pass has already run this
-     session (some tasks legitimately stay [x] when verification found
-     issues). A feature reading "Complete" with unverified tasks is NOT
-     finished — status warns about it and names `belmont reverify`.
-     THERE IS NO SUCCESSFUL RUN THAT LEAVES AN [x]. Every milestone is
-     verified (step 2 has no skip), so the only way a task stays [x] is
-     that verification found issues, errored, or never recorded its flips.
-     All three are failures. Never report a feature complete over one.
-     Report INCOMPLETE — not complete — and stop, if either holds:
-       - any task remains [x]. Name those tasks and say they need
-         investigation, not just a `belmont reverify` re-run.
-       - the step-3 CIRCUIT BREAKER fired this session. It defers
-         everything still classified blocking, so its deferrals may include
-         real issues. Name them — they are `[-]` in PROGRESS.md, listed in
+  5. Decide whether to continue, then record what the verdict will need.
+     Run `belmont status --feature <feature>`. Do NOT use --format json — it
+     is ~3x larger and grows with task count. Only fall back to
+     /belmont:status <feature> if the CLI is unavailable: that skill loads
+     ~6KB of its own instructions before shelling out to the same command,
+     and this step runs once per milestone.
+     CONTINUE to the next milestone unless a STOP condition below fires.
+     Neither a task still at [x] nor a fired circuit breaker is a stop.
+     Both BOUND A MILESTONE, not the run. Halting the whole feature because
+     one milestone hit its bound strands every milestone that had nothing
+     to do with it — which is exactly the mistake the blocked-task rule
+     below exists to prevent, and the two rules must not contradict each
+     other. They are verdict inputs, not stop triggers.
+     STOP when any of these holds:
+       - every milestone is verified — the "Next Milestone" line reads None
+         AND status prints no done-but-unverified warning ("Next Milestone:
+         None" alone is not enough, because [x] counts as done);
+       - every remaining pending task in the feature is [!] (see the
+         blocked-task rule below);
+       - a COUNTED STOP CONDITION (a-d) fires.
+     RECORD each iteration, for the final report: any task left at [x], and
+     whether the step-3 circuit breaker fired for that milestone. Both go in
+     {base}/NOTES.md under `## Loop decisions` — you will have compacted by
+     the time you need them.
+     THE VERDICT, when you stop. Report COMPLETE only if every milestone is
+     verified, no task is at [x], the circuit breaker never fired, and no
+     [!] remains. Otherwise report INCOMPLETE and say which of these holds:
+       - Tasks still at [x]. THERE IS NO SUCCESSFUL RUN THAT LEAVES ONE:
+         step 2 has no skip, so a task stays [x] only because verification
+         found issues, errored, or never recorded its flips — all failures.
+         Name them and say they need investigation, not just a
+         `belmont reverify` re-run. (A feature reading "Complete" with
+         unverified tasks is NOT finished; status warns and names reverify.)
+       - Milestones the circuit breaker bounded. It defers everything still
+         classified blocking, so its deferrals may include real defects.
+         Name them — they are [-] in PROGRESS.md, listed in
          `## Decisions Log`, with detail in NOTES.md `## Polish` — and name
-         /belmont:debug-manual <feature> as the next step.
-     Otherwise continue to the next milestone.
+         /belmont:debug-manual <feature> as the next step, NOT
+         `belmont reverify`: these are open defects, not unrecorded
+         verifications.
+       - [!] tasks outstanding — report them per the blocked-task rule.
   BLOCKED TASKS DO NOT STOP THE LOOP. A `[!]` is a question queued for a
   person; it is not a failure, not a stall, and not a reason to abandon
   work that has nothing to do with it. A milestone holding one can never
@@ -217,8 +232,9 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
   report the queue with `belmont blockers --feature <feature> --summary`
   (drop --summary when the user needs the full question) and say plainly
   that the feature cannot finish until those are answered. A feature
-  holding a `[!]` is INCOMPLETE, never complete — the same rule as `[x]`
-  in this step, for the same reason: the work is not settled.
+  holding a `[!]` is INCOMPLETE, never complete — same as a remaining `[x]`
+  or a bounded milestone, and for the same reason: the work is not settled.
+  Like those two, it is a verdict input, not a reason to halt early.
   COUNTED STOP CONDITIONS — track these across iterations; when one fires,
   stop and report rather than scheduling another iteration:
     a. Three consecutive phase failures (any mix of implement/verify/next).
@@ -254,14 +270,15 @@ When delegating, you are invoking the `/loop` skill — follow its self-pacing g
 
 Every stop condition lives **inside** the fenced recipe above, deliberately: the recipe is the only text guaranteed to travel with the delegated `/loop` task and survive compaction. Stop-condition prose that sits only out here can be summarised away mid-run, which is precisely when a stall guard is needed. This section restates them for a reader; the fence is the copy that runs. Do not move any of them out here, and if you add one, add it to the fence.
 
+**Stopping and the verdict are different questions, and step 5 keeps them apart.** Three things bound a *milestone* without ending the *run* — a task left at `[x]`, a fired circuit breaker, and a `[!]` — and all three make the final verdict INCOMPLETE. None of them halts the loop. Ending the whole feature because one milestone hit its bound strands every milestone that had nothing to do with it, which is the failure this skill's blocked-task rule exists to prevent; a stop rule that did it for the breaker instead would just reintroduce it under another name.
+
 The loop stops — no further iteration — when any of these holds. Each is stated in the recipe:
 
-- The status check in step 5 shows every milestone verified — **the only success case**. There is no successful run that leaves an `[x]`: step 2 never skips verification, so a task at `[x]` means verification found issues, errored, or lost its flips.
-- The status check in step 5 shows any remaining `[x]`, or the step-3 circuit breaker fired this session — report **INCOMPLETE**, name those tasks, and say they need investigation rather than a plain `belmont reverify`.
-- Every remaining pending task in the feature is `[!]` — the decision queue is all that is left. A single `[!]`, or a whole blocked milestone, is **not** a stop: step 0 selects past it. Belmont has no way for an agent to answer a human-gated `[!]`, and stopping the whole feature at the first one strands every milestone that did not depend on it.
+- Every milestone is verified. Combined with no `[x]`, no breaker and no `[!]`, this is **the only COMPLETE verdict**.
+- Every remaining pending task in the feature is `[!]` — the decision queue is all that is left, and no agent action can change the file. A single `[!]`, or one whole blocked milestone, is **not** a stop: step 0 selects past it.
 - Any of the counted conditions (a) three consecutive phase failures, (b) the same milestone failing verification twice, (c) no state change across two iterations, or (d) the user steers you to stop, change features, or do other work.
 
-On stop, report: the feature, which milestones completed this run, the final status, and — if `belmont status` warned about done-but-unverified tasks — say so explicitly and name `belmont reverify --feature <feature>` as the recovery. If any `[!]` tasks exist, report them with `belmont blockers --feature <feature> --summary`: they are the work the user has to do before the feature can finish, and a count buried in a status dump is not a handover.
+On stop, report: the feature, which milestones completed this run, the verdict, and each reason it is INCOMPLETE if it is. Name tasks left at `[x]` and say they need investigation rather than a plain `belmont reverify`. Name milestones the breaker bounded, with `/belmont:debug-manual <feature>` as their next step — its deferrals are open defects, not unrecorded verifications. And if any `[!]` exist, report them with `belmont blockers --feature <feature> --summary`: they are the work the user has to do before the feature can finish, and a count buried in a status dump is not a handover.
 
 ## Scope rules
 
