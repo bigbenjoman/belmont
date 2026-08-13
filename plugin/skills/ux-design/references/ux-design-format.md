@@ -125,10 +125,14 @@ section **renders** the flows the PRD already fixed; it does not re-elicit them.
 
 ## Master UX_DESIGN.md Format
 
-Write `.belmont/UX_DESIGN.md` **only on the first feature of a project for which you derive a
-contract**, and only then. It is rung 0 of the derivation ladder. It carries **two subsections
-and nothing else** — the ones that must be identical across every feature, or feature 1 and
-feature 4 mint competing scales with nothing to reconcile them.
+`.belmont/UX_DESIGN.md` is rung 0 of the derivation ladder, and it is a **living document** in the
+same sense as `.belmont/PRD.md` and `.belmont/TECH_PLAN.md` — with one difference that governs
+everything below: **it is human-approved, and they are not.** It is created on the first feature of
+a project for which you derive a contract; thereafter every feature reads it, may propose additions
+to it, and may never silently change it.
+
+It carries **five subsections and nothing else** — the ones that must be identical across every
+feature, or feature 1 and feature 4 mint competing systems with nothing to reconcile them:
 
 ```markdown
 # UX Design: [Product Name] (cross-cutting)
@@ -142,9 +146,56 @@ feature 4 mint competing scales with nothing to reconcile them.
 
 ### Accessibility Floor
 [as above]
+
+### Interaction & Form Conventions
+[Product-wide behaviour, not per-feature states. Validation timing (on blur / on submit /
+live), where an error sits relative to its field, how required and optional are marked, the
+destructive-action pattern (confirm / undo window / type-to-confirm), keyboard and focus
+conventions, and how a dismissible surface is dismissed. These are habits a user arrives
+with: a product that validates one way in booking and another in billing has taught them
+nothing.]
+
+### Microcopy Rules (voice)
+[The product's voice, not this feature's strings. Tone, the apology policy, button-label
+grammar, banned status words, date/currency/number conventions, locale. A feature's own
+Microcopy Rules refine these for its surfaces; they never contradict them.]
+
+### Motion Contract (bands & easing)
+[The vocabulary only: duration bands, easing curves, reduced-motion policy. WHICH surfaces
+animate is per-feature and stays in the feature file, as does `**Applies**`.]
+
+### Proposed Extensions
+[Additions a feature proposed that NO HUMAN HAS ACCEPTED YET — see below. Each names the
+proposing feature, the date, and what the existing system could not carry. Empty is fine —
+say "None". A feature reading this file treats these as proposals, never as law.]
 ```
 
 No `**Mode**` line — mode is per-feature. No flows, no screens, no State Inventory, no artifacts.
 A feature that inherits from it sets `**Source**: master UX_DESIGN` and repeats the inherited
 values inline, so a feature file is readable on its own and the verification agent's
 anti-circularity rule — keyed on `**Source**` — stays armed.
+
+### Extending the master: propose, never extend silently
+
+When a feature genuinely needs something the master lacks — a new elevation level, a form
+convention nothing had settled, a motion band with no home — design the addition as a
+**system-consistent extension**, write it to `### Proposed Extensions` naming the proposing
+feature, the date and what the existing system could not carry, and say so in the hand-off.
+
+It is inherited as a *proposal* and becomes law only when a human accepts it, by moving it into
+the relevant subsection during an explicit run against the master. Never write it straight into an
+approved subsection, and never edit or delete an existing entry: those change a document somebody
+signed, and they need the approval gate in that session.
+
+The test is genuine absence, not inconvenience. If the master settles the question and you dislike
+the answer, that is a deviation, not an extension.
+
+### Deviating from the master: allowed, recorded, never silent
+
+A feature may depart from something the master settles — with the context difference and the gain
+that justify it stated in its own contract beside the inherited value, listed under
+`## Open Design Questions`, and surfaced to the user in the hand-off. The master is left unchanged:
+one feature's exception is not a new product-wide rule.
+
+Silence is the only forbidden option. An undeclared deviation is indistinguishable from an agent
+that never read the master, which is precisely what rung 0 exists to prevent.
