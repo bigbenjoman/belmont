@@ -368,10 +368,15 @@ func executeTriageAction(cfg loopConfig, steeringPrefix string) executionResult 
 	tmpl, tmplErr := loadPromptTemplate("post-verify-triage")
 	var prompt string
 	if tmplErr != nil {
-		// Fallback inline prompt
+		// Fallback inline prompt. Must stay in step with
+		// prompts/belmont/post-verify-triage.md — it stands in for that
+		// template, so a divergence here is a second, quieter triage policy.
 		prompt = fmt.Sprintf(`You are a triage agent. Read %s/PROGRESS.md to find incomplete tasks (marked [ ] or [>]).
-Classify each as blocking (real bug) or deferrable (polish).
-If all are deferrable, move them to %s/NOTES.md under ## Polish and remove from PROGRESS.md.
+Classify each into exactly one of three classes, checking human-gated FIRST:
+- Human-gated: no agent can close it, because the missing thing is a PERSON — an approval, a product or architecture ruling, a credential or console action nobody automated. Mark it [!] in PROGRESS.md, leave its body and its PRD section where they are, record the ask in ## Decisions Log, and do NOT list it in blocking_tasks or deferred_tasks. Never attempt it: an attempt that cannot succeed is not a fix round.
+- Blocking: a real bug, failing test, security issue, or unmet acceptance criterion an agent can actually fix.
+- Deferrable: polish.
+If every remaining follow-up is deferrable, mark each one [-] withdrawn in PROGRESS.md — do NOT delete the line; a deleted task is carried back in by mergeProgressState from either direction and records no reason — add one ## Decisions Log line each, and move the detail to %s/NOTES.md under ## Polish.
 Output JSON: {"decision":"defer_and_proceed|fix_and_proceed|fix_and_reverify","blocking_tasks":[],"deferred_tasks":[],"reason":"...","reverify_scope":"focused"}`, featureBase, featureBase)
 	} else {
 		var buf bytes.Buffer
@@ -510,7 +515,7 @@ func buildLoopPrompt(action loopAction, feature string) string {
 		if action.MilestoneID != "" {
 			milestoneClause = action.MilestoneID
 		}
-		return fmt.Sprintf("/belmont:next --feature %s\n\nBATCH MODE: Implement ALL pending FWLUP tasks in %s sequentially. For each task: find it, create MILESTONE file, dispatch to implementation agent, process results, archive MILESTONE, then loop to the next pending FWLUP. Stop when no FWLUP tasks remain in %s.\n\nARCHIVE CAVEAT: your own Step 5 says to OVERWRITE the archived MILESTONE done-file when one of that name already exists. That rule assumes one task per invocation; in BATCH MODE it would destroy every implementation log but the last. APPEND each task's log to that file instead.\n\nIMPORTANT: Only work on FWLUP tasks (tasks with \"FWLUP\" in their ID) that belong to %s. If there are NO pending FWLUP tasks in %s, stop immediately and report \"No FWLUP tasks to fix.\" Do NOT implement regular tasks — those require the full implementation pipeline.", feature, milestoneClause, milestoneClause, milestoneClause, milestoneClause)
+		return fmt.Sprintf("/belmont:next --feature %s\n\nBATCH MODE: Implement ALL pending FWLUP tasks in %s sequentially. For each task: find it, create MILESTONE file, dispatch to implementation agent, process results, archive MILESTONE, then loop to the next pending FWLUP. Stop when no FWLUP tasks remain in %s.\n\nARCHIVE: Step 5 appends to the milestone's done-file rather than overwriting it, which is what keeps every task's implementation log in a batch. Follow it as written.\n\nIMPORTANT: Only work on FWLUP tasks (tasks with \"FWLUP\" in their ID) that belong to %s. If there are NO pending FWLUP tasks in %s, stop immediately and report \"No FWLUP tasks to fix.\" Do NOT implement regular tasks — those require the full implementation pipeline.", feature, milestoneClause, milestoneClause, milestoneClause, milestoneClause)
 	case actionTriage:
 		// Triage uses its own prompt template — handled in executeLoopAction
 		return ""

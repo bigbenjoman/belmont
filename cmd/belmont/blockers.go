@@ -71,6 +71,8 @@ type blockerEntry struct {
 	Path     string   `json:"path"`
 	Line     int      `json:"line"`
 	LiveFrom string   `json:"live_from,omitempty"`
+	Archived bool     `json:"archived,omitempty"`
+	Marker   string   `json:"marker,omitempty"`
 	Detail   []string `json:"detail,omitempty"`
 }
 
@@ -85,6 +87,13 @@ type blockersReport struct {
 	// surfaced, never dropped. Without this, a queue of one orphaned blocker
 	// made this command print an affirmative "nothing is waiting on you".
 	Unplaced []blockerEntry `json:"unplaced,omitempty"`
+	// Unknown holds task lines whose marker Belmont cannot read. A `[!]` that
+	// got corrupted to `[?]` is still a question waiting on a person, but it
+	// parses as `taskUnknown` and matches no filter here. Everywhere else in
+	// Belmont an unreadable marker is loud — `status` counts it, `validate`
+	// exits 1, `repair` flags it — and this reader must not be the one place
+	// it goes quiet, for the same reason Unplaced exists.
+	Unknown []blockerEntry `json:"unknown,omitempty"`
 	// Skipped names features whose PROGRESS.md could not be read at all, so
 	// their absence from the queue is stated rather than silent.
 	Skipped []string `json:"skipped,omitempty"`
@@ -204,17 +213,30 @@ func buildBlockers(root, feature string) (blockersReport, error) {
 		src, content, err := newProgressSource(root, baseDir, baseLive)
 		if err != nil && baseDir != masterDir {
 			// A half-cleaned worktree must not take master's blockers down
-			// with it. Fall back rather than drop the whole feature.
+			// with it. Fall back rather than drop the whole feature — and move
+			// baseDir with it, or the PRD.md read below still points at the
+			// dead worktree and the feature renders as its bare slug.
 			src, content, err = newProgressSource(root, masterDir, "")
+			baseDir, baseLive = masterDir, ""
 		}
 		if err != nil {
 			report.Skipped = append(report.Skipped, slug)
 			continue
 		}
 
+		// An archived feature (PRD.md removed by /belmont:cleanup, ARCHIVE.md
+		// left behind) keeps whatever `[!]` it held. Those are not live
+		// questions, but dropping them silently is the same failure as
+		// dropping an orphan, so they are labelled rather than hidden.
+		archived := fileExists(filepath.Join(baseDir, "ARCHIVE.md")) &&
+			!fileExists(filepath.Join(baseDir, "PRD.md"))
 		name := slug
 		if prd, prdErr := os.ReadFile(filepath.Join(baseDir, "PRD.md")); prdErr == nil {
 			if extracted := extractFeatureName(string(prd)); extracted != "Unknown" {
+				name = extracted
+			}
+		} else if arch, archErr := os.ReadFile(filepath.Join(baseDir, "ARCHIVE.md")); archErr == nil {
+			if extracted := extractArchiveName(string(arch)); extracted != "" {
 				name = extracted
 			}
 		}
@@ -245,10 +267,10 @@ func buildBlockers(root, feature string) (blockersReport, error) {
 				use = s
 			}
 			for _, t := range m.Tasks {
-				if t.Status != taskBlocked {
+				if t.Status != taskBlocked && t.Status != taskUnknown {
 					continue
 				}
-				report.Blockers = append(report.Blockers, blockerEntry{
+				e := blockerEntry{
 					Feature:       slug,
 					FeatureName:   name,
 					Milestone:     m.ID,
@@ -258,8 +280,15 @@ func buildBlockers(root, feature string) (blockersReport, error) {
 					Path:          use.path,
 					Line:          t.Line,
 					LiveFrom:      use.liveFrom,
+					Archived:      archived,
 					Detail:        taskDetail(use.lines, t.Line),
-				})
+				}
+				if t.Status == taskUnknown {
+					e.Marker = t.Marker
+					report.Unknown = append(report.Unknown, e)
+				} else {
+					report.Blockers = append(report.Blockers, e)
+				}
 				seen[slug] = true
 			}
 		}
@@ -267,10 +296,11 @@ func buildBlockers(root, feature string) (blockersReport, error) {
 		// Orphans come from the base file only: a task line outside every
 		// milestone belongs to no worktree's milestone block.
 		for _, t := range orphanedTaskLines(content) {
-			if status, _ := canonicalMarker(t.Marker); status != taskBlocked {
+			status, _ := canonicalMarker(t.Marker)
+			if status != taskBlocked && status != taskUnknown {
 				continue
 			}
-			report.Unplaced = append(report.Unplaced, blockerEntry{
+			e := blockerEntry{
 				Feature:     slug,
 				FeatureName: name,
 				TaskID:      t.ID,
@@ -278,12 +308,19 @@ func buildBlockers(root, feature string) (blockersReport, error) {
 				Path:        src.path,
 				Line:        t.Line,
 				LiveFrom:    src.liveFrom,
+				Archived:    archived,
 				Detail:      taskDetail(src.lines, t.Line),
-			})
+			}
+			if status == taskUnknown {
+				e.Marker = t.Marker
+				report.Unknown = append(report.Unknown, e)
+			} else {
+				report.Unplaced = append(report.Unplaced, e)
+			}
 			seen[slug] = true
 		}
 	}
-	report.Count = len(report.Blockers) + len(report.Unplaced)
+	report.Count = len(report.Blockers) + len(report.Unplaced) + len(report.Unknown)
 	report.Features = len(seen)
 	return report, nil
 }
@@ -386,7 +423,11 @@ func renderBlockers(report blockersReport, color, summary bool) string {
 			if lastFeature != "" {
 				sb.WriteString("\n")
 			}
-			sb.WriteString(bold(b.FeatureName) + dim(" ("+b.Feature+")") + "\n")
+			suffix := " (" + b.Feature + ")"
+			if b.Archived {
+				suffix += " — archived"
+			}
+			sb.WriteString(bold(b.FeatureName) + dim(suffix) + "\n")
 			lastFeature, lastMilestone = b.Feature, ""
 		}
 		if b.Milestone != lastMilestone {
@@ -409,11 +450,32 @@ func renderBlockers(report blockersReport, color, summary bool) string {
 		}
 	}
 
-	live := false
-	for _, b := range append(append([]blockerEntry{}, report.Blockers...), report.Unplaced...) {
+	if len(report.Unknown) > 0 {
+		sb.WriteString("\n")
+		sb.WriteString(bold("Unreadable markers") + "\n")
+		sb.WriteString(dim("  Belmont cannot tell what these are. A corrupted [!] is still a question\n"))
+		sb.WriteString(dim("  waiting on someone. Run `belmont validate` — it exits 1 on these — and\n"))
+		sb.WriteString(dim("  `belmont repair` can settle them against the commit log.\n"))
+		for _, b := range report.Unknown {
+			sb.WriteString("  " + b.FeatureName + dim(" ("+b.Feature+")") + "\n")
+			writeBlocker(b, "    ")
+		}
+	}
+
+	// The worktree warning is per-path, not per-report. In a
+	// single-feature-parallel run one milestone's blocker can live in a
+	// worktree while another's is still in master, and the advice inverts
+	// between them: editing master is wrong for the first (overwritten on
+	// merge) and exactly right for the second (there is no worktree file, and
+	// the next wave reads master). One blanket sentence sends half the readers
+	// to a file that does not exist.
+	var anyLive, anyMaster bool
+	all := append(append(append([]blockerEntry{}, report.Blockers...), report.Unplaced...), report.Unknown...)
+	for _, b := range all {
 		if b.LiveFrom != "" {
-			live = true
-			break
+			anyLive = true
+		} else {
+			anyMaster = true
 		}
 	}
 
@@ -421,10 +483,14 @@ func renderBlockers(report blockersReport, color, summary bool) string {
 	sb.WriteString(dim("A blocked task never clears itself. Answer the question, then flip the\n"))
 	sb.WriteString(dim("marker to [ ] in the file named above — /belmont:next only ever picks up\n"))
 	sb.WriteString(dim("a [ ] task, so it cannot act on one while it is still [!].\n"))
-	if live {
-		sb.WriteString(dim("\nAn auto run is active: the paths above are inside its worktrees. Editing\n"))
-		sb.WriteString(dim("the master copy now is overwritten on merge — use `belmont steer`, or\n"))
-		sb.WriteString(dim("edit the worktree file.\n"))
+	if anyLive {
+		sb.WriteString(dim("\nAn auto run is active. For the paths above that are inside a worktree,\n"))
+		sb.WriteString(dim("edit there or use `belmont steer` — an edit to master is overwritten when\n"))
+		sb.WriteString(dim("that worktree merges.\n"))
+		if anyMaster {
+			sb.WriteString(dim("The paths under .belmont/features/ have no worktree yet: edit those\n"))
+			sb.WriteString(dim("directly, and the next wave picks the answer up.\n"))
+		}
 	}
 	writeBlockerSkipped(&sb, report, dim)
 	return sb.String()

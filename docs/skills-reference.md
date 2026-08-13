@@ -298,6 +298,8 @@ Milestones:
 
 Blocked Tasks:
   - P1-3: Figma design not accessible
+  Each needs a person, not an agent. Read them together with their
+  detail: belmont blockers --feature chat
 
 Recent Activity:
 ---

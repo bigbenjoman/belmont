@@ -73,7 +73,7 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      Read the actual follow-up descriptions in PROGRESS.md — do not just
      count them. Classify each into exactly one of THREE classes:
        - Human-gated — no agent can close it, at any effort, in any number
-         of rounds. It needs an approval ("apply needs Ben's approval"), a
+         of rounds. It needs an approval ("the apply needs sign-off"), a
          product or architecture ruling ("decide whether…", "rule on…"), a
          credential or console action nobody automated has ("rotate the
          passwords", "populate the roster", "wire it once the App exists"),
@@ -128,10 +128,9 @@ Start Claude Code's built-in **`/loop`** skill in **self-paced mode** (no fixed 
      continue to the next pending FWLUP. Stop when no `[ ]` FWLUP tasks
      remain in <M>. Only work on FWLUP tasks belonging to <M>;
      if there are none, stop immediately and report 'No FWLUP tasks to fix.'
-     ARCHIVE CAVEAT: your own Step 5 says to OVERWRITE
-     MILESTONE-<M>.done.md when it already exists. That rule assumes one
-     task per invocation; in batch mode it would destroy every log but the
-     last. APPEND each task's log to that file instead."
+     ARCHIVE: Step 5 appends to MILESTONE-<M>.done.md rather than
+     overwriting it, which is what keeps every task's log in a batch.
+     Follow it as written."
      Do NOT invoke /belmont:next once per task — each invocation reloads the
      whole skill, and that cost is why this loop runs out of session.
      Then re-verify FOCUSED: run /belmont:verify <feature> and append

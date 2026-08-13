@@ -74,12 +74,41 @@ Run the product-plan skill first to create your PRD interactively. The tech-plan
 
 ## Task marked as blocked
 
-Blocked tasks show as `[!]` in `.belmont/PROGRESS.md`. Common causes:
-- Figma URL not accessible
-- Missing context or dependencies
-- Build/test failures that can't be auto-resolved
+Blocked tasks show as `[!]` in `.belmont/PROGRESS.md`. Read the whole queue —
+across every feature, with each task's indented body, which is where the reason
+actually lives — with:
 
-Fix the underlying issue, change the task's checkbox from `[!]` back to `[ ]` in PROGRESS.md, and re-run implement.
+```bash
+belmont blockers                    # everything
+belmont blockers --feature auth     # one feature
+belmont blockers --summary          # one line each
+```
+
+`belmont status` lists each blocker's headline but never its body, and the
+multi-feature listing caps at three per feature before deferring here.
+
+Most `[!]` tasks are waiting on a **person**, and no agent will ever clear one:
+an approval, a product or architecture ruling, a credential or console action
+nobody automated, a spec change that belongs in `/belmont:tech-plan`. Those wait
+until you answer them.
+
+The rest have a condition you can check:
+- **Blocked on a later milestone** — the reason names `M<N+k>`; reopen as `[ ]`
+  once that milestone verifies.
+- **Raised over a merge** by the reconciliation agent — cleared when the other
+  side reads `[x]`/`[v]`.
+- **A genuine failure** an agent can fix — Figma URL not accessible, missing
+  context or dependencies, build/test failures that could not be auto-resolved.
+
+Whatever the cause: fix or answer it, change the checkbox from `[!]` back to
+`[ ]` in PROGRESS.md, then re-run implement or `/belmont:next`. Neither skill
+will pick the task up while it is still `[!]` — `nextTask` only ever returns a
+`[ ]` or `[>]` task.
+
+Note the two paths differ on purpose: `belmont auto` PAUSEs the whole run on the
+first `[!]` (nobody is watching a headless run, so the question has to reach
+you), while interactive `/belmont:loop` routes past it to the next milestone
+holding workable tasks and stops only when every remaining task is `[!]`.
 
 ## `belmont status` reports unrecognised markers, or `belmont validate` exits 1
 

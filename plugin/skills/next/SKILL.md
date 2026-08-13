@@ -90,7 +90,7 @@ If the invoking prompt contains "BATCH MODE" instructions, implement **ALL pendi
 
 1. After completing a task (Steps 1-5), loop back to Step 1 to find the next pending follow-up task
 2. Continue until no pending follow-up tasks remain in the milestone
-3. Archive each MILESTONE file individually after each task (Step 5)
+3. Archive each MILESTONE file individually after each task (Step 5) — which **appends** to the milestone's done-file, so every task's log survives the batch
 4. Report a combined summary at the end listing all tasks completed
 
 **Critical**: In batch mode, ONLY work on follow-up tasks (tasks added by verification). If Step 1 finds no pending follow-up tasks, stop immediately and report "No follow-up tasks to fix — batch mode complete." Do NOT pick up regular tasks. Regular tasks require the full `/belmont:implement` pipeline.
@@ -230,9 +230,11 @@ After the implementation agent completes:
 
 ## Step 5: Clean Up MILESTONE File
 
-Archive the MILESTONE file: `{base}/MILESTONE.md` → `{base}/MILESTONE-[MilestoneID].done.md` (e.g., `MILESTONE-M2.done.md`). Use the **milestone ID** (M1, M2, etc.), NOT the task ID. If a file with that name already exists (from a previous task in the same milestone), overwrite it.
+Archive the MILESTONE file: `{base}/MILESTONE.md` → `{base}/MILESTONE-[MilestoneID].done.md` (e.g., `MILESTONE-M2.done.md`). Use the **milestone ID** (M1, M2, etc.), NOT the task ID.
 
-This prevents stale context from bleeding into the next run.
+**If a file with that name already exists, APPEND to it — never overwrite.** The filename is keyed on the milestone, but this skill runs once per *task*, so a milestone with four follow-ups produces four logs under one name. Overwriting keeps only the last, and the other three are in no commit and nowhere else — the implementation log is the only record of what a sub-agent actually did. Separate each append with a `---` rule and a `## Task <task ID>` heading so the file stays readable.
+
+This still prevents stale context bleeding into the next run: what matters is that `MILESTONE.md` itself is cleared, not that the archive is short.
 
 ### Commit Planning File Changes
 

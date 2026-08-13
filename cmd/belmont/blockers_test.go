@@ -31,7 +31,7 @@ const blockerProgress = `# Progress
 
 - [v] P0-1: Done thing
 - [!] P0-2: Rotate the database passwords
-  Needs Ben — the credentials live in 1Password and no agent has access.
+  Needs an operator — the credentials live in a vault no agent can read.
   Second detail line.
 - [ ] P0-3: Not started
 
@@ -69,7 +69,7 @@ func TestBuildBlockersCollectsOnlyBlockedTasks(t *testing.T) {
 	if len(first.Detail) != 2 {
 		t.Fatalf("detail = %#v, want 2 lines", first.Detail)
 	}
-	if !strings.Contains(first.Detail[0], "1Password") {
+	if !strings.Contains(first.Detail[0], "vault") {
 		t.Errorf("detail[0] = %q, want the indented body", first.Detail[0])
 	}
 
@@ -94,6 +94,11 @@ func TestBuildBlockersIgnoresWithdrawnAndOtherMarkers(t *testing.T) {
 	report, err := buildBlockers(root, "")
 	if err != nil {
 		t.Fatalf("buildBlockers: %v", err)
+	}
+	// Without this the test passes on an empty report, which is exactly the
+	// bug it is meant to catch: a filter that drops everything leaks nothing.
+	if report.Count != 2 {
+		t.Fatalf("count = %d, want 2 — the fixture's two [!] tasks", report.Count)
 	}
 	for _, b := range report.Blockers {
 		if strings.Contains(b.Task, "Dropped") || strings.Contains(b.Task, "Not started") ||
@@ -168,7 +173,7 @@ func TestRenderBlockersEmptyAndFull(t *testing.T) {
 		"Alpha Feature (alpha)",
 		"M1: Foundation",
 		"P0-2: Rotate the database passwords",
-		"1Password",
+		"vault",
 		"PROGRESS.md:8",
 	} {
 		if !strings.Contains(full, want) {
@@ -177,7 +182,7 @@ func TestRenderBlockersEmptyAndFull(t *testing.T) {
 	}
 
 	sum := renderBlockers(report, false, true)
-	if strings.Contains(sum, "1Password") {
+	if strings.Contains(sum, "vault") {
 		t.Errorf("summary render should omit the body:\n%s", sum)
 	}
 	if !strings.Contains(sum, "P0-2: Rotate the database passwords") {
@@ -293,7 +298,7 @@ func TestBuildBlockersReadsEveryMilestoneWorktree(t *testing.T) {
 		{wt1, "### M1: One\n\n- [ ] P0-1: A\n\n### M2: Two\n\n- [ ] P0-2: B\n"},
 		// M2's worktree raised the blocker, with a body, at a different line
 		// number from master's copy.
-		{wt2, "# notes\n# notes\n\n### M1: One\n\n- [ ] P0-1: A\n\n### M2: Two\n\n- [!] P0-2: B\n  Needs Ben to approve the prod apply.\n"},
+		{wt2, "# notes\n# notes\n\n### M1: One\n\n- [ ] P0-1: A\n\n### M2: Two\n\n- [!] P0-2: B\n  Needs an operator to approve the production apply.\n"},
 	} {
 		dir := filepath.Join(w.path, ".belmont", "features", "auth")
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -323,7 +328,7 @@ func TestBuildBlockersReadsEveryMilestoneWorktree(t *testing.T) {
 	if b.LiveFrom == "" {
 		t.Error("LiveFrom should name the worktree the line lives in")
 	}
-	if !strings.Contains(strings.Join(b.Detail, " "), "approve the prod apply") {
+	if !strings.Contains(strings.Join(b.Detail, " "), "approve the production apply") {
 		t.Errorf("detail should come from the worktree copy: %#v", b.Detail)
 	}
 	if !strings.Contains(b.Path, "wt-m2") {
@@ -502,5 +507,123 @@ func TestStatusDetailViewNamesTheBlockersCommand(t *testing.T) {
 	out := renderStatus(report, false, false)
 	if !strings.Contains(out, "belmont blockers --feature alpha") {
 		t.Errorf("detail view should name the command with the slug:\n%s", out)
+	}
+}
+
+// --- Review round: unknown markers, archived features, per-path footer ----
+
+// An unreadable marker is loud everywhere else in Belmont — status counts it,
+// validate exits 1, repair flags it. This reader must not be the one place a
+// corrupted [!] goes quiet behind an affirmative all-clear.
+func TestBuildBlockersSurfacesUnknownMarkers(t *testing.T) {
+	root := t.TempDir()
+	writeBlockerFeature(t, root, "alpha", "# PRD: Alpha\n",
+		"### M1: One\n\n- [v] P0-1: Done\n- [?] P0-2: Was a blocker before the marker got mangled\n  Needs a ruling.\n")
+
+	report, err := buildBlockers(root, "alpha")
+	if err != nil {
+		t.Fatalf("buildBlockers: %v", err)
+	}
+	if len(report.Unknown) != 1 {
+		t.Fatalf("unknown = %+v, want the mangled task", report.Unknown)
+	}
+	if report.Unknown[0].Marker != "?" {
+		t.Errorf("marker = %q, want the raw character quoted back", report.Unknown[0].Marker)
+	}
+	if report.Count != 1 {
+		t.Errorf("count = %d, unknown markers must be counted", report.Count)
+	}
+	out := renderBlockers(report, false, false)
+	if strings.Contains(out, "Nothing is waiting on you") {
+		t.Errorf("must not print an all-clear over an unreadable marker:\n%s", out)
+	}
+	if !strings.Contains(out, "Unreadable markers") || !strings.Contains(out, "belmont validate") {
+		t.Errorf("unknown markers need their own block naming validate:\n%s", out)
+	}
+}
+
+// An archived feature's stale [!] is not a live question. Dropping it silently
+// is the same failure as dropping an orphan, so it is labelled instead.
+func TestBuildBlockersLabelsArchivedFeatures(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".belmont", "features", "old")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// /belmont:cleanup removes PRD.md and leaves ARCHIVE.md behind.
+	if err := os.WriteFile(filepath.Join(dir, "ARCHIVE.md"), []byte("# Archive: Legacy Feature\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "PROGRESS.md"),
+		[]byte("### M1: One\n\n- [!] P0-1: Never answered\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := buildBlockers(root, "old")
+	if err != nil {
+		t.Fatalf("buildBlockers: %v", err)
+	}
+	if report.Count != 1 {
+		t.Fatalf("archived blockers must still be reported, got %d", report.Count)
+	}
+	if !report.Blockers[0].Archived {
+		t.Error("entry should be flagged Archived")
+	}
+	if report.Blockers[0].FeatureName != "Legacy Feature" {
+		t.Errorf("name = %q, want the ARCHIVE.md header (PRD.md is gone)", report.Blockers[0].FeatureName)
+	}
+	if out := renderBlockers(report, false, false); !strings.Contains(out, "archived") {
+		t.Errorf("render should mark the feature archived:\n%s", out)
+	}
+}
+
+// The fallback must move baseDir with the content, or the PRD.md read still
+// points at the dead worktree and the feature renders as its bare slug.
+func TestBuildBlockersFallbackAlsoRecoversTheName(t *testing.T) {
+	root := t.TempDir()
+	writeBlockerFeature(t, root, "auth", "# PRD: Auth Service\n", "### M1: One\n\n- [!] P0-1: Blocked\n")
+	empty := filepath.Join(root, "..", "wt-dead")
+	if err := os.MkdirAll(filepath.Join(empty, ".belmont", "features", "auth"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeAutoJSON(t, root, `{"active":true,"mode":"multi-feature","worktrees":{"auth":{"path":"`+empty+`"}}}`)
+
+	report, err := buildBlockers(root, "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Count != 1 {
+		t.Fatalf("count = %d, want 1", report.Count)
+	}
+	if report.Blockers[0].FeatureName != "Auth Service" {
+		t.Errorf("name = %q, want Auth Service — the fallback must read PRD.md from master too",
+			report.Blockers[0].FeatureName)
+	}
+}
+
+// In a parallel run one blocker can be in a worktree and another in master.
+// The advice inverts between them, so one blanket sentence sends half the
+// readers to a file that does not exist.
+func TestRenderBlockersFooterScopesWorktreeAdvice(t *testing.T) {
+	mixed := blockersReport{
+		Count: 2, Features: 1,
+		Blockers: []blockerEntry{
+			{Feature: "a", FeatureName: "A", Milestone: "M1", TaskID: "P0-1", Task: "in worktree",
+				Path: "wt/PROGRESS.md", Line: 3, LiveFrom: "/wt/a"},
+			{Feature: "a", FeatureName: "A", Milestone: "M3", TaskID: "P0-2", Task: "in master",
+				Path: ".belmont/features/a/PROGRESS.md", Line: 9},
+		},
+	}
+	out := renderBlockers(mixed, false, false)
+	if !strings.Contains(out, "belmont steer") {
+		t.Errorf("worktree entries need the steer advice:\n%s", out)
+	}
+	if !strings.Contains(out, "have no worktree yet") {
+		t.Errorf("master entries need their own advice — editing them directly is correct:\n%s", out)
+	}
+
+	allMaster := blockersReport{Count: 1, Features: 1, Blockers: []blockerEntry{mixed.Blockers[1]}}
+	if out := renderBlockers(allMaster, false, false); strings.Contains(out, "auto run is active") {
+		t.Errorf("no worktree entries — must not claim a run is active:\n%s", out)
 	}
 }
