@@ -393,6 +393,10 @@ belmont auto --feature my-feature --allow-dirty
 belmont reverify --feature my-feature
 belmont reverify --feature my-feature --from M3 --to M10
 
+# Read the decision queue — every [!] task waiting on a person, with its detail
+belmont blockers
+belmont blockers --feature my-feature --summary
+
 # Sync master PROGRESS.md with actual feature states
 belmont sync
 

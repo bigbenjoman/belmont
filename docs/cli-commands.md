@@ -32,6 +32,10 @@ belmont repair --feature my-feature --dry-run          # Report findings + commi
 belmont repair --feature my-feature --mechanical-only  # Apply only what the commit log settles (no agent, no tokens)
 belmont repair --feature my-feature --yes # Apply reviewed proposals without prompting
 belmont repair --feature my-feature --apply-proposal fixes.json  # Validate + apply a proposal file
+belmont blockers                         # Every [!] task across every feature, with its detail
+belmont blockers --feature my-feature    # One feature's decision queue
+belmont blockers --summary               # One line per blocker, no task body
+belmont blockers --format json           # Machine-readable decision queue
 belmont sync                             # Sync master PROGRESS.md with feature states (explicit only, no longer auto-hooked)
 belmont recover                          # List preserved worktrees from failed merges
 belmont recover --list                   # Same as above
@@ -49,6 +53,40 @@ belmont version                         # Show version, commit, build date
 # Note: "belmont loop" still works as an alias for "belmont auto"
 # If a previous run was interrupted, auto detects stale branches and prompts to resume or restart
 ```
+
+## The decision queue: `belmont blockers`
+
+`[!]` is the one marker no agent can clear. It means the work is waiting on a
+person — an approval, a product ruling, a credential, a console action, a spec
+change that belongs to `/belmont:tech-plan`. Belmont has always protected it
+(`mergeProgressState` never ranks over `[!]` from either direction, and no skill
+may flip one), but protecting a signal is not the same as surfacing it.
+
+A long run banks them up. Each `[!]` task carries a paragraph explaining what is
+being asked and of whom, and until now the only place they appeared was the tail
+of `belmont status` — one truncated line each, interleaved with progress counts,
+spread across however many features are in flight. The person who has to answer
+them read them one line at a time, in the middle of a report about something
+else.
+
+`belmont blockers` prints them together, grouped by feature and milestone, with
+the indented body intact:
+
+```bash
+belmont blockers                          # every feature
+belmont blockers --feature auth           # one feature
+belmont blockers --summary                # one line each — the scannable view
+belmont blockers --format json            # machine-readable
+```
+
+It reports and never writes. Answering a blocker means editing the marker in
+PROGRESS.md yourself, or letting `/belmont:next` pick the task up once the input
+exists — a command that both raised a question and resolved it would be free to
+guess at the answer.
+
+`belmont status` names it: the `--feature` detail view lists every blocker and
+then points here, and the multi-feature listing prints the first three per
+feature before deferring to this command with an exact count of what it withheld.
 
 ## Repairing a PROGRESS.md that no longer parses
 
