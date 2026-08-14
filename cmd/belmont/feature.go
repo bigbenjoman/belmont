@@ -74,6 +74,33 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 			// the same overlay `belmont status --feature` and `belmont
 			// blockers` already use, so all three agree during a run.
 			milestones = overlayLiveMilestones(milestones, perMilestoneLive)
+			// Orphans cannot ride that overlay: a task line outside every
+			// milestone belongs to no milestone ID to be overlaid by, and lives
+			// in one specific document. Union across master and every live
+			// worktree, the way validateFeature does — counting master's alone
+			// made the listing disagree with `belmont validate` about the same
+			// set of files, while pointing the user at it.
+			msIDs := make([]string, 0, len(perMilestoneLive))
+			for id := range perMilestoneLive {
+				msIDs = append(msIDs, id)
+			}
+			sort.Strings(msIDs) // map order would vary the count between runs
+			seenOrphan := map[string]bool{}
+			if b, err := os.ReadFile(progressPath); err == nil {
+				for _, l := range orphanedTaskLines(string(b)) {
+					seenOrphan[l.ID+"\x00"+l.Name] = true
+				}
+			}
+			for _, id := range msIDs {
+				b, err := os.ReadFile(filepath.Join(perMilestoneLive[id], "PROGRESS.md"))
+				if err != nil {
+					continue
+				}
+				for _, l := range orphanedTaskLines(string(b)) {
+					seenOrphan[l.ID+"\x00"+l.Name] = true
+				}
+			}
+			orphaned = len(seenOrphan)
 		}
 
 		tasks := flattenTasks(milestones, maxName)

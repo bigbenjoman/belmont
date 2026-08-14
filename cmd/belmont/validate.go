@@ -213,19 +213,54 @@ func validateFeature(root, slug string) ([]validationViolation, error) {
 		}
 		sort.Strings(msIDs) // map order would vary the report between runs
 		for _, id := range msIDs {
-			if b, err := os.ReadFile(filepath.Join(perMilestoneLive[id], "PROGRESS.md")); err == nil {
-				docs = append(docs, string(b))
+			wtPath := filepath.Join(perMilestoneLive[id], "PROGRESS.md")
+			b, err := os.ReadFile(wtPath)
+			if err != nil {
+				// Say so rather than skip. This lint gates `belmont auto`, so a
+				// worktree whose PROGRESS.md cannot be read means the green it
+				// prints covers less than the user thinks — and the overlay above
+				// falls back to master for that milestone just as quietly.
+				fmt.Fprintf(os.Stderr,
+					"\033[33m⚠ %s: could not read %s (%v) — %s was linted against master's copy, not this worktree's\033[0m\n",
+					slug, wtPath, err, id)
+				continue
 			}
+			docs = append(docs, string(b))
 		}
 	}
 
 	v := detectViolations(slug, milestones)
 	// validationViolation is all-string, comparable, and carries no line number,
-	// so the same orphan seen in master and in a worktree's copy dedupes cleanly.
+	// so the same violation seen in master and in a worktree's copy dedupes
+	// cleanly.
 	seen := make(map[validationViolation]bool, len(v))
 	for _, x := range v {
 		seen[x] = true
 	}
+	// Milestone-structure violations are unioned across the same documents, not
+	// read off the overlay alone.
+	//
+	// The overlay cannot carry them: overlayLiveMilestones REPLACES a milestone
+	// master already has and never appends one it does not, so a `### M<n>:`
+	// block that exists only inside a worktree — a polish milestone an agent
+	// invented mid-run, or a second heading for an ID that already exists — was
+	// dropped before detectViolations ever saw it. Reading the representative
+	// worktree's whole file used to catch that by accident; overlaying stopped.
+	// Both rules are severityError, and a duplicate heading is precisely the
+	// case where runScopeGuard and runEvidenceCheck both decline, so this lint
+	// is the last check standing.
+	for _, doc := range docs[1:] {
+		for _, x := range detectViolations(slug, parseMilestones(doc)) {
+			if seen[x] {
+				continue
+			}
+			seen[x] = true
+			v = append(v, x)
+		}
+	}
+	// Orphan detection is document-level for the same reason it is unioned
+	// rather than overlaid: a task line outside every milestone lives in one
+	// specific file.
 	for _, doc := range docs {
 		for _, o := range detectOrphanViolations(slug, doc) {
 			if seen[o] {

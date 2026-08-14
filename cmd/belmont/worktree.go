@@ -501,14 +501,10 @@ func lineIndentWidth(line string) int {
 // that alternative is first in the alternation. See issue #38.
 func mergeProgressState(masterContent, worktreeContent string) (string, []string) {
 	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
-	// The trailing `:` is part of the definition, not decoration. `parseTaskID`
-	// keys on `<ID>:` — taking the shape without the delimiter left this reader
-	// still disagreeing with it, just differently: a bullet whose text merely
-	// BEGINS with an uppercase-initial hyphen-number token (`OAuth-2 migration`,
-	// `SHA-256 rollout`) was assigned that token as its identity, where
-	// parseTaskID reports no ID at all. Two such bullets on opposite sides then
-	// exchanged markers.
-	taskRe := regexp.MustCompile(`^(\s*-\s+)\[(.)\](\s+)(` + taskIDShape + `)(:.*)$`)
+	// Identity comes from mergeTaskLine — the one definition both merge readers
+	// share. It requires the `:` delimiter of the hand-written form only, which
+	// is what keeps `OAuth-2 migration` from carrying `OAuth-2` as its identity
+	// without stranding a colon-less `P<n>-` line. See its comment.
 
 	type masterTask struct {
 		marker    string
@@ -545,8 +541,8 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			if currentMS == "" {
 				continue
 			}
-			if tm := taskRe.FindStringSubmatch(line); len(tm) >= 6 {
-				n[tm[4]]++
+			if _, id, ok := mergeTaskLine(line); ok {
+				n[id]++
 			}
 		}
 		return n
@@ -607,14 +603,14 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			currentMS = ""
 			continue
 		}
-		if tm := taskRe.FindStringSubmatch(line); len(tm) >= 6 {
-			if dupIDs[tm[4]] || currentMS == "" || dupMS[currentMS] {
+		if marker, id, ok := mergeTaskLine(line); ok {
+			if dupIDs[id] || currentMS == "" || dupMS[currentMS] {
 				continue // orphans belong to no milestone; never carry them into one
 			}
-			if _, dup := masterTasks[tm[4]]; !dup {
-				masterOrder = append(masterOrder, tm[4])
+			if _, dup := masterTasks[id]; !dup {
+				masterOrder = append(masterOrder, id)
 			}
-			masterTasks[tm[4]] = masterTask{marker: tm[2], line: line, milestone: currentMS}
+			masterTasks[id] = masterTask{marker: marker, line: line, milestone: currentMS}
 		}
 	}
 	for id := range dupIDs {
@@ -657,15 +653,15 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			currentMS = ""
 			continue
 		}
-		tm := taskRe.FindStringSubmatch(line)
-		if len(tm) < 6 {
+		wtLineMarker, wtLineID, wtLineOK := mergeTaskLine(line)
+		if !wtLineOK {
 			continue
 		}
 		if currentMS == "" {
-			wtOrphanID[tm[4]] = true
+			wtOrphanID[wtLineID] = true
 			continue // outside every milestone: leave exactly as written
 		}
-		id := tm[4]
+		id := wtLineID
 		wtInRegionID[id] = true
 		if dupMS[currentMS] {
 			// Ambiguous heading: never rewrite a line whose milestone cannot be
@@ -678,7 +674,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			continue
 		}
 
-		wtMarker := tm[2]
+		wtMarker := wtLineMarker
 
 		// Recognition is checked BEFORE anything else, including the blocked
 		// rule. An unrecognised marker must never be rewritten — that is the
@@ -740,7 +736,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 					"task %s is [%s] here but withdrawn on main — the withdrawal wins, so this state was not merged; re-open the task deliberately if the work really did land",
 					id, wtMarker))
 			}
-			out[i] = tm[1] + "[" + mt.marker + "]" + tm[3] + tm[4] + tm[5]
+			out[i] = strings.Replace(line, "["+wtMarker+"]", "["+mt.marker+"]", 1)
 			continue
 		}
 		if wtState == taskBlocked {
@@ -761,11 +757,11 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 					"task %s is [%s] here but blocked on main — the blocker wins, so this state was not merged",
 					id, wtMarker))
 			}
-			out[i] = tm[1] + "[" + mt.marker + "]" + tm[3] + tm[4] + tm[5]
+			out[i] = strings.Replace(line, "["+wtMarker+"]", "["+mt.marker+"]", 1)
 			continue
 		}
 		if msRank > wtRank {
-			out[i] = tm[1] + "[" + mt.marker + "]" + tm[3] + tm[4] + tm[5]
+			out[i] = strings.Replace(line, "["+wtMarker+"]", "["+mt.marker+"]", 1)
 		}
 	}
 

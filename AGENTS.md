@@ -182,9 +182,12 @@ circuit breaker, which defers it as polish — so classify human-gated *before*
 blocking (the test is not severity, it is whether the missing thing is a
 person), never count such an attempt as a fix round, and never let a circuit
 breaker sweep one. Clearing a human-gated `[!]` to make a milestone read
-complete is the `[v]`-without-evidence failure with a different marker and **no
-guard behind it** — no Go code audits a `[!]` that disappeared, and
-`skipMilestoneInProgress` will rewrite one to `[x]` outright. **These rules
+complete is the `[v]`-without-evidence failure with a different marker and
+**almost no guard behind it** — no Go code audits a `[!]` that disappeared.
+`skipMilestoneInProgress` used to rewrite one to `[x]` outright; since #40 its
+regex is `[ >]`, it leaves `[!]` alone, and it returns an error rather than a
+quiet success when a blocked task is all that remains. That closes the one
+mechanical launderer, not the audit gap. **These rules
 describe `/belmont:loop`. `belmont auto` deliberately does the opposite** —
 `decideLoopAction` Rule 1 PAUSEs the whole feature on the first `[!]`, which is
 the right headless answer; changing that is a behaviour change needing its own
@@ -236,7 +239,8 @@ only aborts outright when stdin is not a TTY — interactively it prompts
 `Proceed anyway? [y/N]`. `belmont auto --features` / `--all` return to
 `runAutoMultiFeature` before the lint and never run it. A milestone holding an
 unknown marker can never read as complete and cannot be cleared by
-`skipMilestoneInProgress` (its regex is `[ >!]`), so on the ungated paths the
+`skipMilestoneInProgress` (its regex is `[ >]` — it clears todo and in-progress
+tasks only, and since #40 leaves `[!]` alone too), so on the ungated paths the
 loop alternates phases until `--max-iterations`. `belmont repair` is the route
 out — it settles what a commit proves and has an agent read the rest against the
 code; hand-editing the marker also works.
