@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.11.0
+
+**Released:** 2026-08-14
+
+### Changes since v0.10.17
+
+- Four regressions this PR introduced, found by red-teaming it
+- Refuse the ambiguous file, not just the ambiguous carry
+- Close the three the adversarial round left open
+- Fix four defects an adversarial round found in the carry I just added
+- Pin the review scenario that motivated #42, in its own words
+- Record that the merge readers agree now, in both places that said otherwise
+- One definition per reader, and stop dropping what the other side wrote
+- A deferral is not in the blocker queue, and bounded is not polish
+- Rewrite /belmont:loop so a run finishes what it starts, and add belmont blockers
+- Span a blank line inside a task body, and file what is deferred
+- Bound a task's body by its own indent, and widen the commit side too
+- Move a task's whole block, and give a stray follow-up somewhere to go
+- Test the invariant the last commit only claimed
+- Make the loop gate survive a machine's tool detection
+- Support Belmont loop in Codex
+
+
+
 ## v0.10.17
 
 **Released:** 2026-08-11
