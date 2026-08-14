@@ -324,7 +324,7 @@ If you have one of them, you MUST use this approach:
 2. Because all calls are foreground, you **automatically block** until they complete and **receive their output directly** — no polling, no sleeping.
 3. **For agents that run sequentially** (after the parallel ones complete), issue a single dispatch call with the same parameters.
 
-**No cleanup is required.** Sub-agents are per-call and there is nothing to tear down.
+**No teardown is required.** Sub-agents are per-call — nothing outlives the call, so there is nothing to shut down afterwards. This is about dispatch only: a skill's own cleanup step (archiving MILESTONE, deleting DEBUG.md) still runs.
 
 #### Approach B: Sequential Inline Execution (fallback)
 
