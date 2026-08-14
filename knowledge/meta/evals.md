@@ -75,6 +75,9 @@ Every Tier-1 assertion was checked against a deliberate control — the code it 
 
 The second row is the one worth remembering: the control did not fail at first, and the reason was a weak *fixture*, not a weak assertion. Running the controls is what found it.
 
+**Tier 2 also earns its cost by what its transcripts say, not only by what it asserts.** Issue #45 — every orchestrator skill silently taking the sequential-inline fallback on Claude Code, because `dispatch-strategy.md` checked for tool names the runtime no longer publishes — was found by *reading* the `f8ba91c` run's children, who said "no Task/TeamCreate dispatch available here" in their own words. No assertion covered it and none could have: the behaviour is non-deterministic (part of one fixture dispatched anyway, because that child bridged the naming gap on its own initiative), and asserting on prose is the thing this entry forbids. The fix that followed requires the orchestrator to state which approach it selected, so the next reader does not need to infer it.
+
 ## Revisions
 
 - 2026-08-07 — initial. Records the two-tier split, the five fixtures, the `package main` location constraint, the `-timeout 0` requirement, CI wiring for Tier 1, and the six controls each assertion was checked against.
+- 2026-08-14 — added the note that Tier 2 pays for itself through transcript reading as well as assertions: #45 was found that way, and is a defect no offline tier could have seen.

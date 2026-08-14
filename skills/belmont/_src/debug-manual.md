@@ -132,10 +132,8 @@ Create `{primary_base}/DEBUG.md` (the primary feature is the first slug in `{bas
 ## Sub-Agent Dispatch Strategy
 
 Apply the following dispatch configuration:
-- **Team name**: `belmont-debug-manual`
 - **Parallel agents**: None by default (agents run sequentially per iteration)
 - **Sequential agents**: design-agent (optional, iteration 1 only) → implementation-agent
-- **Cleanup timing**: After the debug session ends (Step 7)
 
 <!-- @include dispatch-strategy.md -->
 

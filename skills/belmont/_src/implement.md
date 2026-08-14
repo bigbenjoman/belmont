@@ -45,7 +45,7 @@ Per-agent model tiers (low/medium/high) are defined in `{base}/models.yaml`. If 
 
 <!-- @include tier-preflight.md -->
 
-When dispatching sub-agents (Step 3 below), apply the tier overrides per `dispatch-strategy.md → Model Tier Overrides`. Specifically: for each Task call, if the corresponding agent has an entry in `models.yaml` `tiers:`, include `model: "<alias>"` in the Task call using the tier-registry mapping. Agents not listed in `models.yaml` inherit the session model — do NOT pass `model:` for those.
+When dispatching sub-agents (Step 3 below), apply the tier overrides per `dispatch-strategy.md → Model Tier Overrides`. Specifically: for each dispatch call, if the corresponding agent has an entry in `models.yaml` `tiers:`, include `model: "<alias>"` in that call using the tier-registry mapping. Agents not listed in `models.yaml` inherit the session model — do NOT pass `model:` for those.
 
 ## Step 1: Find Next Milestone
 
@@ -71,10 +71,8 @@ Write a structured MILESTONE file that all agents read from and write to. The MI
 ## Sub-Agent Dispatch Strategy
 
 Apply the following dispatch configuration:
-- **Team name**: `belmont-m{ID}` (e.g., `belmont-m2`)
 - **Parallel agents**: Phase 1 (codebase-agent) + Phase 2 (design-agent, when not skipped) — spawn simultaneously
 - **Sequential agent**: Phase 3 (implementation-agent) — runs after Phases 1 and 2 complete
-- **Cleanup timing**: After Phase 3 completes (in Step 6)
 
 <!-- @include dispatch-strategy.md -->
 
@@ -82,9 +80,9 @@ Apply the following dispatch configuration:
 
 Run ALL incomplete tasks in the milestone through the phases below. Each agent reads its context from the MILESTONE file and writes its output back to it. You spawn **3 sub-agents per milestone — or 2 when Phase 2 is skipped** (see its skip rule).
 
-**Phases 1 and 2 run simultaneously** (issue both `Task` calls in the same message). If Phase 2 is skipped, Phase 1 runs alone. Phase 3 runs after the preceding phases complete.
+**Phases 1 and 2 run simultaneously** (issue both dispatch calls in the same message). If Phase 2 is skipped, Phase 1 runs alone. Phase 3 runs after the preceding phases complete.
 
-Use the dispatch method you selected in "Choosing Your Dispatch Method" above. For the **Agent Teams** method (Approach A), create the team first, then issue parallel `Task` calls. For the **Parallel Task** method (Approach B), issue parallel `Task` calls directly. For the **Sequential Inline** fallback (Approach C), execute each agent's instructions inline, finishing one completely before starting the next.
+Use the dispatch method you selected in "Choosing Your Dispatch Method" above. Under **Approach A**, issue the parallel dispatch calls in one message. Under the **Sequential Inline** fallback (Approach B), execute each agent's instructions inline, finishing one completely before starting the next.
 
 ---
 
@@ -143,13 +141,11 @@ Do **not** spawn the agent just to have it report there is nothing to analyse. T
 
 **Purpose**: Implement ALL tasks using the accumulated context in the MILESTONE file. Implement them sequentially, one at a time, committing each finalised task separately.
 
-If you are NOT using Agent Teams: Spawn a sub-agent with this prompt:
+Spawn a sub-agent with this prompt:
 
 <!-- @include identity-preamble.md agent_role="implementation" agent_file="implementation-agent.md" -->
 >
 > The MILESTONE file is at `{base}/MILESTONE.md`. Read it, then follow your instructions.
-
-If you ARE using Agent Teams: Add an implementation-agent into the team per task in the milestone, with the same prompt as above. Use the team-lead to coordinate between them if they need to edit the same areas fo the codebase.
 
 **Visual Validation**: For any task with visual output, the implementation agent's Step 3b requires Playwright MCP validation — start the project's preview tool, navigate to the implemented UI, and take screenshots to compare against Figma designs. Do NOT silently skip this step.
 
@@ -200,14 +196,6 @@ When all tasks in the milestone are marked `[x]` (done):
 3. If the user runs `/belmont:implement` again for the next milestone, a fresh MILESTONE file will be created
 
 **IMPORTANT**: Do NOT delete the MILESTONE file — archive it. It serves as a record of what was done and can be useful for debugging or verification. That record is the *only* copy of what each sub-agent actually did, so overwriting an existing archive destroys it exactly as thoroughly as deleting it would.
-
-### Tear down team (Agent Teams method only)
-If you created a team:
-1. Send `shutdown_request` via `SendMessage` to each teammate still active
-2. Wait for shutdown confirmations
-3. Call `TeamDelete` to remove team resources
-
-Skip this if you used the Parallel Task method or the Sequential Inline fallback.
 
 <!-- @include commit-belmont-changes.md commit_context="after milestone implementation" -->
 

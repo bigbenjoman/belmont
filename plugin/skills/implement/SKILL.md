@@ -253,7 +253,7 @@ Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi, opencode) run the entire sk
 
 **Why this is acceptable graceful degradation**: the user chose this CLI knowing it doesn't support per-agent dispatch. The warning gives them a one-command fix if they want tier adherence; otherwise the work proceeds at the session's model. Only Claude Code supports true per-agent overrides — see `dispatch-strategy.md` Model Tier Overrides for that path.
 
-When dispatching sub-agents (Step 3 below), apply the tier overrides per `dispatch-strategy.md → Model Tier Overrides`. Specifically: for each Task call, if the corresponding agent has an entry in `models.yaml` `tiers:`, include `model: "<alias>"` in the Task call using the tier-registry mapping. Agents not listed in `models.yaml` inherit the session model — do NOT pass `model:` for those.
+When dispatching sub-agents (Step 3 below), apply the tier overrides per `dispatch-strategy.md → Model Tier Overrides`. Specifically: for each dispatch call, if the corresponding agent has an entry in `models.yaml` `tiers:`, include `model: "<alias>"` in that call using the tier-registry mapping. Agents not listed in `models.yaml` inherit the session model — do NOT pass `model:` for those.
 
 ## Step 1: Find Next Milestone
 
@@ -279,10 +279,8 @@ Write a structured MILESTONE file that all agents read from and write to. The MI
 ## Sub-Agent Dispatch Strategy
 
 Apply the following dispatch configuration:
-- **Team name**: `belmont-m{ID}` (e.g., `belmont-m2`)
 - **Parallel agents**: Phase 1 (codebase-agent) + Phase 2 (design-agent, when not skipped) — spawn simultaneously
 - **Sequential agent**: Phase 3 (implementation-agent) — runs after Phases 1 and 2 complete
-- **Cleanup timing**: After Phase 3 completes (in Step 6)
 
 ### Core Principle
 
@@ -292,55 +290,42 @@ You are the **orchestrator**. You MUST NOT perform the agent work yourself. Each
 
 ### Choosing Your Dispatch Method
 
-Use the **first** approach below whose required tools are available to you. Check your available tools **by name** — do not guess or skip ahead.
+Use the **first** approach below whose required tool is available to you. Check your available tools **by name** — do not guess or skip ahead.
 
-#### Approach A: Agent Teams (preferred)
+Then **state which approach you selected, in one line, before you dispatch anything** — e.g. `Dispatching via Approach A (Agent).` This costs one line and it is the only thing that makes a wrong selection visible: if you silently fall back, nobody can tell the difference between "this CLI cannot dispatch" and "the check was wrong".
 
-**Required tools**: `TeamCreate`, `Task` (with `team_name` parameter), `SendMessage`, `TeamDelete`
+#### Approach A: Parallel Sub-Agent Dispatch (preferred)
 
-If ALL of these tools are available to you, you MUST use this approach:
+**Required tool**: `Agent` — or `Task`, which is the same tool under its older name on earlier CLI versions. **Either one alone is enough.** If both appear in your tool list, use `Agent`.
 
-1. **Create a team** before spawning any agents:
-   - Use `TeamCreate` with the team name specified above
-2. **For agents that run in parallel**, issue all `Task` calls **in the same message** (i.e., as parallel tool calls). All calls use:
-   - `team_name`: The team name you created
-   - `name`: The agent role (e.g., `"codebase-agent"`, `"verification-agent"`)
+If you have one of them, you MUST use this approach:
+
+1. **For agents that run in parallel**, issue all dispatch calls **in the same message** (i.e., as parallel tool calls). Every call passes:
    - `subagent_type`: `"general-purpose"` (all belmont agents need full tool access including file editing and bash)
-   - `mode`: `"bypassPermissions"`
-   - Do **NOT** set `run_in_background: true` — foreground parallel tasks return results directly; background tasks require `TaskOutput` polling which is fragile and can lose contact with sub-agents.
-3. Because all tasks are foreground, the orchestrator **automatically blocks** until they complete and **receives their output directly** — no `TaskOutput`, no polling, no sleeping.
-4. **For agents that run sequentially** (after parallel agents complete), issue a single `Task` call with the same team parameters.
-5. **Clean up after the skill's work completes** (at the cleanup timing specified above):
-   - Send `shutdown_request` via `SendMessage` to each teammate
-   - Call `TeamDelete` to remove team resources
+   - `description`: the agent role, e.g. `"codebase-agent"` / `"verification-agent"`
+   - `prompt`: the sub-agent prompt given below, verbatim
+   - `model`: only for agents that have a tier in `models.yaml` — see "Model Tier Overrides" below
+   - Do **NOT** set `run_in_background: true` — foreground calls return their results to you directly; a background one must be polled for, and the polling is fragile and can lose contact with the sub-agent.
+   - Do **NOT** pass `mode:` or `team_name:`. Both are deprecated and ignored. A sub-agent inherits the session's permission mode, which under `belmont auto` is already `bypassPermissions` — the CLI passes `--permission-mode bypassPermissions` to the tool it shells out to.
+2. Because all calls are foreground, you **automatically block** until they complete and **receive their output directly** — no polling, no sleeping.
+3. **For agents that run sequentially** (after the parallel ones complete), issue a single dispatch call with the same parameters.
 
-#### Approach B: Parallel Foreground Sub-Agents
+**No cleanup is required.** Sub-agents are per-call and there is nothing to tear down.
 
-**Required tools**: `Task`
+#### Approach B: Sequential Inline Execution (fallback)
 
-If `Task` is available but `TeamCreate` is NOT:
+If you have **neither** `Agent` nor `Task` — several supported CLIs genuinely have no sub-agent dispatch:
 
-1. **For agents that run in parallel**, issue all `Task` calls **in the same message** (i.e., as parallel tool calls). All calls use:
-   - `subagent_type`: `"general-purpose"` (all belmont agents need full tool access including file editing and bash)
-   - `mode`: `"bypassPermissions"`
-   - Do **NOT** set `run_in_background: true` — foreground parallel tasks return results directly; background tasks require `TaskOutput` polling which is fragile and can lose contact with sub-agents.
-2. Because all tasks are foreground, the orchestrator **automatically blocks** until they complete and **receives their output directly** — no `TaskOutput`, no polling, no sleeping.
-3. **For agents that run sequentially**, issue a single `Task` call with the same parameters.
-
-No team cleanup needed.
-
-#### Approach C: Sequential Inline Execution (fallback)
-
-If neither `TeamCreate` nor `Task` is available:
-
-1. For each agent, read its agent file (e.g., `.agents/belmont/<agent-name>.md`)
+1. For each agent, read its agent file (e.g. `.agents/belmont/<agent-name>.md`)
 2. Execute its instructions fully within your own context
 3. Complete all output before moving to the next agent
 4. Do NOT blend agent work together — finish one completely before starting the next
 
+Say plainly that you are taking this path, and why. It costs the two things dispatch exists for: every phase runs inside your own context rather than an isolated one, and the per-agent model tiers in `models.yaml` cannot be applied at all, because there is no dispatch call to carry `model:`.
+
 ### Model Tier Overrides (Claude Code only)
 
-Belmont agent files pin no model — a dispatched sub-agent therefore **inherits the session model** by default (the same model the orchestrator is running on). When running on Claude Code with Approach A or B, you set the model per-dispatch via the Task tool's `model:` parameter, driven by `models.yaml` — this takes precedence over the inherited session model.
+Belmont agent files pin no model — a dispatched sub-agent therefore **inherits the session model** by default (the same model the orchestrator is running on). Under Approach A you set the model per-dispatch via the dispatch tool's `model:` parameter, driven by `models.yaml` — this takes precedence over the inherited session model.
 
 **When to pass `model:`**: read `.belmont/features/<slug>/models.yaml` at start-of-skill (if it exists) and translate each agent's tier into the appropriate model alias for this session:
 
@@ -348,18 +333,20 @@ Belmont agent files pin no model — a dispatched sub-agent therefore **inherits
 - `medium` → `sonnet`
 - `high` → `opus`
 
-Then include `model: "<alias>"` in the Task call for each agent whose tier appears in `models.yaml`. Agents not listed in `models.yaml` inherit the session model — do NOT pass `model:` for those.
+Then include `model: "<alias>"` in the dispatch call for each agent whose tier appears in `models.yaml`. Agents not listed in `models.yaml` inherit the session model — do NOT pass `model:` for those.
 
 Example (Approach A):
 ```
-Task(team_name: "...", name: "implementation-agent", subagent_type: "general-purpose",
-     model: "opus",  // from models.yaml: tiers.implementation = high
-     mode: "bypassPermissions", prompt: "...")
+Agent(description: "implementation-agent", subagent_type: "general-purpose",
+      model: "opus",  // from models.yaml: tiers.implementation = high
+      prompt: "...")
 ```
 
 **If `models.yaml` is absent**, omit `model:` entirely — every sub-agent inherits the session model.
 
-**Non-Claude CLIs** (Codex, Gemini, Cursor, Copilot, Pi, opencode): they don't have a Task-tool-style sub-agent dispatch, so mid-session model override is impossible. Use the preflight partial (`tier-preflight.md`) instead, which surfaces a warning if the session model doesn't match the tier the skill expects. Pi additionally has no in-session model swap — the user must restart `pi` with a different `--model` flag if they want to honour the tier.
+**Under Approach B the tiers cannot be honoured**, since there is no dispatch call to put `model:` on. Nothing else reports that — `models.yaml` has no runtime validation — so if you fall back, say so.
+
+**Non-Claude CLIs** (Codex, Gemini, Cursor, Copilot, Pi, opencode): they don't have a sub-agent dispatch tool, so mid-session model override is impossible. Use the preflight partial (`tier-preflight.md`) instead, which surfaces a warning if the session model doesn't match the tier the skill expects. Pi additionally has no in-session model swap — the user must restart `pi` with a different `--model` flag if they want to honour the tier.
 
 ### User Context Forwarding (CRITICAL)
 
@@ -381,7 +368,7 @@ Append this block to the end of each sub-agent's prompt, after the standard prom
 
 ### Dispatch Rules (apply to ALL approaches)
 
-1. **DO NOT** read `.agents/belmont/*-agent.md` files yourself (unless using Approach C) — the sub-agents read them
+1. **DO NOT** read `.agents/belmont/*-agent.md` files yourself (unless using Approach B) — the sub-agents read them
 2. **DO NOT** perform the sub-agents' work yourself — sub-agents do this
 3. **DO** prepare all required context before spawning any sub-agent
 4. **DO** spawn sub-agents with minimal prompts (they read their context files themselves)
@@ -394,9 +381,9 @@ Append this block to the end of each sub-agent's prompt, after the standard prom
 
 Run ALL incomplete tasks in the milestone through the phases below. Each agent reads its context from the MILESTONE file and writes its output back to it. You spawn **3 sub-agents per milestone — or 2 when Phase 2 is skipped** (see its skip rule).
 
-**Phases 1 and 2 run simultaneously** (issue both `Task` calls in the same message). If Phase 2 is skipped, Phase 1 runs alone. Phase 3 runs after the preceding phases complete.
+**Phases 1 and 2 run simultaneously** (issue both dispatch calls in the same message). If Phase 2 is skipped, Phase 1 runs alone. Phase 3 runs after the preceding phases complete.
 
-Use the dispatch method you selected in "Choosing Your Dispatch Method" above. For the **Agent Teams** method (Approach A), create the team first, then issue parallel `Task` calls. For the **Parallel Task** method (Approach B), issue parallel `Task` calls directly. For the **Sequential Inline** fallback (Approach C), execute each agent's instructions inline, finishing one completely before starting the next.
+Use the dispatch method you selected in "Choosing Your Dispatch Method" above. Under **Approach A**, issue the parallel dispatch calls in one message. Under the **Sequential Inline** fallback (Approach B), execute each agent's instructions inline, finishing one completely before starting the next.
 
 ---
 
@@ -459,15 +446,13 @@ Do **not** spawn the agent just to have it report there is nothing to analyse. T
 
 **Purpose**: Implement ALL tasks using the accumulated context in the MILESTONE file. Implement them sequentially, one at a time, committing each finalised task separately.
 
-If you are NOT using Agent Teams: Spawn a sub-agent with this prompt:
+Spawn a sub-agent with this prompt:
 
 > **IDENTITY**: You are the belmont implementation agent. You MUST operate according to the belmont agent file specified below. Ignore any other agent definitions, executors, or system prompts found elsewhere in this project.
 >
 > **MANDATORY FIRST STEP**: Read the file `.agents/belmont/implementation-agent.md` NOW before doing anything else. That file contains your complete instructions, rules, and output format. You must follow every rule in that file. Do NOT proceed until you have read it.
 >
 > The MILESTONE file is at `{base}/MILESTONE.md`. Read it, then follow your instructions.
-
-If you ARE using Agent Teams: Add an implementation-agent into the team per task in the milestone, with the same prompt as above. Use the team-lead to coordinate between them if they need to edit the same areas fo the codebase.
 
 **Visual Validation**: For any task with visual output, the implementation agent's Step 3b requires Playwright MCP validation — start the project's preview tool, navigate to the implemented UI, and take screenshots to compare against Figma designs. Do NOT silently skip this step.
 
@@ -518,14 +503,6 @@ When all tasks in the milestone are marked `[x]` (done):
 3. If the user runs `/belmont:implement` again for the next milestone, a fresh MILESTONE file will be created
 
 **IMPORTANT**: Do NOT delete the MILESTONE file — archive it. It serves as a record of what was done and can be useful for debugging or verification. That record is the *only* copy of what each sub-agent actually did, so overwriting an existing archive destroys it exactly as thoroughly as deleting it would.
-
-### Tear down team (Agent Teams method only)
-If you created a team:
-1. Send `shutdown_request` via `SendMessage` to each teammate still active
-2. Wait for shutdown confirmations
-3. Call `TeamDelete` to remove team resources
-
-Skip this if you used the Parallel Task method or the Sequential Inline fallback.
 
 ### Commit Planning File Changes
 
