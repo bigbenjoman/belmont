@@ -11,7 +11,8 @@ Verification output summary: {{.VerifyOutput}}
 
 1. **Read the follow-up tasks**: Read `{{.FeatureBase}}/PROGRESS.md` and find all pending follow-up tasks (tasks marked `[ ]` or `[>]` that were added after verification)
 2. **Read the PRD file**: Read `{{.FeatureBase}}/PRD.md` for task definitions and acceptance criteria
-3. **Classify each follow-up** as either:
+3. **Classify each follow-up** into exactly one of three classes. Check human-gated FIRST — it outranks the other two:
+   - **Human-gated** — No agent can close it, at any effort, in any number of rounds, because the missing thing is a PERSON: an approval ("the apply needs sign-off"), a product or architecture ruling ("decide whether…", "rule on…"), a credential or console action nobody automated has ("rotate the passwords", "populate the roster"), or a spec change that belongs to `/belmont:tech-plan`. The test is not severity — a security item or an unmet acceptance criterion that needs an approval is human-gated, NOT blocking.
    - **Blocking** — Real bugs, broken functionality, failing tests, security issues, visual design mismatches, missing required features. These MUST be fixed before the milestone can proceed.
    - **Deferrable** — Polish items, minor improvements, aria-labels, code style, documentation gaps, small accessibility notes that don't affect usability, minor spacing tweaks. These can be addressed later.
 
@@ -19,7 +20,16 @@ Verification output summary: {{.VerifyOutput}}
 
 Apply these rules in order:
 
-1. **If fix round >= 2**: Choose `defer_and_proceed` for ALL remaining follow-ups. After 2 rounds of fixing, remaining issues are not worth another cycle. Move everything to NOTES.md.
+0. **Human-gated follow-ups are removed from this decision entirely.** Mark each one `[!]` in `{{.FeatureBase}}/PROGRESS.md`, leave its body and its PRD section exactly where they are, and record one line in `## Decisions Log` naming what is being asked and of whom. Do NOT list them in `blocking_tasks` or `deferred_tasks`. Do NOT attempt them — an attempt that cannot succeed is not a fix round and must not count toward rule 1. The auto loop pauses the run on the next iteration when it sees a `[!]`, which is the correct headless outcome: nobody is watching, so the question has to reach a person before anything else happens. Then classify whatever remains under the rules below.
+
+1. **If fix round >= 2**: Choose `defer_and_proceed` and **settle the milestone**. The count is per milestone per run and starts at zero each time — a run beginning after the user has answered decisions or reopened work carries a fresh mandate.
+
+   Settling means **no task in the milestone is left `[ ]`, `[>]` or `[x]`**. Every one reads `[v]`, `[-]` or `[!]` before the milestone is left. This is what stops follow-ups accumulating: without it each milestone leaks its unfinished tail into a backlog that grows for the life of the feature. In one batch:
+   - `[ ]` still classified blocking → `[-]`, with a `## Decisions Log` line saying it was **bounded, not judged unimportant**.
+   - `[x]` that verification would not promote → `[!]`, naming what verification objected to. It is a question for the user, not a leftover that reads as done.
+   - human-gated → already `[!]`; leave it.
+
+   Never sweep a human-gated `[!]`. Both `[-]` and `[!]` are reversible by the user, which is what makes settling safe; a `[ ]` left behind is not, because it looks like scheduled work and is nobody's decision.
 
 2. **If ALL follow-ups are deferrable**: Choose `defer_and_proceed`. Move them to NOTES.md and let the milestone stay complete.
 
@@ -62,7 +72,8 @@ Apply these rules in order:
 You MUST update the state files yourself:
 1. For each deferrable follow-up task:
    - Remove its task definition section from `{{.FeatureBase}}/PRD.md`
-   - Remove its `- [ ] ...` checkbox line from `{{.FeatureBase}}/PROGRESS.md`
+   - Mark its checkbox line in `{{.FeatureBase}}/PROGRESS.md` as `[-]` withdrawn — do **NOT** delete the line. Deletion does not survive Belmont's own merge model: `mergeProgressState` takes the worktree as base and carries master's missing lines back in, so a deleted task is resurrected by the next sibling sync in either direction, and a line that is simply gone records no reason. `[-]` is excluded from every count, never offered as next work, does not stop a milestone reading complete, and wins from either side of a merge. This is the auto path, so it is the path where that merge actually runs.
+   - Add one line to `## Decisions Log` saying it was deferred as polish and where the detail went
 2. Append the deferred items to `{{.FeatureBase}}/NOTES.md` under a `## Polish` section (create file if needed):
    ```markdown
    ## Polish

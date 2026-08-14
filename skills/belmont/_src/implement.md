@@ -49,6 +49,7 @@ When dispatching sub-agents (Step 3 below), apply the tier overrides per `dispat
 
 ## Step 1: Find Next Milestone
 
+0. **If the invocation names a milestone explicitly** (e.g. "IMPLEMENT MILESTONE M11"), use that one and skip the selection below — do not re-derive it. A caller that names a milestone has already ruled out the one you would pick: a milestone whose only live tasks are `[!]` stays pending by rule 3 forever, so first-pending selection returns it on every invocation and the work behind it is never reached.
 1. Read `{base}/PROGRESS.md` and find the Milestones section
 2. A milestone is **complete** if every task that is still live is marked `[v]` (verified). `[-]` withdrawn tasks are resolved — skip them, they neither block completion nor count towards it
 3. A milestone is **pending** if any task is `[ ]`, `[>]`, `[x]`, or `[!]`
@@ -192,11 +193,13 @@ When all tasks in the milestone are marked `[x]` (done):
 **After the milestone is complete (or all remaining tasks are blocked), clean up.**
 
 ### Archive the MILESTONE file
-1. **Archive** the MILESTONE file by renaming it: `{base}/MILESTONE.md` → `{base}/MILESTONE-[ID].done.md` (e.g., `MILESTONE-M2.done.md`)
-2. This prevents stale context from a completed milestone bleeding into the next one
+1. **Archive** the MILESTONE file to `{base}/MILESTONE-[ID].done.md` (e.g., `MILESTONE-M2.done.md`)
+   - **If no file of that name exists**, rename `{base}/MILESTONE.md` to it.
+   - **If one already exists, APPEND to it — never rename over it.** A rename replaces the file silently, and the archive is keyed on the *milestone* while this skill can run against the same milestone more than once (a re-entered milestone, a reopened follow-up, a `/belmont:next` batch that already archived there). Separate each append with a `---` rule and keep the incoming file's `# Milestone:` heading, so each pass stays identifiable.
+2. This prevents stale context from a completed milestone bleeding into the next one — what matters is that `MILESTONE.md` itself is cleared, not that the archive is short
 3. If the user runs `/belmont:implement` again for the next milestone, a fresh MILESTONE file will be created
 
-**IMPORTANT**: Do NOT delete the MILESTONE file — archive it. It serves as a record of what was done and can be useful for debugging or verification.
+**IMPORTANT**: Do NOT delete the MILESTONE file — archive it. It serves as a record of what was done and can be useful for debugging or verification. That record is the *only* copy of what each sub-agent actually did, so overwriting an existing archive destroys it exactly as thoroughly as deleting it would.
 
 ### Tear down team (Agent Teams method only)
 If you created a team:
