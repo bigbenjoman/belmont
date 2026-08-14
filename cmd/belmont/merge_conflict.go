@@ -150,6 +150,97 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// without the `:` made a bullet beginning `OAuth-2 …` carry that token as its
 	// identity here while the parser said it had none.
 	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+(` + taskIDShape + `):`)
+
+	theirsLines := strings.Split(string(theirsOut), "\n")
+	oursLines := strings.Split(string(oursOut), "\n")
+
+	// Refuse the whole file when a milestone ID heads more than one block, or a
+	// task ID appears more than once inside the region, on either side.
+	//
+	// Both make every lookup below ambiguous: theirsStates is
+	// last-occurrence-wins and msInsertAfter anchors a splice. The input that
+	// produces them is ordinary — a header-shaped session note. `### M2: verify
+	// round notes` under `## Session History` re-opens the milestones region for
+	// this scanner exactly as it does for parseMilestones, so a task line quoted
+	// beneath it is read as a real task. A quoted `[v]` then mints a verified
+	// flip on the real task with no commit evidence — and the comment at the top
+	// of this function is why runEvidenceCheck never sees a post-merge file. The
+	// note heading can also anchor the splice itself, landing a carried task
+	// inside the history section.
+	//
+	// requireUnambiguousMilestones catches a duplicate that predates the run,
+	// but a note written mid-run gets past it, and when it duplicates a real ID
+	// the scope guard declines rather than reverting — so a file can reach merge
+	// time in this shape. mergeProgressState already refuses this exact input
+	// via dupMS/dupIDs; this side had no check at all on the walks, only in the
+	// carry branch. Same policy this function applies to an unrecognised marker:
+	// escalate, never guess.
+	countMSHeads := func(lines []string) map[string]int {
+		n := map[string]int{}
+		for _, line := range lines {
+			if m := msHeaderRe.FindStringSubmatch(line); m != nil {
+				n["M"+m[1]]++
+			}
+		}
+		return n
+	}
+	// Region-scoped, for the same reason countIDs is in mergeProgressState: a
+	// task-shaped line under `## Session History` belongs to no milestone and is
+	// never merged, so counting it would make the real in-region task look
+	// ambiguous and refuse a file that is fine.
+	countTaskIDs := func(lines []string) map[string]int {
+		n := map[string]int{}
+		inRegion := false
+		for _, line := range lines {
+			if msHeaderRe.MatchString(line) {
+				inRegion = true
+				continue
+			}
+			if isSectionBreak(line) {
+				inRegion = false
+				continue
+			}
+			if !inRegion {
+				continue
+			}
+			if m := taskRe.FindStringSubmatch(line); m != nil {
+				n[m[2]]++
+			}
+		}
+		return n
+	}
+	// Sorted, so the reported ID does not vary between runs on identical input.
+	firstDup := func(counts map[string]int) (string, int) {
+		ids := make([]string, 0, len(counts))
+		for id, n := range counts {
+			if n > 1 {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) == 0 {
+			return "", 0
+		}
+		sort.Strings(ids)
+		return ids[0], counts[ids[0]]
+	}
+	for _, side := range []struct {
+		name  string
+		lines []string
+	}{{"ours", oursLines}, {"theirs", theirsLines}} {
+		if id, n := firstDup(countMSHeads(side.lines)); id != "" {
+			fmt.Fprintf(os.Stderr,
+				"  \033[33m⚠ %s: %s heads %d separate blocks on the %s side — not auto-resolving; escalating to the reconciliation agent\033[0m\n",
+				relPath, id, n, side.name)
+			return false
+		}
+		if id, n := firstDup(countTaskIDs(side.lines)); id != "" {
+			fmt.Fprintf(os.Stderr,
+				"  \033[33m⚠ %s: task %s appears %d times inside the milestones region on the %s side — not auto-resolving; escalating to the reconciliation agent\033[0m\n",
+				relPath, id, n, side.name)
+			return false
+		}
+	}
+
 	theirsStates := make(map[string]string) // task ID → checkbox marker
 
 	// Theirs' task lines in document order, with the milestone each one sits
@@ -162,8 +253,6 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		milestone string
 	}
 	var theirsOrder []theirsTask
-
-	theirsLines := strings.Split(string(theirsOut), "\n")
 	inRegion := false
 	theirsMS := ""
 	// A bullet nested inside a carried task's body travels with the block that
@@ -216,7 +305,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	for _, side := range []struct {
 		name  string
 		lines []string
-	}{{"ours", strings.Split(string(oursOut), "\n")}, {"theirs", theirsLines}} {
+	}{{"ours", oursLines}, {"theirs", theirsLines}} {
 		for _, line := range side.lines {
 			m := anyTaskRe.FindStringSubmatch(line)
 			if m == nil {
@@ -267,7 +356,6 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	}
 
 	// Merge: start from "ours", upgrade task states from "theirs"
-	oursLines := strings.Split(string(oursOut), "\n")
 	var merged []string
 	inActivitySection := false
 	activityInserted := make(map[string]bool)
@@ -284,16 +372,10 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// of stranding as issue #33 — and inserting at the block boundary instead
 	// would land it past the blank line that ends the list.
 	msInsertAfter := make(map[string]int)
-	// A milestone ID that heads more than one block cannot be an anchor: which
-	// block does a carried task belong to? Refused rather than guessed, the same
-	// policy mergeProgressState applies via dupMS and requireUnambiguousMilestones
-	// applies at startup.
-	oursMSHeadCount := make(map[string]int)
 	for _, line := range oursLines {
 		if m := msHeaderRe.FindStringSubmatch(line); m != nil {
 			oursInRegion = true
 			oursMS = "M" + m[1]
-			oursMSHeadCount[oursMS]++
 		} else if isSectionBreak(line) {
 			oursInRegion = false
 			oursMS = ""
@@ -424,10 +506,23 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 					relPath, tt.id, tt.milestone)
 				return false
 			}
-			if oursMSHeadCount[tt.milestone] > 1 {
+			// The block is the bullet plus its body, and the body can hold
+			// nested task bullets of its own. Those were never checked against
+			// oursSeen — only the block's own ID was — so a nested bullet whose
+			// ID already exists here as a top-level task got spliced in a second
+			// time. That is durable damage rather than cosmetic: countIDs in
+			// mergeProgressState sees the duplicate on the NEXT merge and refuses
+			// to reconcile that task from then on, telling the user to
+			// de-duplicate by hand. Escalate instead, matching the policy this
+			// branch already applies to a structure disagreement.
+			for _, bl := range tt.block[1:] {
+				m := taskRe.FindStringSubmatch(bl)
+				if m == nil || !oursSeen[m[2]] {
+					continue
+				}
 				fmt.Fprintf(os.Stderr,
-					"  \033[33m⚠ %s: incoming task %s belongs to %s, which heads %d separate blocks on this side — not auto-resolving; escalating to the reconciliation agent\033[0m\n",
-					relPath, tt.id, tt.milestone, oursMSHeadCount[tt.milestone])
+					"  \033[33m⚠ %s: incoming task %s carries a nested bullet for %s, which already exists on this side — not auto-resolving; escalating to the reconciliation agent\033[0m\n",
+					relPath, tt.id, m[2])
 				return false
 			}
 			byMS[tt.milestone] = append(byMS[tt.milestone], tt.block...)

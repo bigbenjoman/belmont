@@ -173,8 +173,15 @@ func validateFeature(root, slug string) ([]validationViolation, error) {
 	//
 	// Reading only the collapsed representative worktree made `belmont validate`
 	// blind to a violation raised in any other milestone's worktree — issue #42's
-	// defect in a different reader, and it matters more here, because this is the
-	// lint that gates `belmont auto` on the single-feature path.
+	// defect in a different reader.
+	//
+	// This is now also what `belmont auto` lints with at startup on the
+	// single-feature path. That gate used to hand-roll the same checks against
+	// master's PROGRESS.md alone, so the two disagreed about a worktree-raised
+	// violation and a resumed run could start on a file `belmont validate` exits
+	// 1 on. Note what routing it here does and does not buy: the gate runs once,
+	// before the loop, so it sees worktrees only when a run is resumed. Drift
+	// during a run is runScopeGuard and runEvidenceCheck's job, not this one.
 	progressPath := filepath.Join(featuresDir, "PROGRESS.md")
 	liveFeature, perMilestoneLive := loadAutoWorktreeStateByMilestone(root)
 	parallelLive := perMilestoneLive != nil && slug == liveFeature

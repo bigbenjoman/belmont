@@ -606,10 +606,12 @@ func TestActivityFlushIgnoresTaskProseAndMilestoneHeaders(t *testing.T) {
 	}
 }
 
-// `belmont validate` is the lint that gates `belmont auto` on the single-feature
-// path, and it read the collapsed representative worktree — so a violation
-// raised in any other milestone's worktree was invisible to the gate that exists
-// to catch it. Same defect as #42, in a reader with more consequence.
+// `belmont validate` read the collapsed representative worktree, so a violation
+// raised in any other milestone's worktree was invisible to it. Same defect as
+// #42, in a different reader. (`belmont auto`'s startup gate is now routed
+// through validateFeature too — that is
+// TestAutoStartupGateSeesAViolationInANonRepresentativeWorktree below. It did
+// not used to be, and an earlier version of this comment claimed otherwise.)
 func TestValidateSeesAViolationRaisedInANonRepresentativeWorktree(t *testing.T) {
 	root := t.TempDir()
 	featuresDir := filepath.Join(root, ".belmont", "features", "auth")
@@ -689,5 +691,126 @@ func TestFeatureListingStillHonoursWholeFeatureOverride(t *testing.T) {
 	}
 	if got := features[0].TasksVerified; got != 1 {
 		t.Errorf("TasksVerified = %d, want 1 — the serial-mode override regressed", got)
+	}
+}
+
+// A `### M<n>:` shaped line re-opens the milestones region for this scanner even
+// after a section break closed it — the same way parseMilestones reads one. So a
+// session note heading puts the scanner back in the region and any task line
+// quoted beneath it is recorded as a real task. mergeProgressState already
+// refuses this input via dupMS; this side had no check on the walks at all.
+func TestConflictResolverRefusesAMilestoneHeadingInASessionNote(t *testing.T) {
+	base := "### M2: Work\n- [>] P1-M2-1: base\n"
+	ours := "### M2: Work\n- [x] P1-M2-1: build it\n"
+	theirs := "### M2: Work\n- [x] P1-M2-1: build it\n\n## Session History\n\n" +
+		"### M2: verify round notes\n\n- [x] P1-M2-9: quoted from a log\n"
+
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		got := readFile(t, filepath.Join(root, rel))
+		t.Errorf("a note heading re-opened the region and its quoted task was treated as real:\n%s", got)
+	}
+}
+
+// The sharp version of the same defect: the note heading names a milestone that
+// is NOT duplicated, so the heading check cannot catch it, and the quoted line
+// repeats a REAL task ID. theirsStates is last-occurrence-wins, so the quote won
+// and ours' [x] was rewritten to [v] — a verified flip with no commit evidence,
+// in a file runEvidenceCheck never sees because it is written post-merge.
+func TestConflictResolverRefusesAQuotedLineThatWouldMintAVerifiedFlip(t *testing.T) {
+	base := "### M1: Work\n- [>] P1-M1-1: base\n"
+	ours := "### M1: Work\n- [x] P1-M1-1: build it\n"
+	theirs := "### M1: Work\n- [x] P1-M1-1: build it\n\n## Session History\n\n" +
+		"### M7: verify round notes\n\n- [v] P1-M1-1: quoted as done in a log\n"
+
+	root, rel := conflictFixture(t, base, ours, theirs)
+	resolved := resolveProgressConflict(root, rel, filepath.Join(root, rel))
+	got := readFile(t, filepath.Join(root, rel))
+	if resolved {
+		t.Errorf("resolver auto-resolved a file whose only [v] came from a quoted log line:\n%s", got)
+	}
+	if strings.Contains(got, "- [v] P1-M1-1: build it") {
+		t.Errorf("a quoted log line minted a verified flip on the real task, with no commit behind it:\n%s", got)
+	}
+}
+
+// A carried task is the bullet plus its body, and the body can nest task bullets
+// of its own. Those bypassed oursSeen, so a nested ID that already exists here
+// was spliced in a second time — and countIDs in mergeProgressState then refuses
+// to reconcile that ID on every later merge, telling the user to de-duplicate by
+// hand. Durable damage, not cosmetic.
+func TestCarryRefusesANestedBulletThatAlreadyExistsHere(t *testing.T) {
+	base := "### M1: Work\n- [>] P1-M1-1: base\n- [>] P1-M1-2: sub\n"
+	ours := "### M1: Work\n- [x] P1-M1-1: build\n- [x] P1-M1-2: sub\n"
+	// Theirs restructured: P1-M1-2 is now nested under a new parent task. It
+	// appears once on each side, so neither duplicate check fires — only the
+	// nested-ID check in the carry can catch this.
+	theirs := "### M1: Work\n- [x] P1-M1-1: build\n- [ ] P1-M1-5: parent\n  - [ ] P1-M1-2: sub\n"
+
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		// Counting only makes sense once the resolver has actually written a
+		// file. A declined one still carries git's conflict markers, which hold
+		// the ID on both sides and would satisfy a naive count either way.
+		got := readFile(t, filepath.Join(root, rel))
+		t.Errorf("resolver spliced a carried block whose nested bullet duplicates an existing task — P1-M1-2 now appears %d times, and the next mergeProgressState refuses that ID from here on:\n%s",
+			strings.Count(got, "P1-M1-2"), got)
+	}
+}
+
+// The startup gate hand-rolled its own lint against master's PROGRESS.md, so a
+// violation raised inside a preserved worktree did not stop a resumed run, while
+// `belmont validate` on the same project exited 1. Two readers, one question.
+func TestAutoStartupGateSeesAViolationInANonRepresentativeWorktree(t *testing.T) {
+	root := t.TempDir()
+	featuresDir := filepath.Join(root, ".belmont", "features", "demo")
+	wt1 := filepath.Join(root, "wt-m1")
+	wt2 := filepath.Join(root, "wt-m2")
+	write := func(dir, content string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "PROGRESS.md"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clean := "### M1: One\n- [ ] P1-M1-1: a\n\n### M2: Two\n- [ ] P1-M2-1: b\n"
+	write(featuresDir, clean)
+	if err := os.WriteFile(filepath.Join(featuresDir, "PRD.md"), []byte("# PRD: Demo\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// M1's worktree is the alphabetically-first representative and is clean.
+	write(filepath.Join(wt1, ".belmont", "features", "demo"), clean)
+	write(filepath.Join(wt2, ".belmont", "features", "demo"),
+		"### M1: One\n- [ ] P1-M1-1: a\n\n### M2: Two\n- [?] P1-M2-1: b\n")
+
+	blob, err := json.Marshal(autoJSON{
+		Active:  true,
+		Mode:    "single-feature-parallel",
+		Feature: "demo",
+		Worktrees: map[string]autoJSONEntry{
+			"M1": {Path: wt1, Branch: "b1"},
+			"M2": {Path: wt2, Branch: "b2"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".belmont", "auto.json"), blob, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// --tool claude for the same reason as TestAutoGateBySeverity: without it
+	// this fails on any machine with no AI CLI installed, CI included.
+	err = runAutoCmd([]string{"--root", root, "--tool", "claude", "--feature", "demo",
+		"--from", "M1", "--to", "M2", "--dry-run"})
+	if err == nil {
+		t.Fatal("auto started against an unreadable marker held in M2's worktree; the gate read master alone")
+	}
+	// Assert WHICH refusal — `err != nil` alone is satisfied by any startup
+	// failure, which is how a gate test can pass while proving nothing.
+	if !strings.Contains(err.Error(), "tech-plan") {
+		t.Errorf("auto refused, but not over the marker: %v", err)
 	}
 }
