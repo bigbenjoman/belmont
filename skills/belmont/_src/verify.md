@@ -44,7 +44,7 @@ Per-agent model tiers (low/medium/high) are defined in `{base}/models.yaml`. If 
 
 <!-- @include tier-preflight.md -->
 
-When dispatching the verification-agent and code-review-agent below, apply the tier overrides per `dispatch-strategy.md → Model Tier Overrides`. Specifically: if `models.yaml` lists `tiers.verification` or `tiers.code-review`, include `model: "<alias>"` in the corresponding Task call using the tier-registry mapping. Agents not listed inherit the session model — do NOT pass `model:` for those.
+When dispatching the verification-agent and code-review-agent below, apply the tier overrides per `dispatch-strategy.md → Model Tier Overrides`. Specifically: if `models.yaml` lists `tiers.verification` or `tiers.code-review`, include `model: "<alias>"` in the corresponding dispatch call using the tier-registry mapping. Agents not listed inherit the session model — do NOT pass `model:` for those.
 
 ## Focused Re-verification Mode
 
@@ -85,16 +85,14 @@ Collect whatever you find — Figma `fileKey`/`nodeId` pairs, image paths, URLs.
 ## Sub-Agent Dispatch Strategy
 
 Apply the following dispatch configuration:
-- **Team name**: `belmont-verify`
 - **Parallel agents**: verification-agent + code-review-agent — spawn simultaneously
 - **Sequential agents**: None
-- **Cleanup timing**: After Step 3 completes
 
 <!-- @include dispatch-strategy.md -->
 
 ## Step 2: Run Verification and Code Review
 
-Use the dispatch method you selected above. For the **Agent Teams** method (Approach A), create the team first, then issue both `Task` calls in the same message. For the **Parallel Task** method (Approach B), issue both `Task` calls in the same message. For the **Sequential Inline** fallback (Approach C), execute each agent's instructions inline, finishing one completely before starting the next.
+Use the dispatch method you selected above. Under **Approach A**, issue both dispatch calls in the same message. Under the **Sequential Inline** fallback (Approach B), execute each agent's instructions inline, finishing one completely before starting the next.
 
 Spawn these two sub-agents **simultaneously** (or sequentially if using the Sequential Inline fallback):
 
@@ -235,15 +233,6 @@ When running: **read `references/verify-five-whys.md`** for the Five Whys framew
 **Read `references/verify-report-format.md` and use its template to produce the final summary output.** It contains the overall-status decision rules (ALL PASSED vs ISSUES FOUND vs CRITICAL ISSUES) and the combined markdown summary template.
 
 <!-- @include commit-belmont-changes.md commit_context="after verification" -->
-
-## Step 4: Clean Up Team (Agent Teams method only)
-
-If you created a team in Step 2:
-1. Send `shutdown_request` via `SendMessage` to each teammate still active
-2. Wait for shutdown confirmations
-3. Call `TeamDelete` to remove team resources
-
-Skip this step if you used the Parallel Task method or the Sequential Inline fallback.
 
 ## Important Rules
 
