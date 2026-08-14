@@ -120,12 +120,14 @@ The AI responds with a JSON object specifying the action, reason, and optional m
 | VERIFY | Run verification on completed milestones |
 | DEBUG | Run automated debugging when verification keeps failing |
 | REPLAN | Re-run tech planning when current approach has systemic issues |
-| SKIP_MILESTONE | Skip a milestone blocked by external factors |
+| SKIP_MILESTONE | Clear the unstarted work in a milestone that cannot proceed |
 | COMPLETE | All work in scope is done and verified |
 | PAUSE | Stop for human intervention |
 | ERROR | Unrecoverable failure, stop the loop |
 
-DEBUG, REPLAN, and SKIP_MILESTONE are only available via AI decisions (not the smart rules or rules fallback). DEBUG triggers `/belmont:debug-auto`, REPLAN triggers `/belmont:tech-plan`, and SKIP_MILESTONE marks the milestone done in PROGRESS.md directly (no tool call).
+DEBUG, REPLAN, and SKIP_MILESTONE are only available via AI decisions (not the smart rules or rules fallback). DEBUG triggers `/belmont:debug-auto`, REPLAN triggers `/belmont:tech-plan`, and SKIP_MILESTONE edits PROGRESS.md directly (no tool call).
+
+SKIP_MILESTONE marks `[ ]` and `[>]` tasks done. It deliberately **leaves `[!]` blocked tasks alone**: a blocker is a question waiting on a person, and rewriting one to `[x]` tells every stop condition the work is finished when nobody has answered it. If a milestone has nothing left but blocked tasks, the skip fails rather than reporting success — "skipped" would mean "this milestone is done", which is exactly what it is not. Use `belmont blockers` to see what is waiting.
 
 ### Tool Auto-Detection
 

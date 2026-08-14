@@ -177,8 +177,24 @@ func runAutoCmd(args []string) error {
 	// conflicts (per skills/belmont/_partials/milestone-immutability.md).
 	// Prompt the user to continue or abort; non-interactive runs abort on
 	// violations to avoid silent damage.
-	violations := detectViolations(cfg.Feature, milestones)
-	violations = append(violations, detectOrphanViolations(cfg.Feature, string(progressContent))...)
+	//
+	// Routed through validateFeature rather than calling detectViolations on
+	// master's content directly, so the gate and `belmont validate` answer the
+	// same question. They did not: this read master alone, so a violation raised
+	// inside a preserved worktree — an unrecognised marker written by one wave
+	// member — was invisible here and a resumed run started on a file `belmont
+	// validate` exits 1 on. That is issue #42's collapse in the reader with the
+	// most consequence, since this is the gate. It bites on resume and on a
+	// second invocation against a live run; a fresh run has no worktrees yet and
+	// sees exactly what it saw before.
+	//
+	// milestonesInRange above still reads master deliberately: --from/--to name
+	// milestones in the plan, and the plan is master's. This changes what the
+	// lint sees, not what the run schedules.
+	violations, vErr := validateFeature(absRoot, cfg.Feature)
+	if vErr != nil {
+		return fmt.Errorf("auto: %w", vErr)
+	}
 	// Warnings are printed and the run continues. Only a file the loop cannot
 	// act on stops it — see severityError. Upgrading Belmont must not refuse a
 	// run that worked yesterday because a retro bullet sits below the region.
