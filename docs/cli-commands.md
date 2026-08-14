@@ -187,6 +187,8 @@ remembered. The JSON shape is `{"repairs": [{"line": N, "task_id": "...",
 
   The advice on each one is **conditional**, because "move it under its `### M<n>:` heading" only helps when there is such a heading. If the task's ID names a milestone the file already has, the warning says so and points at `belmont repair`, which moves between existing milestones. If it names none — the usual shape of a follow-up produced by a cross-cutting audit — the warning gives the destination rule instead: file it under the **highest-numbered existing milestone whose work it touches**, or the last milestone in the plan if it is genuinely global. Never a new milestone. Escalating that case to `/belmont:tech-plan` used to be a dead end, since that skill forbids a new milestone for follow-ups and the task came back unscheduled.
 
+- **A milestone whose live worktree state could not be read.** During a parallel run each milestone's state is overlaid from the worktree that owns it. When that worktree's `PROGRESS.md` is missing or unreadable — a half-cleaned worktree, a failed merge that left the directory behind, a `.belmont/` copy interrupted mid-write — the view falls back to master's fork-point copy. That fallback used to be silent, which meant `belmont validate` printed a clean bill of health for a file it had only partly seen, and `belmont auto` started on it. It is now stated, by `validate`, `status` and `blockers` alike. `belmont recover --list` is the way out.
+
 ```bash
 belmont validate                            # Scan every feature
 belmont validate --feature about            # One feature
@@ -194,10 +196,12 @@ belmont validate --strict                   # Exit 1 on warnings too (for CI)
 belmont validate --format json              # Machine-readable output; each entry carries "severity"
 ```
 
-Every violation also carries a **remedy**, shown in the text output and in the JSON:
+Most violations also carry a **remedy**, shown in the text output and in the JSON:
 
 - `needs_evidence` — the correct answer is a fact about the repository, not a question for someone's memory. Whether a commit carries the task ID, whether the code it describes exists, whether a test covers it. A project can accumulate dozens of these, and "was this withdrawn or did it ship?" is not something anyone recalls months later; guessing is what issue #27 was.
 - `tech_plan` — the fix changes milestone structure, which is immutable outside `/belmont:tech-plan` and enforced at runtime. An agent that edits it anyway has the change reverted by the scope guard.
+
+`unreadable_live_milestone` carries neither: both remedies answer "what should this line say", and that finding is not about a line in the file at all. Its fix is to the worktree, and the command is in the message.
 
 The report ends with the expected structure — header shape, task-line shape, the marker set, and where a `## ` heading ends the milestones region — so the output is enough on its own to conform a file.
 

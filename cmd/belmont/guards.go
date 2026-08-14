@@ -579,6 +579,10 @@ const (
 	ruleCrossMilestoneTaskID = "cross_milestone_task_id"
 	rulePolishMilestoneName  = "polish_milestone_name"
 	ruleDuplicateMilestoneID = "duplicate_milestone_id"
+	// Raised when a milestone's live worktree state could not be read, so the
+	// view fell back to master's copy. Not a defect in the file — a statement
+	// about how much of it the reader actually saw. See issue #48.
+	ruleUnreadableLiveMilestone = "unreadable_live_milestone"
 )
 
 // validationViolation is one finding from `belmont validate`.

@@ -90,6 +90,19 @@ type blockersReport struct {
 	// Skipped names features whose PROGRESS.md could not be read at all, so
 	// their absence from the queue is stated rather than silent.
 	Skipped []string `json:"skipped,omitempty"`
+	// LiveGaps names milestones whose live worktree state could not be read
+	// during a parallel run, so their blockers — if any — were read from
+	// master's fork-point copy. Same contract as Skipped, one level down: a
+	// question raised inside that worktree is not in this queue and nothing else
+	// would say so. See issue #48.
+	LiveGaps []blockersLiveGap `json:"live_gaps,omitempty"`
+}
+
+// blockersLiveGap is a liveOverlayGap plus the feature it belongs to — this
+// report spans every feature, so the milestone ID alone does not locate it.
+type blockersLiveGap struct {
+	Feature string `json:"feature"`
+	liveOverlayGap
 }
 
 func runBlockersCmd(args []string) error {
@@ -251,7 +264,15 @@ func buildBlockers(root, feature string) (blockersReport, error) {
 					}
 				}
 			}
-			milestones = overlayLiveMilestones(milestones, perMilestoneLive)
+			var gaps []liveOverlayGap
+			milestones, gaps = overlayLiveMilestones(milestones, perMilestoneLive)
+			// A milestone answered from master's fork-point copy is a queue this
+			// command did not fully see. `Skipped` already states the same thing
+			// one level up — a feature whose PROGRESS.md could not be read at all
+			// — and this is that scenario arriving at a milestone. See issue #48.
+			for _, g := range gaps {
+				report.LiveGaps = append(report.LiveGaps, blockersLiveGap{Feature: slug, liveOverlayGap: g})
+			}
 		}
 
 		for _, m := range milestones {
@@ -377,6 +398,7 @@ func renderBlockers(report blockersReport, color, summary bool) string {
 	if report.Count == 0 {
 		sb.WriteString("No blocked tasks. Nothing is waiting on you.\n")
 		writeBlockerSkipped(&sb, report, dim)
+		writeBlockerLiveGaps(&sb, report, dim)
 		return sb.String()
 	}
 
@@ -493,6 +515,7 @@ func renderBlockers(report blockersReport, color, summary bool) string {
 		}
 	}
 	writeBlockerSkipped(&sb, report, dim)
+	writeBlockerLiveGaps(&sb, report, dim)
 	return sb.String()
 }
 
@@ -502,4 +525,19 @@ func writeBlockerSkipped(sb *strings.Builder, report blockersReport, dim func(st
 	}
 	sb.WriteString(dim(fmt.Sprintf("\nCould not read PROGRESS.md for: %s — those features are not in this queue.\n",
 		strings.Join(report.Skipped, ", "))))
+}
+
+// writeBlockerLiveGaps states which milestones were answered from master
+// because their worktree could not be read. Called on both exit paths — most of
+// all the "nothing is waiting on you" one, which is the affirmative this report
+// has no right to make about a milestone it did not read.
+func writeBlockerLiveGaps(sb *strings.Builder, report blockersReport, dim func(string) string) {
+	if len(report.LiveGaps) == 0 {
+		return
+	}
+	sb.WriteString(dim("\nDuring an active run, these milestones could not be read from their worktrees, so master's copy answered for them:\n"))
+	for _, g := range report.LiveGaps {
+		sb.WriteString(dim(fmt.Sprintf("  %s %s\n", g.Feature, g.describe())))
+	}
+	sb.WriteString(dim("  A blocker raised inside one of those worktrees is not in this queue: belmont recover --list\n"))
 }

@@ -161,6 +161,17 @@ func runValidateCmd(args []string) error {
 	return nil
 }
 
+// gapReported reports whether the overlay already filed this milestone as one
+// it could not read, so the same condition is not announced twice.
+func gapReported(gaps []liveOverlayGap, milestoneID string) bool {
+	for _, g := range gaps {
+		if g.Milestone == milestoneID {
+			return true
+		}
+	}
+	return false
+}
+
 // validateFeature reads a feature's PROGRESS.md and returns any violations.
 func validateFeature(root, slug string) ([]validationViolation, error) {
 	featuresDir := filepath.Join(root, ".belmont", "features", slug)
@@ -205,8 +216,9 @@ func validateFeature(root, slug string) ([]validationViolation, error) {
 	// master plus each live worktree and union. An orphan is additive by nature,
 	// and one raised inside a worktree is invisible to every other view.
 	docs := []string{string(data)}
+	var liveGaps []liveOverlayGap
 	if parallelLive {
-		milestones = overlayLiveMilestones(milestones, perMilestoneLive)
+		milestones, liveGaps = overlayLiveMilestones(milestones, perMilestoneLive)
 		msIDs := make([]string, 0, len(perMilestoneLive))
 		for id := range perMilestoneLive {
 			msIDs = append(msIDs, id)
@@ -218,11 +230,18 @@ func validateFeature(root, slug string) ([]validationViolation, error) {
 			if err != nil {
 				// Say so rather than skip. This lint gates `belmont auto`, so a
 				// worktree whose PROGRESS.md cannot be read means the green it
-				// prints covers less than the user thinks — and the overlay above
-				// falls back to master for that milestone just as quietly.
-				fmt.Fprintf(os.Stderr,
-					"\033[33m⚠ %s: could not read %s (%v) — %s was linted against master's copy, not this worktree's\033[0m\n",
-					slug, wtPath, err, id)
+				// prints covers less than the user thinks.
+				//
+				// Printed only when the overlay did not already file this
+				// milestone as a gap — since #48 that is the normal case, and the
+				// violation it raises is both machine-readable and carried in the
+				// report. This stderr line remains for the narrow race where the
+				// overlay read the file and this second read did not.
+				if !gapReported(liveGaps, id) {
+					fmt.Fprintf(os.Stderr,
+						"\033[33m⚠ %s: could not read %s (%v) — %s was linted against master's copy, not this worktree's\033[0m\n",
+						slug, wtPath, err, id)
+				}
 				continue
 			}
 			docs = append(docs, string(b))
@@ -230,6 +249,27 @@ func validateFeature(root, slug string) ([]validationViolation, error) {
 	}
 
 	v := detectViolations(slug, milestones)
+	// A milestone the overlay could not source from its worktree was linted
+	// against master's copy, so the result covers less than it appears to. That
+	// is exactly the claim a gate must not make silently: since #42 this lint is
+	// what `belmont validate` reports and since #44 it is what `belmont auto`
+	// starts on. Warning severity, deliberately — a half-cleaned worktree is
+	// information Belmont refuses to drop, not a reason to refuse a run that
+	// worked yesterday. `--strict` is what makes CI fail on it. See issue #48.
+	for _, g := range liveGaps {
+		v = append(v, validationViolation{
+			Feature:   slug,
+			Milestone: g.Milestone,
+			Rule:      ruleUnreadableLiveMilestone,
+			// No remedy: both of them answer "what should this line say", and
+			// this finding is not about a line. The fix is to the worktree, and
+			// the command for it is in the message.
+			Severity: severityWarning,
+			Message: fmt.Sprintf(
+				"%s was linted against master's copy: its live worktree state could not be read — %s. A violation raised inside that worktree does not appear in this report. Recover or clean the worktree up with `belmont recover --list`.",
+				g.Milestone, g.Reason),
+		})
+	}
 	// validationViolation is all-string, comparable, and carries no line number,
 	// so the same violation seen in master and in a worktree's copy dedupes
 	// cleanly.
