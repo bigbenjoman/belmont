@@ -64,6 +64,11 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 		// Read all state from PROGRESS.md
 		var milestones []milestone
 		var orphaned int
+		// Milestones the overlay could not source from their worktree, so this
+		// row's counts include master's stale copy of them. Listing mode is what
+		// `status.md`'s fast path runs, so it is the half that reaches an agent —
+		// every "this is not what it looks like" signal has to appear here too.
+		var liveGaps []liveOverlayGap
 		progressPath := filepath.Join(featurePath, "PROGRESS.md")
 		if progressContent, err := os.ReadFile(progressPath); err == nil {
 			milestones = parseMilestones(string(progressContent))
@@ -73,7 +78,9 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 			// Each milestone from its own worktree, master for the rest —
 			// the same overlay `belmont status --feature` and `belmont
 			// blockers` already use, so all three agree during a run.
-			milestones = overlayLiveMilestones(milestones, perMilestoneLive)
+			var gaps []liveOverlayGap
+			milestones, gaps = overlayLiveMilestones(milestones, perMilestoneLive)
+			liveGaps = gaps
 			// Orphans cannot ride that overlay: a task line outside every
 			// milestone belongs to no milestone ID to be overlaid by, and lives
 			// in one specific document. Union across master and every live
@@ -161,6 +168,7 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 			NextMilestone:   featureNextMilestone,
 			NextTask:        featureNextTask,
 			Status:          status,
+			LiveGaps:        liveGaps,
 		})
 	}
 	return features

@@ -138,7 +138,7 @@ func buildStatus(root string, maxName int, feature string) (statusReport, error)
 		// master's (possibly stale) state. Each overlaid milestone carries a
 		// LiveFrom pointer so renderers can annotate it.
 		if perMilestoneLive != nil && liveFeature == feature {
-			report.Milestones = overlayLiveMilestones(report.Milestones, perMilestoneLive)
+			report.Milestones, report.LiveGaps = overlayLiveMilestones(report.Milestones, perMilestoneLive)
 		}
 
 		report.Tasks = flattenTasks(report.Milestones, maxName)
@@ -337,6 +337,20 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 	}
 	sb.WriteString("\n")
 
+	// A milestone shown from master's copy while its own worktree could not be
+	// read is state the reader cannot place, and the rule is the same one
+	// orphans and unknown markers follow: surface it, never drop it. Printed
+	// with the milestone list it qualifies, because that list is what it makes
+	// less true. See issue #48.
+	if len(report.LiveGaps) > 0 {
+		sb.WriteString(fmt.Sprintf("%s%d milestone(s) could not be read from their worktrees — master's copy is shown instead:%s\n",
+			warnPrefix(color), len(report.LiveGaps), warnSuffix(color)))
+		for _, g := range report.LiveGaps {
+			sb.WriteString("  " + g.describe() + "\n")
+		}
+		sb.WriteString("  A half-cleaned worktree is the usual cause: belmont recover --list\n\n")
+	}
+
 	// Unrecognised markers are surfaced loudly and before anything else that
 	// might be wrong because of them. Silence here is the whole of issue #27.
 	if unknown := unknownMarkerTasks(report.Milestones); len(unknown) > 0 {
@@ -498,6 +512,18 @@ func renderFeatureListing(report statusReport, color bool, showArchived bool) st
 			if unknown := unknownMarkerTasks(f.Milestones); len(unknown) > 0 {
 				sb.WriteString(fmt.Sprintf("%s  ⚠ %d unrecognised task marker(s) — excluded from counts, never scheduled; run: belmont status --feature %s%s\n",
 					warnPrefix(color), len(unknown), f.Slug, warnSuffix(color)))
+			}
+			// A milestone the overlay could not source from its worktree makes
+			// this row's counts partly master's fork-point copy. Same contract as
+			// the two warnings around it: say it here, not only in the detail
+			// view. See issue #48.
+			if len(f.LiveGaps) > 0 {
+				ids := make([]string, 0, len(f.LiveGaps))
+				for _, g := range f.LiveGaps {
+					ids = append(ids, g.Milestone)
+				}
+				sb.WriteString(fmt.Sprintf("%s  ⚠ %s could not be read from its worktree — the counts above include master's stale copy; run: belmont status --feature %s%s\n",
+					warnPrefix(color), strings.Join(ids, ", "), f.Slug, warnSuffix(color)))
 			}
 			if f.TasksOrphaned > 0 {
 				sb.WriteString(fmt.Sprintf("%s  ⚠ %d task line(s) outside any milestone — not counted, never scheduled; run: belmont status --feature %s%s\n",

@@ -554,12 +554,46 @@ func parseMilestones(progress string) []milestone {
 	return milestones
 }
 
+// liveOverlayGap records a milestone whose live worktree view could not be
+// used, so master's copy stands in for it. Reported rather than swallowed:
+// anything unplaceable is surfaced, never dropped, and an unreadable worktree is
+// unplaceable state.
+type liveOverlayGap struct {
+	Milestone string `json:"milestone"`
+	Path      string `json:"path"`
+	Reason    string `json:"reason"`
+}
+
+// describe renders one line naming what could not be read and what is standing
+// in for it. Every renderer says the same thing about the same condition.
+//
+// The path is not repeated here: Reason already carries it, because an
+// os.ReadFile error names the file it failed on and the no-such-milestone case
+// says so explicitly. Path stays a separate field for the JSON consumer.
+func (g liveOverlayGap) describe() string {
+	return fmt.Sprintf("%s could not be read from its worktree — %s; showing master's copy, which during a run is the fork-point baseline",
+		g.Milestone, g.Reason)
+}
+
 // overlayLiveMilestones returns `base` with each milestone whose ID matches an
 // entry in `perMilestoneLive` replaced by that worktree's current view of the
 // milestone. Milestones with no active worktree are returned unchanged.
 // Overlaid milestones carry a LiveFrom pointer so renderers can annotate them.
-func overlayLiveMilestones(base []milestone, perMilestoneLive map[string]string) []milestone {
+//
+// The second return names every milestone that fell back to master, and is not
+// optional for a caller to ignore. Both fallbacks below used to be silent, and
+// the "shouldn't happen" one was a fair bet while this governed DISPLAY only.
+// Since #42 routed `belmont validate` through this overlay and #44 routed
+// `belmont auto`'s startup gate through `validateFeature`, the fallback decides
+// whether a GATE passes: a worktree whose PROGRESS.md is missing or unreadable
+// made validate print "✓ No milestone-structure violations found" and let auto
+// start, a green covering less than the user believes in the one place a false
+// green starts a run. It is reachable without anything exotic — a half-cleaned
+// worktree, a failed merge that left the directory behind, a `.belmont/` copy
+// interrupted mid-write. See issue #48.
+func overlayLiveMilestones(base []milestone, perMilestoneLive map[string]string) ([]milestone, []liveOverlayGap) {
 	out := make([]milestone, 0, len(base))
+	var gaps []liveOverlayGap
 	for _, m := range base {
 		live, ok := perMilestoneLive[m.ID]
 		if !ok {
@@ -569,7 +603,9 @@ func overlayLiveMilestones(base []milestone, perMilestoneLive map[string]string)
 		wtProgressPath := filepath.Join(live, "PROGRESS.md")
 		data, err := os.ReadFile(wtProgressPath)
 		if err != nil {
-			out = append(out, m) // worktree lost its PROGRESS.md — fall back to master
+			// Worktree lost its PROGRESS.md — fall back to master, and say so.
+			out = append(out, m)
+			gaps = append(gaps, liveOverlayGap{Milestone: m.ID, Path: wtProgressPath, Reason: err.Error()})
 			continue
 		}
 		wtMilestones := parseMilestones(string(data))
@@ -583,11 +619,17 @@ func overlayLiveMilestones(base []milestone, perMilestoneLive map[string]string)
 			}
 		}
 		if !replaced {
-			// Worktree doesn't have this milestone (shouldn't happen) — keep master.
+			// The worktree's file parses but holds no such milestone — keep
+			// master's, and report it for the same reason.
 			out = append(out, m)
+			gaps = append(gaps, liveOverlayGap{
+				Milestone: m.ID,
+				Path:      wtProgressPath,
+				Reason:    wtProgressPath + " parses but holds no ### " + m.ID + ": block",
+			})
 		}
 	}
-	return out
+	return out, gaps
 }
 
 func parseTaskOrder(id string) (int, int) {

@@ -101,8 +101,11 @@ type featureSummary struct {
 	NextMilestone   *milestone  `json:"next_milestone,omitempty"`
 	NextTask        *task       `json:"next_task,omitempty"`
 	Status          string      `json:"status"`
-	Deps            []string    `json:"deps,omitempty"`
-	Priority        string      `json:"priority,omitempty"`
+	// LiveGaps names milestones whose live worktree state could not be read, so
+	// the counts above include master's stale copy of them. See issue #48.
+	LiveGaps []liveOverlayGap `json:"live_gaps,omitempty"`
+	Deps     []string         `json:"deps,omitempty"`
+	Priority string           `json:"priority,omitempty"`
 }
 
 type statusReport struct {
@@ -115,7 +118,13 @@ type statusReport struct {
 	// Orphans are task-shaped lines outside any milestone — invisible to every
 	// count. Carried on the report because renderStatus has no raw content and
 	// by the time parseMilestones has run they are already gone. See issue #31.
-	Orphans          []task `json:",omitempty"`
+	Orphans []task `json:",omitempty"`
+	// LiveGaps names milestones whose live worktree state could not be read, so
+	// master's (fork-point, therefore stale) copy is what this report shows for
+	// them. Carried on the report rather than printed where it happens so the
+	// JSON consumer learns it too — `--format json` is what an agent reads.
+	// See issue #48.
+	LiveGaps         []liveOverlayGap `json:",omitempty"`
 	TechPlanReady    bool
 	PRFAQReady       bool
 	OverallStatus    string

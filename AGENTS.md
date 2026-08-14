@@ -250,8 +250,12 @@ means the loop cannot proceed correctly — an unrecognised marker, colliding
 milestone IDs, a polish-milestone name, a cross-milestone task ID. These block
 `belmont auto` and make `belmont validate` exit 1. `severityWarning` is
 information Belmont refuses to drop but that breaks nothing downstream —
-currently just `task_outside_milestone`, because a `- [ ]` bullet in a retro is
-not work. Warnings print in `status` and `validate`, exit 0, and auto continues;
+`task_outside_milestone`, because a `- [ ]` bullet in a retro is not work, and
+`unreadable_live_milestone`, which says a milestone was linted against master
+because its own worktree could not be read (#48). The second one is a statement
+about coverage rather than about the file, so it carries no remedy and must not
+block: a half-cleaned worktree is not a reason to refuse a run that worked
+yesterday. Warnings print in `status` and `validate`, exit 0, and auto continues;
 `belmont validate --strict` exits 1 on them for CI. **`splitBySeverity` treats
 an unset severity as blocking on purpose** — a new rule that forgets the field
 fails loudly instead of being silently downgraded to advice. The split exists

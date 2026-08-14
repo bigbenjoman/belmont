@@ -403,7 +403,10 @@ func TestOverlayLiveMilestones_OverlaysOwningMilestoneOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	perMS := map[string]string{"M2": wtM2, "M3": wtM3}
-	merged := overlayLiveMilestones(master, perMS)
+	merged, gaps := overlayLiveMilestones(master, perMS)
+	if len(gaps) != 0 {
+		t.Errorf("both worktrees read cleanly, so nothing should be reported as a fallback: %+v", gaps)
+	}
 
 	// M1 should be untouched (no live worktree).
 	if merged[0].ID != "M1" || merged[0].LiveFrom != "" {
@@ -443,7 +446,12 @@ func TestOverlayLiveMilestones_FallsBackWhenWorktreeMissing(t *testing.T) {
 		{ID: "M2", Tasks: []task{{ID: "P1-1", Status: taskTodo}}},
 	}
 	// Point M2's worktree path at a non-existent dir — should keep master.
-	merged := overlayLiveMilestones(master, map[string]string{"M2": "/nonexistent/path"})
+	merged, gaps := overlayLiveMilestones(master, map[string]string{"M2": "/nonexistent/path"})
+	// Falling back is correct; falling back in silence is not — this is what
+	// `belmont validate` and `belmont auto`'s gate now hang a warning off.
+	if len(gaps) != 1 || gaps[0].Milestone != "M2" {
+		t.Errorf("the fallback was not reported: %+v", gaps)
+	}
 	if merged[1].LiveFrom != "" {
 		t.Errorf("missing worktree should not set LiveFrom, got %q", merged[1].LiveFrom)
 	}
