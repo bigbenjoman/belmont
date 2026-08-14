@@ -501,7 +501,14 @@ func lineIndentWidth(line string) int {
 // that alternative is first in the alternation. See issue #38.
 func mergeProgressState(masterContent, worktreeContent string) (string, []string) {
 	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
-	taskRe := regexp.MustCompile(`^(\s*-\s+)\[(.)\](\s+)(` + taskIDShape + `)(.*)$`)
+	// The trailing `:` is part of the definition, not decoration. `parseTaskID`
+	// keys on `<ID>:` — taking the shape without the delimiter left this reader
+	// still disagreeing with it, just differently: a bullet whose text merely
+	// BEGINS with an uppercase-initial hyphen-number token (`OAuth-2 migration`,
+	// `SHA-256 rollout`) was assigned that token as its identity, where
+	// parseTaskID reports no ID at all. Two such bullets on opposite sides then
+	// exchanged markers.
+	taskRe := regexp.MustCompile(`^(\s*-\s+)\[(.)\](\s+)(` + taskIDShape + `)(:.*)$`)
 
 	type masterTask struct {
 		marker    string

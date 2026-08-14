@@ -319,6 +319,99 @@ func TestConflictResolverCarriesIntoSeveralMilestonesAtOnce(t *testing.T) {
 	}
 }
 
+// The insertion index must survive anything else that appends to `merged` during
+// the same iteration.
+//
+// msInsertAfter was recorded at the TOP of the walk body while the line itself is
+// appended at the BOTTOM, and the activity-merge block in between can inject
+// theirs' unseen activity rows. Its trigger is `strings.HasPrefix(line, "##")`,
+// and "##" is a prefix of "###" — so it fires on a milestone header. For a
+// milestone whose block in "ours" is a bare header there is no later line to
+// correct the index, and the carried task was spliced BEFORE that header, i.e.
+// into the previous milestone. That produces a cross-milestone task ID, which
+// `belmont validate` rates severityError and which blocks `belmont auto` — all
+// under a green "conflicts auto-resolved".
+func TestCarriedTaskSurvivesAnActivityFlushOnTheSameIteration(t *testing.T) {
+	base := "### M1: One\n- [>] P1-M1-1: base text\n\n### M2: Two\n\n## Recent Activity\n\n| a | b |\n"
+	// The M1 task mentions "## Activity" in its own text, which is all it takes:
+	// inActivitySection is set by an unanchored strings.Contains.
+	ours := "### M1: One\n- [x] P1-M1-1: add a \"## Activity\" section to the report\n\n### M2: Two\n\n## Recent Activity\n\n| a | b |\n"
+	theirs := "### M1: One\n- [x] P1-M1-1: add a \"## Activity\" section to the report — revised\n\n### M2: Two\n- [!] P1-M2-9: carried into empty M2\n\n## Recent Activity\n\n| a | b |\n| c | d |\n"
+
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		t.Fatal("resolver declined")
+	}
+	got := readFile(t, filepath.Join(root, rel))
+
+	// The authoritative check is what the parser makes of the result, not where
+	// the bytes landed: a misplaced carry shows up as the task belonging to the
+	// wrong milestone.
+	for _, m := range parseMilestones(got) {
+		for _, task := range m.Tasks {
+			if task.ID == "P1-M2-9" && m.ID != "M2" {
+				t.Errorf("carried task P1-M2-9 parsed under %s, not M2 — a cross-milestone task ID that `belmont validate` rates severityError:\n%s", m.ID, got)
+			}
+		}
+	}
+	if !strings.Contains(got, "- [!] P1-M2-9") {
+		t.Errorf("carried task lost or mangled:\n%s", got)
+	}
+}
+
+// A task is a bullet plus its indented body, and anything that moves one moves
+// both — the invariant `taskBodyEnd` exists for (#33). Carrying only the bullet
+// leaves the **Evidence** behind on the side it came from.
+func TestCarriedTaskBringsItsBody(t *testing.T) {
+	base := "### M1: One\n- [>] P1-M1-1: base\n"
+	ours := "### M1: One\n- [x] P1-M1-1: build it\n"
+	theirs := "### M1: One\n- [x] P1-M1-1: build it\n- [!] P1-M1-9: rotate the credentials\n  **Verification**: console shows the new key\n  **Evidence**: none yet — waiting on ops\n"
+
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		t.Fatal("resolver declined")
+	}
+	got := readFile(t, filepath.Join(root, rel))
+	for _, want := range []string{"- [!] P1-M1-9", "**Verification**", "**Evidence**"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("carried task lost %q — the bullet arrived without its body:\n%s", want, got)
+		}
+	}
+}
+
+// Ambiguous structure is refused, not guessed — the policy `mergeProgressState`
+// already applies via dupMS and `requireUnambiguousMilestones` applies at startup.
+func TestCarryRefusesWhenTheTargetMilestoneIDIsDuplicated(t *testing.T) {
+	base := "### M1: One\n- [>] P1-M1-1: base\n"
+	ours := "### M1: One\n- [x] P1-M1-1: build it\n\n### M1: One again\n- [ ] P1-M1-2: other\n"
+	theirs := "### M1: One\n- [x] P1-M1-1: build it\n- [!] P1-M1-9: which M1 does this belong to?\n\n### M1: One again\n- [ ] P1-M1-2: other\n"
+
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		t.Errorf("resolver placed a carried task into a duplicated milestone ID rather than escalating:\n%s",
+			readFile(t, filepath.Join(root, rel)))
+	}
+}
+
+// Widening the ID SHAPE without the `<ID>:` delimiter left both merge readers
+// still disagreeing with parseTaskID — a bullet merely beginning with an
+// uppercase-initial hyphen-number token took that token as its identity. Two
+// such bullets on opposite sides then swapped markers.
+func TestMergeReadersDoNotTreatALeadingProseTokenAsATaskID(t *testing.T) {
+	master := "### M1: Work\n- [x] OAuth-2 migration for the API\n"
+	worktree := "### M1: Work\n- [ ] OAuth-2 migration for the API\n- [ ] OAuth-2 scope cleanup in admin\n"
+
+	// parseTaskID is the definition; it reports no ID for either line.
+	if _, _, ok := parseTaskID("OAuth-2 migration for the API"); ok {
+		t.Fatal("fixture invalid: parseTaskID should report no ID here")
+	}
+
+	got, _ := mergeProgressState(master, worktree)
+	if strings.Contains(got, "- [x] OAuth-2 scope cleanup") {
+		t.Errorf("a marker was applied across two different bullets that share a leading prose token:\n%s", got)
+	}
+}
+
 // Structure disagreement is a reconciliation-agent question. Appending the task
 // to a plausible-looking block would be the silent normalisation of #27.
 func TestConflictResolverDeclinesWhenCarriedTaskHasNoMilestoneHere(t *testing.T) {
@@ -417,6 +510,44 @@ func TestListingSeesABlockerRaisedOutsideTheRepresentativeWorktree(t *testing.T)
 	}
 	if got := features[0].TasksBlocked; got != 1 {
 		t.Errorf("TasksBlocked = %d, want 1 — the listing read only M1's worktree, so the Blocked section never fired for a blocker raised in M2's, while --feature and `belmont blockers` both showed it", got)
+	}
+}
+
+// Master must remain the BASELINE, not just a starting point that gets fully
+// replaced. Both other overlay tests put every milestone in perMilestoneLive, so
+// the overlay covers 100% of the file and the baseline is unobservable — a
+// mutant that restored the whole-feature swap while keeping overlayLiveMilestones
+// would survive them. A milestone with no live worktree pins the other half.
+func TestFeatureListingKeepsMasterForMilestonesWithNoWorktree(t *testing.T) {
+	root := t.TempDir()
+	featuresDir := filepath.Join(root, ".belmont", "features")
+	write := func(dir, content string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "PROGRESS.md"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// M3 has no worktree. Master says it is verified; wt1's stale copy says todo.
+	write(filepath.Join(featuresDir, "auth"),
+		"### M1: One\n- [ ] P1-M1-1: a\n\n### M2: Two\n- [ ] P1-M2-1: b\n\n### M3: Three\n- [v] P1-M3-1: c\n")
+
+	wt1 := filepath.Join(root, "wt-m1", ".belmont", "features", "auth")
+	wt2 := filepath.Join(root, "wt-m2", ".belmont", "features", "auth")
+	write(wt1, "### M1: One\n- [v] P1-M1-1: a\n\n### M2: Two\n- [ ] P1-M2-1: b\n\n### M3: Three\n- [ ] P1-M3-1: c\n")
+	write(wt2, "### M1: One\n- [ ] P1-M1-1: a\n\n### M2: Two\n- [v] P1-M2-1: b\n\n### M3: Three\n- [ ] P1-M3-1: c\n")
+
+	features := listFeaturesWithOverrides(featuresDir, 40, map[string]string{"auth": wt1}, "auth",
+		map[string]string{"M1": wt1, "M2": wt2})
+	if len(features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(features))
+	}
+	// M1 and M2 live (verified), M3 from master (verified) = 3.
+	if got := features[0].TasksVerified; got != 3 {
+		t.Errorf("TasksVerified = %d, want 3 — M3 has no worktree, so it must come from MASTER. Reading it from the representative worktree reports master's verified task as todo", got)
 	}
 }
 
