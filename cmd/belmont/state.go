@@ -561,17 +561,30 @@ func parseMilestones(progress string) []milestone {
 type liveOverlayGap struct {
 	Milestone string `json:"milestone"`
 	Path      string `json:"path"`
-	Reason    string `json:"reason"`
+	// Kind distinguishes the two fallbacks, and the difference is not cosmetic:
+	// under gapUnreadable nothing in that worktree's document was seen by
+	// anything, while under gapMilestoneAbsent the file was read fine — so a
+	// reader that says "a violation in that worktree does not appear here" is
+	// telling the truth about the first and not about the second.
+	Kind   string `json:"kind"`
+	Reason string `json:"reason"`
 }
 
-// describe renders one line naming what could not be read and what is standing
+const (
+	// The worktree's PROGRESS.md could not be read at all.
+	gapUnreadable = "unreadable"
+	// It was read and parsed, but holds no block for this milestone.
+	gapMilestoneAbsent = "milestone_absent"
+)
+
+// describe renders one line naming what could not be used and what is standing
 // in for it. Every renderer says the same thing about the same condition.
 //
 // The path is not repeated here: Reason already carries it, because an
-// os.ReadFile error names the file it failed on and the no-such-milestone case
+// os.ReadFile error names the file it failed on and the absent-milestone case
 // says so explicitly. Path stays a separate field for the JSON consumer.
 func (g liveOverlayGap) describe() string {
-	return fmt.Sprintf("%s could not be read from its worktree — %s; showing master's copy, which during a run is the fork-point baseline",
+	return fmt.Sprintf("%s — %s; master's copy is shown instead, which during a run is the fork-point baseline",
 		g.Milestone, g.Reason)
 }
 
@@ -605,7 +618,12 @@ func overlayLiveMilestones(base []milestone, perMilestoneLive map[string]string)
 		if err != nil {
 			// Worktree lost its PROGRESS.md — fall back to master, and say so.
 			out = append(out, m)
-			gaps = append(gaps, liveOverlayGap{Milestone: m.ID, Path: wtProgressPath, Reason: err.Error()})
+			gaps = append(gaps, liveOverlayGap{
+				Milestone: m.ID,
+				Path:      wtProgressPath,
+				Kind:      gapUnreadable,
+				Reason:    "its worktree's PROGRESS.md could not be read (" + err.Error() + ")",
+			})
 			continue
 		}
 		wtMilestones := parseMilestones(string(data))
@@ -625,7 +643,8 @@ func overlayLiveMilestones(base []milestone, perMilestoneLive map[string]string)
 			gaps = append(gaps, liveOverlayGap{
 				Milestone: m.ID,
 				Path:      wtProgressPath,
-				Reason:    wtProgressPath + " parses but holds no ### " + m.ID + ": block",
+				Kind:      gapMilestoneAbsent,
+				Reason:    "its worktree's PROGRESS.md (" + wtProgressPath + ") parses but holds no ### " + m.ID + ": block",
 			})
 		}
 	}
