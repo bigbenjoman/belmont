@@ -242,30 +242,45 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	theirsStates := make(map[string]string) // task ID → checkbox marker
 
 	// Theirs' task lines in document order, with the milestone each one sits
-	// in. Needed because a task present only in "theirs" has to be carried into
-	// the merged file rather than dropped (issue #43), and the block it belongs
-	// in is the one it was written in.
+	// in and the task it is nested under. Needed because a task present only in
+	// "theirs" has to be carried into the merged file rather than dropped (issue
+	// #43), and the block it belongs in is the one it was written in.
+	//
+	// EVERY task bullet is recorded, nested ones included. Recording only
+	// top-level bullets made a nested task travel solely inside its parent's
+	// block, so a nested bullet only "theirs" had was dropped outright whenever
+	// the parent already existed here — the parent was not carried, and nothing
+	// else was looking at the child. A nested task is a real task everywhere
+	// else in Belmont: `parseMilestones` counts it, `taskBodyEnd` bounds it,
+	// `moveTaskLines` moves it. See issue #47.
 	type theirsTask struct {
 		id        string
 		block     []string
 		milestone string
+		parent    string // enclosing task's ID; "" at top level
 	}
 	var theirsOrder []theirsTask
 	inRegion := false
 	theirsMS := ""
-	// A bullet nested inside a carried task's body travels with the block that
-	// encloses it, exactly as `moveTaskLines` treats one. Without this, the
-	// nested line would also be carried on its own and appear twice.
-	carriedThrough := -1
+	// Enclosing task bullets, innermost last. A bullet is nested inside the last
+	// one indented less deeply than it — the same "deeper than my own indent"
+	// reading `taskBodyEnd` uses to bound a body.
+	type openTask struct {
+		indent int
+		id     string
+	}
+	var open []openTask
 	for i, line := range theirsLines {
 		if m := msHeaderRe.FindStringSubmatch(line); m != nil {
 			inRegion = true
 			theirsMS = "M" + m[1]
+			open = open[:0]
 			continue
 		}
 		if isSectionBreak(line) {
 			inRegion = false
 			theirsMS = ""
+			open = open[:0]
 			continue
 		}
 		if !inRegion {
@@ -273,19 +288,28 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		}
 		if marker, id, ok := mergeTaskLine(line); ok {
 			theirsStates[id] = marker
-			if i > carriedThrough {
-				// The task is the bullet PLUS its indented body — carrying the
-				// bullet alone strands its `**Verification**` / `**Evidence**`
-				// lines on the side they came from, which is the #33 failure in
-				// a different function.
-				end := taskBodyEnd(theirsLines, i)
-				theirsOrder = append(theirsOrder, theirsTask{
-					id:        id,
-					block:     append([]string{}, theirsLines[i:end+1]...),
-					milestone: theirsMS,
-				})
-				carriedThrough = end
+			indent := lineIndentWidth(line)
+			for len(open) > 0 && open[len(open)-1].indent >= indent {
+				open = open[:len(open)-1]
 			}
+			parent := ""
+			if len(open) > 0 {
+				parent = open[len(open)-1].id
+			}
+			// The task is the bullet PLUS its indented body — carrying the
+			// bullet alone strands its `**Verification**` / `**Evidence**`
+			// lines on the side they came from, which is the #33 failure in
+			// a different function. A nested bullet inside that body is
+			// recorded in its own right too, and the carry below decides
+			// which of the two travels so neither arrives twice.
+			end := taskBodyEnd(theirsLines, i)
+			theirsOrder = append(theirsOrder, theirsTask{
+				id:        id,
+				block:     append([]string{}, theirsLines[i:end+1]...),
+				milestone: theirsMS,
+				parent:    parent,
+			})
+			open = append(open, openTask{indent: indent, id: id})
 		}
 	}
 
@@ -390,7 +414,15 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// of stranding as issue #33 — and inserting at the block boundary instead
 	// would land it past the blank line that ends the list.
 	msInsertAfter := make(map[string]int)
+	// Where each of ours' task lines landed in `merged`, and which milestone it
+	// sits in. A carried task that was nested under a parent this side already
+	// has is spliced after that parent's body rather than at the end of the
+	// milestone: a nested bullet's meaning is positional, and re-parenting it to
+	// whatever task happens to sit last is #33's mis-attribution in a new place.
+	oursTaskIdx := make(map[string]int)
+	oursTaskMS := make(map[string]string)
 	for _, line := range oursLines {
+		oursLineID := ""
 		if m := msHeaderRe.FindStringSubmatch(line); m != nil {
 			oursInRegion = true
 			oursMS = "M" + m[1]
@@ -403,6 +435,8 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 			oursMarker := marker
 			taskID := id
 			oursSeen[taskID] = true
+			oursTaskMS[taskID] = oursMS
+			oursLineID = taskID
 			if theirsMarker, ok := theirsStates[taskID]; ok {
 				oursRank, oursKnown := rank(oursMarker)
 				theirsRank, theirsKnown := rank(theirsMarker)
@@ -497,6 +531,12 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		if oursInRegion && oursMS != "" && strings.TrimSpace(line) != "" {
 			msInsertAfter[oursMS] = len(merged) - 1
 		}
+		// Recorded AFTER the append for the same reason msInsertAfter is: the
+		// activity-merge block above can append rows during this same iteration,
+		// so an index taken at the top of the body is stale by exactly that many.
+		if oursLineID != "" {
+			oursTaskIdx[oursLineID] = len(merged) - 1
+		}
 	}
 
 	// Flush at end of document. The loop only flushes when a following section
@@ -539,11 +579,28 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// losing a `[!]` this way looks exactly like the question was answered.
 	// mergeProgressState already carries missing lines the other way for the
 	// same reason. See issue #43.
-	var carried []theirsTask
+	missing := map[string]bool{}
 	for _, tt := range theirsOrder {
 		if !oursSeen[tt.id] {
-			carried = append(carried, tt)
+			missing[tt.id] = true
 		}
+	}
+	// A task whose PARENT is itself being carried travels inside that parent's
+	// block, exactly as `moveTaskLines` relocates a nested bullet with the block
+	// enclosing it. Carrying both would splice the child twice, and a duplicated
+	// ID is durable damage: countIDs in mergeProgressState refuses to reconcile
+	// that task on every later merge and tells the user to de-duplicate by hand.
+	// The IMMEDIATE parent is the whole test, and deliberately so: an ancestor
+	// further up that is missing here while the immediate parent is not means
+	// that ancestor's block carries a bullet this side already has, which the
+	// nested-ID check below refuses outright. So there is no case where walking
+	// the chain would skip a task this test keeps.
+	var carried []theirsTask
+	for _, tt := range theirsOrder {
+		if !missing[tt.id] || missing[tt.parent] {
+			continue
+		}
+		carried = append(carried, tt)
 	}
 	if len(carried) > 0 {
 		// A carried task whose milestone "ours" does not have cannot be placed.
@@ -551,7 +608,12 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		// disagree about structure, which is a reconciliation-agent question,
 		// and guessing here would be the silent-normalisation failure of #27
 		// wearing a different hat.
-		byMS := make(map[string][]string)
+		//
+		// Each carried block is filed against the index in `merged` it goes
+		// after — the end of its milestone's block, or the end of its parent's
+		// body when the parent exists here — so both kinds of anchor splice
+		// through one descending pass.
+		pending := make(map[int][]string)
 		for _, tt := range carried {
 			if _, ok := msInsertAfter[tt.milestone]; !ok {
 				fmt.Fprintf(os.Stderr,
@@ -578,19 +640,38 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 					relPath, tt.id, nestedID)
 				return false
 			}
-			byMS[tt.milestone] = append(byMS[tt.milestone], tt.block...)
+			at := msInsertAfter[tt.milestone]
+			if tt.parent != "" && oursSeen[tt.parent] {
+				// Nested under a task this side already has: land it inside that
+				// parent's body, past the parent's own `**Verification**` /
+				// `**Evidence**` lines. Appending it at the end of the milestone
+				// instead would re-parent it to whichever task sits last.
+				if oursTaskMS[tt.parent] != tt.milestone {
+					// The two sides file the parent under different milestones,
+					// so placing the child under it would move the child too —
+					// and a task whose ID names another milestone is
+					// `cross_milestone_task_id`, severityError. Same escalation
+					// as any other structure disagreement.
+					fmt.Fprintf(os.Stderr,
+						"  \033[33m⚠ %s: incoming task %s is nested under %s, which this side files under %s rather than %s — not auto-resolving; escalating to the reconciliation agent\033[0m\n",
+						relPath, tt.id, tt.parent, nonEmpty(oursTaskMS[tt.parent], "no milestone"), tt.milestone)
+					return false
+				}
+				at = taskBodyEnd(merged, oursTaskIdx[tt.parent])
+			}
+			pending[at] = append(pending[at], tt.block...)
 		}
 
 		// Splice highest index first so the earlier insertion points stay valid.
-		msIDs := make([]string, 0, len(byMS))
-		for ms := range byMS {
-			msIDs = append(msIDs, ms)
+		anchors := make([]int, 0, len(pending))
+		for at := range pending {
+			anchors = append(anchors, at)
 		}
-		sort.Slice(msIDs, func(i, j int) bool { return msInsertAfter[msIDs[i]] > msInsertAfter[msIDs[j]] })
-		for _, ms := range msIDs {
-			at := msInsertAfter[ms] + 1
+		sort.Sort(sort.Reverse(sort.IntSlice(anchors)))
+		for _, anchor := range anchors {
+			at := anchor + 1
 			tail := append([]string{}, merged[at:]...)
-			merged = append(merged[:at], byMS[ms]...)
+			merged = append(merged[:at], pending[anchor]...)
 			merged = append(merged, tail...)
 		}
 
