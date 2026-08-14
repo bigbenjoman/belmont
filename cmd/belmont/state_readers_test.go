@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -548,6 +549,118 @@ func TestFeatureListingKeepsMasterForMilestonesWithNoWorktree(t *testing.T) {
 	// M1 and M2 live (verified), M3 from master (verified) = 3.
 	if got := features[0].TasksVerified; got != 3 {
 		t.Errorf("TasksVerified = %d, want 3 — M3 has no worktree, so it must come from MASTER. Reading it from the representative worktree reports master's verified task as todo", got)
+	}
+}
+
+// PROGRESS.md puts its activity log last, and the flush only fired when a
+// FOLLOWING section heading arrived — so in the ordinary layout theirs' new rows
+// were silently dropped.
+func TestConflictResolverKeepsIncomingActivityRowsInATrailingSection(t *testing.T) {
+	base := "### M1: Work\n- [>] P1-M1-1: base\n\n## Recent Activity\n\n| when | what |\n| --- | --- |\n| mon | started |\n"
+	ours := "### M1: Work\n- [x] P1-M1-1: ours did it\n\n## Recent Activity\n\n| when | what |\n| --- | --- |\n| mon | started |\n"
+	theirs := "### M1: Work\n- [x] P1-M1-1: theirs did it differently\n\n## Recent Activity\n\n| when | what |\n| --- | --- |\n| mon | started |\n| tue | sibling merged M2 |\n"
+
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		t.Fatal("resolver declined")
+	}
+	got := readFile(t, filepath.Join(root, rel))
+	if !strings.Contains(got, "sibling merged M2") {
+		t.Errorf("an incoming activity row was dropped because the section is last in the file:\n%s", got)
+	}
+	if n := strings.Count(got, "| mon | started |"); n != 1 {
+		t.Errorf("the shared activity row appears %d times, want 1 — the flush duplicated rows ours already had:\n%s", n, got)
+	}
+}
+
+// A task line that merely mentions "## Activity" is not a heading, and a `###`
+// milestone header is not a level-2 section break. When those two tests were
+// loose, the flush fired inside the milestones region.
+func TestActivityFlushIgnoresTaskProseAndMilestoneHeaders(t *testing.T) {
+	base := "### M1: One\n- [>] P1-M1-1: base\n\n### M2: Two\n- [ ] P1-M2-1: b\n\n## Session History\n\n| a | b |\n"
+	ours := "### M1: One\n- [x] P1-M1-1: add a \"## Activity\" section to the report\n\n### M2: Two\n- [ ] P1-M2-1: b\n\n## Session History\n\n| a | b |\n"
+	theirs := "### M1: One\n- [x] P1-M1-1: add a \"## Activity\" section to the report — revised\n\n### M2: Two\n- [ ] P1-M2-1: b\n\n## Session History\n\n| a | b |\n| c | d |\n"
+
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		t.Fatal("resolver declined")
+	}
+	got := readFile(t, filepath.Join(root, rel))
+	lines := strings.Split(got, "\n")
+	idxOf := func(needle string) int {
+		for i, l := range lines {
+			if strings.Contains(l, needle) {
+				return i
+			}
+		}
+		return -1
+	}
+	// The incoming row must land in the activity section, not among the milestones.
+	if row, hist := idxOf("| c | d |"), idxOf("## Session History"); row != -1 && hist != -1 && row < hist {
+		t.Errorf("an activity row was flushed into the milestones region at line %d, before the section at %d:\n%s", row, hist, got)
+	}
+	for _, m := range parseMilestones(got) {
+		if m.ID == "M2" && len(m.Tasks) != 1 {
+			t.Errorf("M2 has %d tasks, want 1 — the flush corrupted the milestone region:\n%s", len(m.Tasks), got)
+		}
+	}
+}
+
+// `belmont validate` is the lint that gates `belmont auto` on the single-feature
+// path, and it read the collapsed representative worktree — so a violation
+// raised in any other milestone's worktree was invisible to the gate that exists
+// to catch it. Same defect as #42, in a reader with more consequence.
+func TestValidateSeesAViolationRaisedInANonRepresentativeWorktree(t *testing.T) {
+	root := t.TempDir()
+	featuresDir := filepath.Join(root, ".belmont", "features", "auth")
+	wt1 := filepath.Join(root, "wt-m1")
+	wt2 := filepath.Join(root, "wt-m2")
+	write := func(dir, content string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "PROGRESS.md"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clean := "### M1: One\n- [ ] P1-M1-1: a\n\n### M2: Two\n- [ ] P1-M2-1: b\n"
+	write(featuresDir, clean)
+	// M1's worktree is alphabetically first, so it is the representative. It is
+	// clean. The unreadable marker is in M2's.
+	write(filepath.Join(wt1, ".belmont", "features", "auth"), clean)
+	write(filepath.Join(wt2, ".belmont", "features", "auth"),
+		"### M1: One\n- [ ] P1-M1-1: a\n\n### M2: Two\n- [?] P1-M2-1: b\n")
+
+	aj := autoJSON{
+		Active:  true,
+		Mode:    "single-feature-parallel",
+		Feature: "auth",
+		Worktrees: map[string]autoJSONEntry{
+			"M1": {Path: wt1, Branch: "b1"},
+			"M2": {Path: wt2, Branch: "b2"},
+		},
+	}
+	blob, err := json.Marshal(aj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".belmont", "auto.json"), blob, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := validateFeature(root, "auth")
+	if err != nil {
+		t.Fatalf("validateFeature: %v", err)
+	}
+	var found bool
+	for _, x := range v {
+		if x.Rule == ruleUnrecognisedMarker {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("validate missed the unreadable marker raised in M2's worktree; it read only the representative one. Violations seen: %+v", v)
 	}
 }
 

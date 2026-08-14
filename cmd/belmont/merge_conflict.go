@@ -93,6 +93,15 @@ func classifyChanges(root, preSHA string) (workType, int) {
 	return workMixed, total
 }
 
+// activityHeadingRe matches the heading that opens PROGRESS.md's activity log.
+//
+// Anchored at column zero and required to be a level-2 ATX heading, for the same
+// reason isSectionBreak is: an ordinary task line that merely MENTIONS
+// "## Activity" is not a heading, and `###` is not a level-2 heading. Testing
+// this with strings.Contains let a task open the section, and testing the end
+// with HasPrefix(line, "##") let a milestone header close it.
+var activityHeadingRe = regexp.MustCompile(`^##\s+(?:Recent Activity|Activity|Session History)\b`)
+
 // resolveProgressConflict merges a conflicted PROGRESS.md by taking the most-advanced
 // task state from both sides. State ordering: [v] > [x] > [>] > [ ], [!] preserved.
 // Returns true if successfully resolved.
@@ -222,19 +231,38 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		}
 	}
 
-	// Collect unique activity entries from "theirs"
+	// Collect unique activity entries from "theirs", in document order.
+	//
+	// Three things this used to get wrong, all from testing the heading with an
+	// unanchored Contains and ending the section on any `##` prefix:
+	//
+	//   - `strings.HasPrefix(line, "##")` is also true of `###`, so a milestone
+	//     header ended the section — and, on the write side below, triggered the
+	//     flush INSIDE the milestones region.
+	//   - `strings.Contains(line, "## Activity")` is true of an ordinary task line
+	//     that merely mentions the string, so a task could open the section.
+	//   - the rows were held in a map, so the merged file's row order varied
+	//     between runs on identical input.
+	//
+	// The heading is a level-2 ATX heading at column zero, and the section ends
+	// where every other reader says a section ends: isSectionBreak.
 	theirsActivityLines := make(map[string]bool)
+	var theirsActivityOrder []string
 	inActivity := false
 	for _, line := range theirsLines {
-		if strings.Contains(line, "## Recent Activity") || strings.Contains(line, "## Activity") || strings.Contains(line, "## Session History") {
+		if activityHeadingRe.MatchString(line) {
 			inActivity = true
 			continue
 		}
-		if inActivity && strings.HasPrefix(line, "##") {
+		if inActivity && isSectionBreak(line) {
 			inActivity = false
 		}
 		if inActivity && strings.HasPrefix(strings.TrimSpace(line), "|") && !strings.Contains(line, "---") {
-			theirsActivityLines[strings.TrimSpace(line)] = true
+			row := strings.TrimSpace(line)
+			if !theirsActivityLines[row] {
+				theirsActivityLines[row] = true
+				theirsActivityOrder = append(theirsActivityOrder, row)
+			}
 		}
 	}
 
@@ -316,11 +344,15 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 			}
 		}
 
-		// Track activity section for merging entries
-		if strings.Contains(line, "## Recent Activity") || strings.Contains(line, "## Activity") || strings.Contains(line, "## Session History") {
+		// Track activity section for merging entries. Same heading test and same
+		// section boundary as the theirs-side scan above — when these two
+		// disagreed, the flush fired on a `### M<n>:` header before ours' own
+		// rows had been seen, so theirs' rows were inserted inside the milestones
+		// region AND ours' identical rows were then appended again below.
+		if activityHeadingRe.MatchString(line) {
 			inActivitySection = true
-		} else if inActivitySection && strings.HasPrefix(line, "##") {
-			for theirsLine := range theirsActivityLines {
+		} else if inActivitySection && isSectionBreak(line) {
+			for _, theirsLine := range theirsActivityOrder {
 				if !activityInserted[theirsLine] {
 					merged = append(merged, theirsLine)
 					activityInserted[theirsLine] = true
@@ -346,6 +378,19 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		// which `belmont validate` rates severityError.
 		if oursInRegion && oursMS != "" && strings.TrimSpace(line) != "" {
 			msInsertAfter[oursMS] = len(merged) - 1
+		}
+	}
+
+	// Flush at end of document. The loop only flushes when a following section
+	// heading arrives, so an activity section that is the file's LAST section —
+	// which is where PROGRESS.md actually puts it — never received theirs' new
+	// rows at all. They were silently dropped.
+	if inActivitySection {
+		for _, theirsLine := range theirsActivityOrder {
+			if !activityInserted[theirsLine] {
+				merged = append(merged, theirsLine)
+				activityInserted[theirsLine] = true
+			}
 		}
 	}
 
