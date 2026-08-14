@@ -360,7 +360,48 @@ func isSectionBreak(line string) bool {
 // file side recognised an ID the commit side could not, every `[v]` carrying a
 // hand-written ID was reported by the audit as unproven while a commit named it
 // verbatim.
-const taskIDShape = `P\d+-[\w][\w-]*|[A-Z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-\d+`
+// The two halves are named because the merge readers need them apart. Their
+// concatenation is byte-identical to what taskIDShape has always been, so
+// parseTaskID and commitNamedTaskIDs are unaffected.
+const (
+	// Unambiguous: `P1-M2-3` cannot be prose.
+	taskIDShapeOrdinal = `P\d+-[\w][\w-]*`
+	// Ambiguous without a delimiter: `OAuth-2 migration` and `SHA-256 rollout`
+	// both begin with a token of this shape and are not task IDs.
+	taskIDShapeHandWritten = `[A-Z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*-\d+`
+)
+
+const taskIDShape = taskIDShapeOrdinal + `|` + taskIDShapeHandWritten
+
+// mergeTaskLine reports the marker and task ID a merge reader should key a line
+// on — one definition, shared by mergeProgressState and resolveProgressConflict.
+//
+// The `:` delimiter is required for the hand-written form and NOT for `P<n>-`,
+// and that asymmetry is the whole point. Requiring it for both looked tidier and
+// silently changed behaviour: `- [!] P1-M1-1 rotate the creds` (no colon, a
+// perfectly ordinary hand-edit) stopped being reconciled, so master's `[!]` was
+// overwritten by the worktree's `[x]` with no warning at all. Losing a blocker
+// that way looks exactly like the question was answered — the failure this whole
+// area exists to prevent. The delimiter only ever earned its place against the
+// hand-written alternative, which is the one that can match prose.
+//
+// This is deliberately one token wider than parseTaskID, which requires `<ID>:`
+// for both forms. Wider is the fail-safe direction here: the cost of matching a
+// colon-less `P<n>-` line is that two sides' markers are reconciled by an ID that
+// cannot be anything else, and the cost of not matching it is silent state loss.
+func mergeTaskLine(line string) (marker, id string, ok bool) {
+	m := mergeTaskLineRe.FindStringSubmatch(line)
+	if m == nil {
+		return "", "", false
+	}
+	if m[2] != "" {
+		return m[1], m[2], true
+	}
+	return m[1], m[3], true
+}
+
+var mergeTaskLineRe = regexp.MustCompile(
+	`^\s*-\s+\[(.)\]\s+(?:(` + taskIDShapeOrdinal + `)|(` + taskIDShapeHandWritten + `):)`)
 
 var taskIDRe = regexp.MustCompile(`^(` + taskIDShape + `):\s*(.+)$`)
 

@@ -145,11 +145,9 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// see issue #38. A `P<n>-` ID behaves exactly as before; that alternative
 	// is first in the alternation.
 	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
-	// Delimiter included deliberately — see the matching comment in
-	// mergeProgressState. `parseTaskID` keys on `<ID>:`, and taking the shape
-	// without the `:` made a bullet beginning `OAuth-2 …` carry that token as its
-	// identity here while the parser said it had none.
-	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+(` + taskIDShape + `):`)
+	// Identity comes from mergeTaskLine — the one definition both merge readers
+	// share. See its comment for why the `:` delimiter is required of the
+	// hand-written form only.
 
 	theirsLines := strings.Split(string(theirsOut), "\n")
 	oursLines := strings.Split(string(oursOut), "\n")
@@ -203,8 +201,8 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 			if !inRegion {
 				continue
 			}
-			if m := taskRe.FindStringSubmatch(line); m != nil {
-				n[m[2]]++
+			if _, id, ok := mergeTaskLine(line); ok {
+				n[id]++
 			}
 		}
 		return n
@@ -273,8 +271,8 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		if !inRegion {
 			continue
 		}
-		if m := taskRe.FindStringSubmatch(line); m != nil {
-			theirsStates[m[2]] = m[1]
+		if marker, id, ok := mergeTaskLine(line); ok {
+			theirsStates[id] = marker
 			if i > carriedThrough {
 				// The task is the bullet PLUS its indented body — carrying the
 				// bullet alone strands its `**Verification**` / `**Evidence**`
@@ -282,7 +280,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 				// a different function.
 				end := taskBodyEnd(theirsLines, i)
 				theirsOrder = append(theirsOrder, theirsTask{
-					id:        m[2],
+					id:        id,
 					block:     append([]string{}, theirsLines[i:end+1]...),
 					milestone: theirsMS,
 				})
@@ -299,8 +297,8 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// that `[?]` rendering, the status warning and the `unrecognised_task_marker`
 	// violation exist to raise, before any of them can fire. Bail out instead
 	// so the conflict escalates to the reconciliation agent. Deliberately
-	// broader than taskRe: it matches ID-less task lines too, which taskRe
-	// skips. See issue #27.
+	// broader than mergeTaskLine: it matches ID-less task lines too, which
+	// mergeTaskLine skips. See issue #27.
 	anyTaskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s`)
 	for _, side := range []struct {
 		name  string
@@ -381,9 +379,9 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 			oursMS = ""
 		}
 		// Upgrade task checkboxes to the more-advanced state
-		if m := taskRe.FindStringSubmatch(line); oursInRegion && m != nil {
-			oursMarker := m[1]
-			taskID := m[2]
+		if marker, id, ok := mergeTaskLine(line); oursInRegion && ok {
+			oursMarker := marker
+			taskID := id
 			oursSeen[taskID] = true
 			if theirsMarker, ok := theirsStates[taskID]; ok {
 				oursRank, oursKnown := rank(oursMarker)
@@ -467,12 +465,29 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// heading arrives, so an activity section that is the file's LAST section —
 	// which is where PROGRESS.md actually puts it — never received theirs' new
 	// rows at all. They were silently dropped.
+	// Inserted BEFORE any trailing blank lines, not after them. A file ending in
+	// a newline splits into a final "" element, which the walk appends like any
+	// other line — so a plain append put the incoming rows below the blank that
+	// ends the table. They then render as a paragraph outside the log they
+	// belong to, and the file loses its trailing newline. Master's template puts
+	// `## Recent Activity` last, which is exactly where this flush is the one
+	// that runs.
 	if inActivitySection {
+		var rows []string
 		for _, theirsLine := range theirsActivityOrder {
 			if !activityInserted[theirsLine] {
-				merged = append(merged, theirsLine)
+				rows = append(rows, theirsLine)
 				activityInserted[theirsLine] = true
 			}
+		}
+		if len(rows) > 0 {
+			at := len(merged)
+			for at > 0 && strings.TrimSpace(merged[at-1]) == "" {
+				at--
+			}
+			tail := append([]string{}, merged[at:]...)
+			merged = append(merged[:at], rows...)
+			merged = append(merged, tail...)
 		}
 	}
 
@@ -516,13 +531,13 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 			// de-duplicate by hand. Escalate instead, matching the policy this
 			// branch already applies to a structure disagreement.
 			for _, bl := range tt.block[1:] {
-				m := taskRe.FindStringSubmatch(bl)
-				if m == nil || !oursSeen[m[2]] {
+				_, nestedID, ok := mergeTaskLine(bl)
+				if !ok || !oursSeen[nestedID] {
 					continue
 				}
 				fmt.Fprintf(os.Stderr,
 					"  \033[33m⚠ %s: incoming task %s carries a nested bullet for %s, which already exists on this side — not auto-resolving; escalating to the reconciliation agent\033[0m\n",
-					relPath, tt.id, m[2])
+					relPath, tt.id, nestedID)
 				return false
 			}
 			byMS[tt.milestone] = append(byMS[tt.milestone], tt.block...)

@@ -814,3 +814,181 @@ func TestAutoStartupGateSeesAViolationInANonRepresentativeWorktree(t *testing.T)
 		t.Errorf("auto refused, but not over the marker: %v", err)
 	}
 }
+
+// Requiring the `:` delimiter of BOTH task-ID forms looked tidier and silently
+// changed behaviour: an ordinary colon-less hand-edit stopped being reconciled,
+// so master's [!] was overwritten by the worktree's [x] with no warning. Losing
+// a blocker that way looks exactly like the question was answered. The delimiter
+// only ever earned its place against the hand-written form, which can match prose.
+func TestColonlessOrdinalIDStillReconciles(t *testing.T) {
+	master := "### M1: Work\n- [!] P1-M1-1 rotate the reporting credentials\n"
+	worktree := "### M1: Work\n- [x] P1-M1-1 rotate the reporting credentials\n"
+
+	got, warnings := mergeProgressState(master, worktree)
+	if !strings.Contains(got, "- [!] P1-M1-1") {
+		t.Errorf("master's [!] was overwritten by the worktree's [x] on a colon-less line — .belmont/ is --assume-unchanged, so it is in no commit:\n%s", got)
+	}
+	if len(warnings) == 0 {
+		t.Error("the blocker won but nothing said so; a silent win here is indistinguishable from a silent loss")
+	}
+}
+
+// The other half of the same rule: the delimiter is still required of the
+// hand-written form, or `OAuth-2 migration` carries `OAuth-2` as its identity.
+func TestHandWrittenIDStillNeedsItsDelimiter(t *testing.T) {
+	if _, _, ok := mergeTaskLine("- [x] OAuth-2 migration for the API"); ok {
+		t.Error("a prose bullet was assigned a task ID, which is how two unrelated bullets swap markers")
+	}
+	if _, id, ok := mergeTaskLine("- [x] FWLUP-SWEEP-1: real hand-written task"); !ok || id != "FWLUP-SWEEP-1" {
+		t.Errorf("hand-written ID with its delimiter did not parse: ok=%v id=%q", ok, id)
+	}
+	if _, id, ok := mergeTaskLine("- [ ] P1-M1-1: ordinary"); !ok || id != "P1-M1-1" {
+		t.Errorf("ordinary ID did not parse: ok=%v id=%q", ok, id)
+	}
+}
+
+// overlayLiveMilestones REPLACES a milestone master already has and never
+// appends one it does not. Reading the representative worktree's whole file
+// used to catch a worktree-only milestone by accident; overlaying stopped, so
+// two severityError rules went quiet — and a duplicate heading is exactly when
+// runScopeGuard and runEvidenceCheck both decline, leaving this lint alone.
+func TestValidateSeesAMilestoneThatExistsOnlyInAWorktree(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		wtExtra  string
+		wantRule string
+	}{
+		{
+			name:     "a polish milestone invented inside a worktree",
+			wtExtra:  "\n### M3: Polish and follow-ups\n- [ ] P1-M3-1: tidy\n",
+			wantRule: rulePolishMilestoneName,
+		},
+		{
+			name:     "a second heading for an ID master already has",
+			wtExtra:  "\n### M1: One again\n- [ ] P1-M1-9: dup\n",
+			wantRule: ruleDuplicateMilestoneID,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			featuresDir := filepath.Join(root, ".belmont", "features", "auth")
+			wt1 := filepath.Join(root, "wt-m1")
+			write := func(dir, content string) {
+				t.Helper()
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "PROGRESS.md"), []byte(content), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			clean := "### M1: One\n- [ ] P1-M1-1: a\n\n### M2: Two\n- [ ] P1-M2-1: b\n"
+			write(featuresDir, clean)
+			write(filepath.Join(wt1, ".belmont", "features", "auth"), clean+tc.wtExtra)
+
+			blob, err := json.Marshal(autoJSON{
+				Active: true, Mode: "single-feature-parallel", Feature: "auth",
+				Worktrees: map[string]autoJSONEntry{"M1": {Path: wt1, Branch: "b1"}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, ".belmont", "auto.json"), blob, 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			v, err := validateFeature(root, "auth")
+			if err != nil {
+				t.Fatalf("validateFeature: %v", err)
+			}
+			for _, x := range v {
+				if x.Rule == tc.wantRule {
+					return
+				}
+			}
+			t.Errorf("validate reported clean on a file it exits 1 on when read directly; %s was dropped with the worktree-only milestone. Saw: %+v", tc.wantRule, v)
+		})
+	}
+}
+
+// A file ending in a newline splits into a final "" element, so a plain append
+// put the incoming activity rows BELOW the blank line that ends the table: the
+// rows render as a paragraph outside the log, and the file loses its trailing
+// newline. `## Recent Activity` is the last section in master's template, which
+// is exactly where the end-of-document flush is the one that runs.
+func TestTrailingActivityFlushKeepsTheTableIntact(t *testing.T) {
+	head := "### M1: Work\n"
+	log := "\n## Recent Activity\n\n| When | What |\n|---|---|\n"
+	base := head + "- [>] P1-M1-1: base\n" + log + "| t0 | base row |\n"
+	ours := head + "- [x] P1-M1-1: ours\n" + log + "| t0 | base row |\n| t1 | ours row |\n"
+	theirs := head + "- [x] P1-M1-1: ours\n" + log + "| t0 | base row |\n| t2 | theirs row |\n"
+
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		t.Fatal("resolver declined a file it should have resolved")
+	}
+	got := readFile(t, filepath.Join(root, rel))
+
+	if !strings.HasSuffix(got, "\n") {
+		t.Errorf("the merged file lost its trailing newline:\n%q", got)
+	}
+	if !strings.Contains(got, "| t2 | theirs row |") {
+		t.Errorf("the incoming activity row was dropped:\n%s", got)
+	}
+	// Every table row must still be contiguous — a blank line between them ends
+	// the markdown table and the rows below it stop being part of the log.
+	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
+	firstRow, lastRow := -1, -1
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "|") {
+			if firstRow == -1 {
+				firstRow = i
+			}
+			lastRow = i
+		}
+	}
+	for i := firstRow; i <= lastRow; i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			t.Errorf("a blank line at %d splits the activity table, so the rows below it are no longer part of the log:\n%s", i, got)
+		}
+	}
+}
+
+// The listing got the milestone overlay but not the orphan union, so it counted
+// master's orphans only — while printing a pointer to `belmont validate`, which
+// unions across every live worktree. Two views, one document set, two answers.
+func TestListingUnionsOrphansAcrossWorktrees(t *testing.T) {
+	root := t.TempDir()
+	featuresDir := filepath.Join(root, ".belmont", "features")
+	master := filepath.Join(featuresDir, "auth")
+	wt1 := filepath.Join(root, "wt-m1")
+	wt2 := filepath.Join(root, "wt-m2")
+	write := func(dir, content string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "PROGRESS.md"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clean := "### M1: One\n- [ ] P1-M1-1: a\n\n### M2: Two\n- [ ] P1-M2-1: b\n"
+	write(master, clean)
+	write(filepath.Join(wt1, ".belmont", "features", "auth"), clean)
+	// The orphan is raised inside the NON-representative worktree.
+	write(filepath.Join(wt2, ".belmont", "features", "auth"),
+		clean+"\n## Session History\n\n- [ ] P1-M9-1: stray, outside every milestone\n")
+
+	perMS := map[string]string{
+		"M1": filepath.Join(wt1, ".belmont", "features", "auth"),
+		"M2": filepath.Join(wt2, ".belmont", "features", "auth"),
+	}
+	features := listFeaturesWithOverrides(featuresDir, 0, nil, "auth", perMS)
+	if len(features) != 1 {
+		t.Fatalf("features = %d, want 1", len(features))
+	}
+	if features[0].TasksOrphaned != 1 {
+		t.Errorf("TasksOrphaned = %d, want 1 — the listing counted master's orphans only and disagrees with `belmont validate` about the same files",
+			features[0].TasksOrphaned)
+	}
+}

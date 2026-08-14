@@ -207,6 +207,22 @@ func runAutoCmd(args []string) error {
 		violations = blocking
 		fmt.Fprintf(os.Stderr, "\033[31m✗ Milestone-structure violation(s) detected:\033[0m\n\n")
 		renderViolationGroup(os.Stderr, violations)
+		// Say WHICH files were linted. A violation renders its path as the bare
+		// "PROGRESS.md", and now that this gate reads live worktrees too, the
+		// offending line may not be in master at all — so `belmont repair`, which
+		// reads master, would find nothing and the user would be hunting.
+		if liveFeature, perMS := loadAutoWorktreeStateByMilestone(absRoot); perMS != nil && liveFeature == cfg.Feature {
+			ids := make([]string, 0, len(perMS))
+			for id := range perMS {
+				ids = append(ids, id)
+			}
+			sort.Strings(ids)
+			fmt.Fprintf(os.Stderr, "\nScanned master plus %d live worktree(s) — the line may be in one of these, not in master:\n", len(ids))
+			for _, id := range ids {
+				fmt.Fprintf(os.Stderr, "  %s  %s\n", id, filepath.Join(perMS[id], "PROGRESS.md"))
+			}
+			fmt.Fprintf(os.Stderr, "\n")
+		}
 		if !isTerminal(os.Stdin) {
 			return fmt.Errorf("auto: %d milestone-structure violation(s); restructure via `/belmont:tech-plan` before rerunning, or run with a TTY to override interactively", len(violations))
 		}
