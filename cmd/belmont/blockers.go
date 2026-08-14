@@ -535,9 +535,9 @@ func writeBlockerLiveGaps(sb *strings.Builder, report blockersReport, dim func(s
 	if len(report.LiveGaps) == 0 {
 		return
 	}
-	sb.WriteString(dim("\nDuring an active run, these milestones could not be read from their worktrees, so master's copy answered for them:\n"))
+	sb.WriteString(dim("\nDuring an active run, these milestones were answered from master's copy rather than their own worktree:\n"))
 	for _, g := range report.LiveGaps {
 		sb.WriteString(dim(fmt.Sprintf("  %s %s\n", g.Feature, g.describe())))
 	}
-	sb.WriteString(dim("  A blocker raised inside one of those worktrees is not in this queue: belmont recover --list\n"))
+	sb.WriteString(dim("  A blocker raised inside one of those worktrees is not in this queue.\n"))
 }

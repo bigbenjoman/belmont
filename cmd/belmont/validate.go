@@ -161,6 +161,26 @@ func runValidateCmd(args []string) error {
 	return nil
 }
 
+// gapViolationMessage states what the lint actually covered, and the two gap
+// kinds do NOT cover the same thing. Under gapUnreadable nothing in that
+// worktree's document was read by anything, so a violation raised inside it is
+// genuinely absent from this report. Under gapMilestoneAbsent the file read
+// fine and validateFeature unions it into `docs`, so that worktree's own
+// violations ARE reported — only this milestone's state came from master. One
+// sentence covering both would be false for the second, and a report that tells
+// a user it is incomplete when it is not sends them after a worktree that is
+// fine.
+func gapViolationMessage(g liveOverlayGap) string {
+	if g.Kind == gapMilestoneAbsent {
+		return fmt.Sprintf(
+			"%s was linted against master's copy: %s. That worktree's own violations are still reported — it is %s's state here that came from master rather than from the live worktree.",
+			g.Milestone, g.Reason, g.Milestone)
+	}
+	return fmt.Sprintf(
+		"%s was linted against master's copy: %s. A violation raised inside that worktree does not appear in this report. Inspect the path directly — during an active run this can also be a copy caught mid-write.",
+		g.Milestone, g.Reason)
+}
+
 // gapReported reports whether the overlay already filed this milestone as one
 // it could not read, so the same condition is not announced twice.
 func gapReported(gaps []liveOverlayGap, milestoneID string) bool {
@@ -196,11 +216,20 @@ func validateFeature(root, slug string) ([]validationViolation, error) {
 	progressPath := filepath.Join(featuresDir, "PROGRESS.md")
 	liveFeature, perMilestoneLive := loadAutoWorktreeStateByMilestone(root)
 	parallelLive := perMilestoneLive != nil && slug == liveFeature
+	// The whole-feature override — serial and multi-feature runs — has the same
+	// silent fallback the per-milestone overlay had, one branch over:
+	// `loadAutoWorktrees` admits a worktree whose feature DIRECTORY exists, so an
+	// interrupted `.belmont/` copy leaves the directory with no PROGRESS.md in it
+	// and this quietly lints master's copy instead. Same false green, same gate.
+	// Recorded and reported rather than swallowed. See issue #48.
+	featureGap := ""
 	if !parallelLive {
 		if override := loadAutoWorktrees(root); override != nil {
 			if wtFeature, ok := override[slug]; ok {
 				if p := filepath.Join(wtFeature, "PROGRESS.md"); fileExists(p) {
 					progressPath = p
+				} else {
+					featureGap = p
 				}
 			}
 		}
@@ -256,6 +285,16 @@ func validateFeature(root, slug string) ([]validationViolation, error) {
 	// starts on. Warning severity, deliberately — a half-cleaned worktree is
 	// information Belmont refuses to drop, not a reason to refuse a run that
 	// worked yesterday. `--strict` is what makes CI fail on it. See issue #48.
+	if featureGap != "" {
+		v = append(v, validationViolation{
+			Feature:  slug,
+			Rule:     ruleUnreadableLiveMilestone,
+			Severity: severityWarning,
+			Message: fmt.Sprintf(
+				"this feature has an active worktree whose PROGRESS.md is missing (%s), so the WHOLE feature was linted against master's copy. A violation raised inside that worktree does not appear in this report. Inspect the path directly — during an active run this can also be a copy caught mid-write.",
+				featureGap),
+		})
+	}
 	for _, g := range liveGaps {
 		v = append(v, validationViolation{
 			Feature:   slug,
@@ -265,9 +304,7 @@ func validateFeature(root, slug string) ([]validationViolation, error) {
 			// this finding is not about a line. The fix is to the worktree, and
 			// the command for it is in the message.
 			Severity: severityWarning,
-			Message: fmt.Sprintf(
-				"%s was linted against master's copy: its live worktree state could not be read — %s. A violation raised inside that worktree does not appear in this report. Recover or clean the worktree up with `belmont recover --list`.",
-				g.Milestone, g.Reason),
+			Message:  gapViolationMessage(g),
 		})
 	}
 	// validationViolation is all-string, comparable, and carries no line number,

@@ -251,8 +251,9 @@ milestone IDs, a polish-milestone name, a cross-milestone task ID. These block
 `belmont auto` and make `belmont validate` exit 1. `severityWarning` is
 information Belmont refuses to drop but that breaks nothing downstream —
 `task_outside_milestone`, because a `- [ ]` bullet in a retro is not work, and
-`unreadable_live_milestone`, which says a milestone was linted against master
-because its own worktree could not be read (#48). The second one is a statement
+`unreadable_live_milestone`, which says a milestone — or, on the serial and
+multi-feature path, a whole feature — was linted against master because its
+worktree copy could not be read (#48). The second one is a statement
 about coverage rather than about the file, so it carries no remedy and must not
 block: a half-cleaned worktree is not a reason to refuse a run that worked
 yesterday. Warnings print in `status` and `validate`, exit 0, and auto continues;

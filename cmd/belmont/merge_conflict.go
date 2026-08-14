@@ -262,12 +262,22 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	var theirsOrder []theirsTask
 	inRegion := false
 	theirsMS := ""
-	// Enclosing task bullets, innermost last. A bullet is nested inside the last
-	// one indented less deeply than it — the same "deeper than my own indent"
-	// reading `taskBodyEnd` uses to bound a body.
+	// Enclosing task bullets, innermost last, each held open until the line its
+	// body ends on.
+	//
+	// The bound is `taskBodyEnd`'s and NOT an indent comparison, because the skip
+	// rule in the carry below says a nested task "travels inside its parent's
+	// block" — and the block is exactly `taskBodyEnd`'s range. An indent-only
+	// stack disagreed with it: a body ends at the first non-blank line at the
+	// task's own indent or shallower, so a column-zero note closes it, while an
+	// indent stack kept the task open across that note. A deeper bullet written
+	// after the note was then recorded as that task's child, skipped as travelling
+	// inside a block that does not contain it, and dropped from the merged file —
+	// silent state loss in the function whose purpose is to prevent it, and a
+	// regression against the top-level-only carry it replaced.
 	type openTask struct {
-		indent int
-		id     string
+		end int
+		id  string
 	}
 	var open []openTask
 	for i, line := range theirsLines {
@@ -288,8 +298,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		}
 		if marker, id, ok := mergeTaskLine(line); ok {
 			theirsStates[id] = marker
-			indent := lineIndentWidth(line)
-			for len(open) > 0 && open[len(open)-1].indent >= indent {
+			for len(open) > 0 && i > open[len(open)-1].end {
 				open = open[:len(open)-1]
 			}
 			parent := ""
@@ -309,7 +318,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 				milestone: theirsMS,
 				parent:    parent,
 			})
-			open = append(open, openTask{indent: indent, id: id})
+			open = append(open, openTask{end: end, id: id})
 		}
 	}
 
@@ -613,7 +622,27 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		// after — the end of its milestone's block, or the end of its parent's
 		// body when the parent exists here — so both kinds of anchor splice
 		// through one descending pass.
-		pending := make(map[int][]string)
+		//
+		// Two anchors can be the SAME index, and then their order inside the
+		// bucket decides parentage rather than merely tidiness:
+		//
+		//   - a parent that is the last task in its milestone here has
+		//     `taskBodyEnd(parent) == msInsertAfter[ms]`, so a carried child and
+		//     a brand-new top-level task collide. Emitted in incoming document
+		//     order, a new top-level task written first takes the child with it —
+		//     exactly the re-parenting the parent anchor exists to prevent.
+		//   - a task whose body ends on the same line its own parent's body ends
+		//     on collides with its parent, so two children with different parents
+		//     share a bucket; whichever is emitted second nests under the first.
+		//
+		// Both are settled by emitting DEEPER anchors first: a child of the inner
+		// task, then a child of the outer one, then anything anchored to the
+		// milestone as a whole (depth -1). Ties keep incoming document order.
+		type carriedBlock struct {
+			depth int // indent of the anchoring task line here; -1 for a milestone anchor
+			lines []string
+		}
+		pending := make(map[int][]carriedBlock)
 		for _, tt := range carried {
 			if _, ok := msInsertAfter[tt.milestone]; !ok {
 				fmt.Fprintf(os.Stderr,
@@ -640,7 +669,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 					relPath, tt.id, nestedID)
 				return false
 			}
-			at := msInsertAfter[tt.milestone]
+			at, depth := msInsertAfter[tt.milestone], -1
 			if tt.parent != "" && oursSeen[tt.parent] {
 				// Nested under a task this side already has: land it inside that
 				// parent's body, past the parent's own `**Verification**` /
@@ -658,8 +687,9 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 					return false
 				}
 				at = taskBodyEnd(merged, oursTaskIdx[tt.parent])
+				depth = lineIndentWidth(merged[oursTaskIdx[tt.parent]])
 			}
-			pending[at] = append(pending[at], tt.block...)
+			pending[at] = append(pending[at], carriedBlock{depth: depth, lines: tt.block})
 		}
 
 		// Splice highest index first so the earlier insertion points stay valid.
@@ -669,9 +699,17 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		}
 		sort.Sort(sort.Reverse(sort.IntSlice(anchors)))
 		for _, anchor := range anchors {
+			blocks := pending[anchor]
+			// Stable, so equal-depth blocks keep the order the incoming document
+			// wrote them in.
+			sort.SliceStable(blocks, func(i, j int) bool { return blocks[i].depth > blocks[j].depth })
+			var lines []string
+			for _, b := range blocks {
+				lines = append(lines, b.lines...)
+			}
 			at := anchor + 1
 			tail := append([]string{}, merged[at:]...)
-			merged = append(merged[:at], pending[anchor]...)
+			merged = append(merged[:at], lines...)
 			merged = append(merged, tail...)
 		}
 

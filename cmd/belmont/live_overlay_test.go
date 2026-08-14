@@ -137,7 +137,7 @@ func TestListingWarnsWhenAWorktreeCouldNotBeRead(t *testing.T) {
 		t.Fatalf("expected 1 feature, got %d", len(features))
 	}
 	out := renderFeatureListing(statusReport{Features: features, TaskCounts: map[string]int{}}, false, false)
-	if !strings.Contains(out, "M2") || !strings.Contains(out, "could not be read") {
+	if !strings.Contains(out, "M2") || !strings.Contains(out, "not its worktree") {
 		t.Errorf("the listing shows M2 from master's stale copy without saying so:\n%s", out)
 	}
 }
@@ -155,5 +155,105 @@ func TestBlockersReportsAWorktreeItCouldNotRead(t *testing.T) {
 	out := renderBlockers(report, false, false)
 	if !strings.Contains(out, "M2") || !strings.Contains(out, "could not be read") {
 		t.Errorf("`belmont blockers` answered from master's stale copy of M2 without saying so:\n%s", out)
+	}
+}
+
+// The two gap kinds do not cover the same thing, and one sentence for both is
+// false for one of them. Under `gapUnreadable` nothing in that worktree's
+// document was read, so a violation inside it really is absent from the report.
+// Under `gapMilestoneAbsent` the file read fine and `validateFeature` unions it,
+// so that worktree's violations ARE reported — telling the user otherwise sends
+// them after a worktree that is fine.
+func TestGapMessageDoesNotOverstateWhatTheLintMissed(t *testing.T) {
+	// Shape 1: the file is gone. Nothing in it was seen.
+	root, _, _ := overlayFixture(t, "")
+	v, err := validateFeature(root, "auth")
+	if err != nil {
+		t.Fatalf("validateFeature: %v", err)
+	}
+	var msg string
+	for _, x := range v {
+		if x.Rule == ruleUnreadableLiveMilestone {
+			msg = x.Message
+		}
+	}
+	if !strings.Contains(msg, "does not appear in this report") {
+		t.Errorf("an unreadable worktree hides its own violations, and the message no longer says so:\n%s", msg)
+	}
+
+	// Shape 2: the file reads, it just holds a different milestone — and that
+	// milestone's own violation is reported from it, in the same output.
+	root2, _, _ := overlayFixture(t, "### M1: One\n- [ ] P1-M1-1: a\n\n### M3: Polish and cleanup\n- [ ] P1-M3-1: tidy\n")
+	v2, err := validateFeature(root2, "auth")
+	if err != nil {
+		t.Fatalf("validateFeature: %v", err)
+	}
+	var gapMsg string
+	var sawWorktreeViolation bool
+	for _, x := range v2 {
+		if x.Rule == ruleUnreadableLiveMilestone {
+			gapMsg = x.Message
+		}
+		if x.Rule == rulePolishMilestoneName {
+			sawWorktreeViolation = true
+		}
+	}
+	if !sawWorktreeViolation {
+		t.Fatalf("fixture invalid: the worktree's own violation was not reported, so there is nothing to overstate. Got: %+v", v2)
+	}
+	if strings.Contains(gapMsg, "does not appear in this report") {
+		t.Errorf("the message claims a violation inside that worktree is missing from the report, while the report contains one, raised from exactly that file:\n%s", gapMsg)
+	}
+}
+
+// The per-milestone overlay is not the only silent fallback the gate has. On the
+// serial / multi-feature path the whole feature is read from one worktree, and
+// `loadAutoWorktrees` admits that worktree on the strength of its feature
+// DIRECTORY existing — so an interrupted `.belmont/` copy leaves a directory
+// with no PROGRESS.md in it and `validateFeature` quietly lints master's copy.
+// Same false green, one branch over.
+func TestValidateReportsAWholeFeatureWorktreeItCouldNotRead(t *testing.T) {
+	root := t.TempDir()
+	wt := filepath.Join(root, "wt-auth")
+	featureDir := filepath.Join(root, ".belmont", "features", "auth")
+	if err := os.MkdirAll(featureDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(featureDir, "PROGRESS.md"),
+		[]byte("### M1: One\n- [ ] P1-M1-1: a\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// The worktree's feature dir exists — that is all loadAutoWorktrees requires
+	// — but the copy never finished, so PROGRESS.md is absent.
+	if err := os.MkdirAll(filepath.Join(wt, ".belmont", "features", "auth"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	blob, err := json.Marshal(autoJSON{
+		Active:    true,
+		Mode:      "multi-feature",
+		Worktrees: map[string]autoJSONEntry{"auth": {Path: wt, Branch: "b1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".belmont", "auto.json"), blob, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := validateFeature(root, "auth")
+	if err != nil {
+		t.Fatalf("validateFeature: %v", err)
+	}
+	var found bool
+	for _, x := range v {
+		if x.Rule == ruleUnreadableLiveMilestone {
+			found = true
+			if x.Severity != severityWarning {
+				t.Errorf("severity = %q, want %q", x.Severity, severityWarning)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("validate linted the whole feature against master's copy and reported a clean file. Violations seen: %+v", v)
 	}
 }

@@ -343,12 +343,17 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 	// with the milestone list it qualifies, because that list is what it makes
 	// less true. See issue #48.
 	if len(report.LiveGaps) > 0 {
-		sb.WriteString(fmt.Sprintf("%s%d milestone(s) could not be read from their worktrees — master's copy is shown instead:%s\n",
+		sb.WriteString(fmt.Sprintf("%s%d milestone(s) are shown from master's copy, not from their own worktrees:%s\n",
 			warnPrefix(color), len(report.LiveGaps), warnSuffix(color)))
 		for _, g := range report.LiveGaps {
 			sb.WriteString("  " + g.describe() + "\n")
 		}
-		sb.WriteString("  A half-cleaned worktree is the usual cause: belmont recover --list\n\n")
+		// Deliberately NOT "run belmont recover": a gap only exists while
+		// auto.json is active, and `belmont recover --list` scans the same
+		// directory the live wave worktrees are in with no active-run filter — so
+		// mid-run it lists them as preserved and offers to clean them. The path
+		// above is the thing to look at.
+		sb.WriteString("  A run still in flight can also be a copy caught mid-write — re-run this before treating the worktree as broken.\n\n")
 	}
 
 	// Unrecognised markers are surfaced loudly and before anything else that
@@ -522,7 +527,7 @@ func renderFeatureListing(report statusReport, color bool, showArchived bool) st
 				for _, g := range f.LiveGaps {
 					ids = append(ids, g.Milestone)
 				}
-				sb.WriteString(fmt.Sprintf("%s  ⚠ %s could not be read from its worktree — the counts above include master's stale copy; run: belmont status --feature %s%s\n",
+				sb.WriteString(fmt.Sprintf("%s  ⚠ %s shown from master's copy, not its worktree — the counts above may be stale; run: belmont status --feature %s%s\n",
 					warnPrefix(color), strings.Join(ids, ", "), f.Slug, warnSuffix(color)))
 			}
 			if f.TasksOrphaned > 0 {
