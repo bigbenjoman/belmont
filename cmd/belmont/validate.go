@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -166,13 +167,23 @@ func validateFeature(root, slug string) ([]validationViolation, error) {
 	if !dirExists(featuresDir) {
 		return nil, fmt.Errorf("feature %q not found at %s", slug, featuresDir)
 	}
-	// Prefer live worktree state if one exists for this feature, same as
-	// `belmont status` does.
+	// Prefer live worktree state if one exists, in the same two shapes
+	// `belmont status` reads it: a whole-feature override for serial and
+	// multi-feature runs, a per-milestone overlay for single-feature-parallel.
+	//
+	// Reading only the collapsed representative worktree made `belmont validate`
+	// blind to a violation raised in any other milestone's worktree — issue #42's
+	// defect in a different reader, and it matters more here, because this is the
+	// lint that gates `belmont auto` on the single-feature path.
 	progressPath := filepath.Join(featuresDir, "PROGRESS.md")
-	if override := loadAutoWorktrees(root); override != nil {
-		if wtFeature, ok := override[slug]; ok {
-			if p := filepath.Join(wtFeature, "PROGRESS.md"); fileExists(p) {
-				progressPath = p
+	liveFeature, perMilestoneLive := loadAutoWorktreeStateByMilestone(root)
+	parallelLive := perMilestoneLive != nil && slug == liveFeature
+	if !parallelLive {
+		if override := loadAutoWorktrees(root); override != nil {
+			if wtFeature, ok := override[slug]; ok {
+				if p := filepath.Join(wtFeature, "PROGRESS.md"); fileExists(p) {
+					progressPath = p
+				}
 			}
 		}
 	}
@@ -180,7 +191,42 @@ func validateFeature(root, slug string) ([]validationViolation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", progressPath, err)
 	}
+
 	milestones := parseMilestones(string(data))
+	// Orphan detection is document-level, so the milestone overlay cannot carry
+	// it: a task line outside every milestone exists in one specific file. Scan
+	// master plus each live worktree and union. An orphan is additive by nature,
+	// and one raised inside a worktree is invisible to every other view.
+	docs := []string{string(data)}
+	if parallelLive {
+		milestones = overlayLiveMilestones(milestones, perMilestoneLive)
+		msIDs := make([]string, 0, len(perMilestoneLive))
+		for id := range perMilestoneLive {
+			msIDs = append(msIDs, id)
+		}
+		sort.Strings(msIDs) // map order would vary the report between runs
+		for _, id := range msIDs {
+			if b, err := os.ReadFile(filepath.Join(perMilestoneLive[id], "PROGRESS.md")); err == nil {
+				docs = append(docs, string(b))
+			}
+		}
+	}
+
 	v := detectViolations(slug, milestones)
-	return append(v, detectOrphanViolations(slug, string(data))...), nil
+	// validationViolation is all-string, comparable, and carries no line number,
+	// so the same orphan seen in master and in a worktree's copy dedupes cleanly.
+	seen := make(map[validationViolation]bool, len(v))
+	for _, x := range v {
+		seen[x] = true
+	}
+	for _, doc := range docs {
+		for _, o := range detectOrphanViolations(slug, doc) {
+			if seen[o] {
+				continue
+			}
+			seen[o] = true
+			v = append(v, o)
+		}
+	}
+	return v, nil
 }
