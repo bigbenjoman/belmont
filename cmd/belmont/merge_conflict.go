@@ -358,6 +358,26 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	inActivitySection := false
 	activityInserted := make(map[string]bool)
 
+	// A decision — `[-]` withdrawn or `[!]` blocked — beats progress from either
+	// side, and whichever side's decision wins, the state it displaced is
+	// reported. `mergeProgressState` warns in all four of those directions; this
+	// resolver warned in none of them, and it is the path that runs when git
+	// registered a conflict — the one occasion the user is already being told
+	// went fine ("conflicts auto-resolved"). `.belmont/` is `--assume-unchanged`
+	// inside a worktree, so a state dropped here is in no commit and
+	// unrecoverable. See issue #46.
+	warnDisplaced := func(taskID, decision, keptMarker, lostMarker string, keptIsOurs bool) {
+		if keptIsOurs {
+			fmt.Fprintf(os.Stderr,
+				"  \033[33m⚠ %s: task %s is [%s] here but [%s] in the incoming version — the %s wins, so that state was not merged\033[0m\n",
+				relPath, taskID, keptMarker, lostMarker, decision)
+			return
+		}
+		fmt.Fprintf(os.Stderr,
+			"  \033[33m⚠ %s: task %s is [%s] in the incoming version but [%s] here — the %s wins, so this side's state was not merged\033[0m\n",
+			relPath, taskID, keptMarker, lostMarker, decision)
+	}
+
 	// Same region gate on the write side: a `[x]` quoted in ours' session log
 	// must not be rewritten to theirs' state either.
 	oursInRegion := false
@@ -410,14 +430,32 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 				switch {
 				case oursState == taskWithdrawn:
 					// Already withdrawn on ours; leave the line as written.
+					if theirsState != taskTodo && theirsState != taskWithdrawn {
+						warnDisplaced(taskID, "withdrawal", oursMarker, theirsMarker, true)
+					}
 				case theirsState == taskWithdrawn:
+					if oursState != taskTodo {
+						warnDisplaced(taskID, "withdrawal", theirsMarker, oursMarker, false)
+					}
 					line = strings.Replace(line, "["+oursMarker+"]", "["+theirsMarker+"]", 1)
-				case oursState == taskBlocked || theirsState == taskBlocked:
-					// Keep ours. Note this is NOT the rule mergeProgressState
-					// applies — there `[!]` wins from either side, here a blocker
-					// on theirs loses to a more advanced ours. Pre-existing;
-					// left alone deliberately rather than changed as a side
-					// effect of the withdrawn fix.
+				case oursState == taskBlocked:
+					// Already blocked on ours; leave the line as written.
+					if theirsState != taskTodo && theirsState != taskBlocked {
+						warnDisplaced(taskID, "blocker", oursMarker, theirsMarker, true)
+					}
+				case theirsState == taskBlocked:
+					// The half this function used to get wrong. `[!]` wins from EITHER
+					// side, exactly as mergeProgressState has it. Keeping ours meant a
+					// blocker the incoming side raised was discarded whenever this side
+					// held a more advanced state — and which of the two functions runs
+					// depends only on whether git happened to register a conflict, so the
+					// same two documents merged either way gave different answers. Either
+					// rule could be defended in isolation; having both, selected by that,
+					// cannot. See issue #46.
+					if oursState != taskTodo {
+						warnDisplaced(taskID, "blocker", theirsMarker, oursMarker, false)
+					}
+					line = strings.Replace(line, "["+oursMarker+"]", "["+theirsMarker+"]", 1)
 				case oursKnown && theirsKnown && theirsRank > oursRank:
 					line = strings.Replace(line, "["+oursMarker+"]", "["+theirsMarker+"]", 1)
 				}
