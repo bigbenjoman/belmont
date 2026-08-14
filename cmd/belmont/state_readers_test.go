@@ -274,6 +274,51 @@ func TestConflictResolverPlacesCarriedTaskInsideItsMilestone(t *testing.T) {
 	}
 }
 
+// Two milestones carrying at once exercises the descending-index splice: insert
+// into M1 first and every later insertion point shifts, so the loop goes
+// highest-first. Also covers a milestone whose block in "ours" is a bare header
+// with no tasks, where the insertion point is the header line itself.
+func TestConflictResolverCarriesIntoSeveralMilestonesAtOnce(t *testing.T) {
+	base := "### M1: One\n- [>] P1-M1-1: as first written\n\n### M2: Two\n\n### M3: Three\n- [>] P1-M3-1: as first written\n"
+	ours := "### M1: One\n- [x] P1-M1-1: first\n\n### M2: Two\n\n### M3: Three\n- [x] P1-M3-1: third\n"
+	theirs := "### M1: One\n- [x] P1-M1-1: first\n- [!] P1-M1-9: carried into one\n\n### M2: Two\n- [ ] P1-M2-9: carried into an empty block\n\n### M3: Three\n- [x] P1-M3-1: third\n- [ ] P1-M3-9: carried into three\n"
+
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		t.Fatal("resolver declined")
+	}
+
+	got := readFile(t, filepath.Join(root, rel))
+	lines := strings.Split(got, "\n")
+	idxOf := func(needle string) int {
+		for i, l := range lines {
+			if strings.Contains(l, needle) {
+				return i
+			}
+		}
+		return -1
+	}
+	for _, id := range []string{"P1-M1-9", "P1-M2-9", "P1-M3-9"} {
+		if idxOf(id) == -1 {
+			t.Fatalf("%s was dropped:\n%s", id, got)
+		}
+	}
+	// Each carried task must land inside its own milestone's block.
+	m2, m3 := idxOf("### M2:"), idxOf("### M3:")
+	if got1 := idxOf("P1-M1-9"); got1 > m2 {
+		t.Errorf("P1-M1-9 escaped M1 into a later block:\n%s", got)
+	}
+	if got2 := idxOf("P1-M2-9"); got2 < m2 || got2 > m3 {
+		t.Errorf("P1-M2-9 did not land inside M2's empty block:\n%s", got)
+	}
+	if got3 := idxOf("P1-M3-9"); got3 < m3 {
+		t.Errorf("P1-M3-9 landed before its own milestone:\n%s", got)
+	}
+	if !strings.Contains(got, "- [!] P1-M1-9") {
+		t.Errorf("the carried blocker lost its marker:\n%s", got)
+	}
+}
+
 // Structure disagreement is a reconciliation-agent question. Appending the task
 // to a plausible-looking block would be the silent normalisation of #27.
 func TestConflictResolverDeclinesWhenCarriedTaskHasNoMilestoneHere(t *testing.T) {
@@ -330,6 +375,48 @@ func TestFeatureListingOverlaysEachMilestoneFromItsOwnWorktree(t *testing.T) {
 	}
 	if got := features[0].TasksVerified; got != 2 {
 		t.Errorf("TasksVerified = %d, want 2 — the listing read one representative worktree and reported the other milestone's stale state. `belmont blockers` reads per-milestone, and the listing points readers at it, so the two disagreed mid-run", got)
+	}
+}
+
+// The exact scenario from the #36 review thread on status.go:552, which was
+// answered there by documenting the gap rather than closing it:
+//
+//	"with worktrees for M1 and M2 and a [!] only in M2's, the listing shows no
+//	 Blocked section at all, while --feature and belmont blockers both show it.
+//	 The listing you just taught to defer to `blockers` disagrees with it."
+//
+// The Blocked section is driven by TasksBlocked, so the cap and its pointer
+// line could never fire for a blocker raised outside the representative
+// worktree. Pinned as a regression test, not just as a count.
+func TestListingSeesABlockerRaisedOutsideTheRepresentativeWorktree(t *testing.T) {
+	root := t.TempDir()
+	featuresDir := filepath.Join(root, ".belmont", "features")
+	write := func(dir, content string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "PROGRESS.md"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	write(filepath.Join(featuresDir, "auth"), "### M1: One\n- [ ] P1-M1-1: a\n\n### M2: Two\n- [ ] P1-M2-1: b\n")
+
+	// M1's worktree is the alphabetically first, so it is the representative
+	// the collapsed map picks. The blocker is in M2's.
+	wt1 := filepath.Join(root, "wt-m1", ".belmont", "features", "auth")
+	wt2 := filepath.Join(root, "wt-m2", ".belmont", "features", "auth")
+	write(wt1, "### M1: One\n- [x] P1-M1-1: a\n\n### M2: Two\n- [ ] P1-M2-1: b\n")
+	write(wt2, "### M1: One\n- [ ] P1-M1-1: a\n\n### M2: Two\n- [!] P1-M2-1: b — waiting on a person\n")
+
+	features := listFeaturesWithOverrides(featuresDir, 40, map[string]string{"auth": wt1}, "auth",
+		map[string]string{"M1": wt1, "M2": wt2})
+	if len(features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(features))
+	}
+	if got := features[0].TasksBlocked; got != 1 {
+		t.Errorf("TasksBlocked = %d, want 1 — the listing read only M1's worktree, so the Blocked section never fired for a blocker raised in M2's, while --feature and `belmont blockers` both showed it", got)
 	}
 }
 
