@@ -136,7 +136,11 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// see issue #38. A `P<n>-` ID behaves exactly as before; that alternative
 	// is first in the alternation.
 	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
-	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+(` + taskIDShape + `)`)
+	// Delimiter included deliberately — see the matching comment in
+	// mergeProgressState. `parseTaskID` keys on `<ID>:`, and taking the shape
+	// without the `:` made a bullet beginning `OAuth-2 …` carry that token as its
+	// identity here while the parser said it had none.
+	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+(` + taskIDShape + `):`)
 	theirsStates := make(map[string]string) // task ID → checkbox marker
 
 	// Theirs' task lines in document order, with the milestone each one sits
@@ -145,7 +149,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// in is the one it was written in.
 	type theirsTask struct {
 		id        string
-		line      string
+		block     []string
 		milestone string
 	}
 	var theirsOrder []theirsTask
@@ -153,7 +157,11 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	theirsLines := strings.Split(string(theirsOut), "\n")
 	inRegion := false
 	theirsMS := ""
-	for _, line := range theirsLines {
+	// A bullet nested inside a carried task's body travels with the block that
+	// encloses it, exactly as `moveTaskLines` treats one. Without this, the
+	// nested line would also be carried on its own and appear twice.
+	carriedThrough := -1
+	for i, line := range theirsLines {
 		if m := msHeaderRe.FindStringSubmatch(line); m != nil {
 			inRegion = true
 			theirsMS = "M" + m[1]
@@ -169,7 +177,19 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		}
 		if m := taskRe.FindStringSubmatch(line); m != nil {
 			theirsStates[m[2]] = m[1]
-			theirsOrder = append(theirsOrder, theirsTask{id: m[2], line: line, milestone: theirsMS})
+			if i > carriedThrough {
+				// The task is the bullet PLUS its indented body — carrying the
+				// bullet alone strands its `**Verification**` / `**Evidence**`
+				// lines on the side they came from, which is the #33 failure in
+				// a different function.
+				end := taskBodyEnd(theirsLines, i)
+				theirsOrder = append(theirsOrder, theirsTask{
+					id:        m[2],
+					block:     append([]string{}, theirsLines[i:end+1]...),
+					milestone: theirsMS,
+				})
+				carriedThrough = end
+			}
 		}
 	}
 
@@ -236,16 +256,19 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// of stranding as issue #33 — and inserting at the block boundary instead
 	// would land it past the blank line that ends the list.
 	msInsertAfter := make(map[string]int)
+	// A milestone ID that heads more than one block cannot be an anchor: which
+	// block does a carried task belong to? Refused rather than guessed, the same
+	// policy mergeProgressState applies via dupMS and requireUnambiguousMilestones
+	// applies at startup.
+	oursMSHeadCount := make(map[string]int)
 	for _, line := range oursLines {
 		if m := msHeaderRe.FindStringSubmatch(line); m != nil {
 			oursInRegion = true
 			oursMS = "M" + m[1]
+			oursMSHeadCount[oursMS]++
 		} else if isSectionBreak(line) {
 			oursInRegion = false
 			oursMS = ""
-		}
-		if oursInRegion && oursMS != "" && strings.TrimSpace(line) != "" {
-			msInsertAfter[oursMS] = len(merged)
 		}
 		// Upgrade task checkboxes to the more-advanced state
 		if m := taskRe.FindStringSubmatch(line); oursInRegion && m != nil {
@@ -311,6 +334,19 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		}
 
 		merged = append(merged, line)
+
+		// Recorded AFTER the append, against the index the line actually landed
+		// at. Recording it before was a live bug: the activity-merge block above
+		// appends theirs' unseen rows during this same iteration, and its trigger
+		// `strings.HasPrefix(line, "##")` also matches a `###` milestone header —
+		// so the header landed K rows later than the index taken at the top. A
+		// milestone whose block here is a bare header has no later line to correct
+		// it, and the carried task was spliced before that header, into the
+		// PREVIOUS milestone. The result parses as a cross-milestone task ID,
+		// which `belmont validate` rates severityError.
+		if oursInRegion && oursMS != "" && strings.TrimSpace(line) != "" {
+			msInsertAfter[oursMS] = len(merged) - 1
+		}
 	}
 
 	// Carry over every task that exists only in "theirs".
@@ -343,7 +379,13 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 					relPath, tt.id, tt.milestone)
 				return false
 			}
-			byMS[tt.milestone] = append(byMS[tt.milestone], tt.line)
+			if oursMSHeadCount[tt.milestone] > 1 {
+				fmt.Fprintf(os.Stderr,
+					"  \033[33m⚠ %s: incoming task %s belongs to %s, which heads %d separate blocks on this side — not auto-resolving; escalating to the reconciliation agent\033[0m\n",
+					relPath, tt.id, tt.milestone, oursMSHeadCount[tt.milestone])
+				return false
+			}
+			byMS[tt.milestone] = append(byMS[tt.milestone], tt.block...)
 		}
 
 		// Splice highest index first so the earlier insertion points stay valid.
