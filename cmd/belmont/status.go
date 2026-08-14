@@ -10,6 +10,10 @@ import (
 	"strings"
 )
 
+// blockedListingCap is how many `[!]` tasks the multi-feature listing prints
+// per feature before deferring to `belmont blockers`. See renderFeatureListing.
+const blockedListingCap = 3
+
 func runStatus(args []string) error {
 	fsFlags := flag.NewFlagSet("status", flag.ContinueOnError)
 	fsFlags.SetOutput(io.Discard)
@@ -385,6 +389,8 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 		for _, b := range blocked {
 			sb.WriteString(fmt.Sprintf("  - %s\n", b))
 		}
+		sb.WriteString(fmt.Sprintf("  Each needs a person, not an agent. Read them together with their\n"+
+			"  detail: belmont blockers --feature %s\n", nonEmpty(report.FeatureSlug, "<slug>")))
 		sb.WriteString("\n")
 	}
 
@@ -529,12 +535,29 @@ func renderFeatureListing(report statusReport, color bool, showArchived bool) st
 				sb.WriteString(fmt.Sprintf("  Next: %s — %s\n", f.NextTask.ID, f.NextTask.Name))
 			}
 
-			// Show blocked tasks if any
+			// Show blocked tasks if any.
+			//
+			// Capped at blockedListingCap in the listing view only. A feature
+			// can bank up dozens of `[!]` tasks over a long run, and every one
+			// of them carries a full sentence of explanation — the listing is
+			// the whole-project overview, and printing them all buried every
+			// other feature under one feature's decision queue. Nothing is
+			// hidden: the count and the exact command to read them all print
+			// on the next line. The --feature detail view is unchanged, and
+			// still lists every one.
 			if f.TasksBlocked > 0 {
 				blockedNames := blockedTaskNames(f.Milestones)
 				sb.WriteString("  Blocked:\n")
-				for _, b := range blockedNames {
+				shown := blockedNames
+				if len(shown) > blockedListingCap {
+					shown = shown[:blockedListingCap]
+				}
+				for _, b := range shown {
 					sb.WriteString(fmt.Sprintf("    - %s\n", b))
+				}
+				if len(blockedNames) > len(shown) {
+					sb.WriteString(fmt.Sprintf("    …and %d more — belmont blockers --feature %s\n",
+						len(blockedNames)-len(shown), f.Slug))
 				}
 			}
 

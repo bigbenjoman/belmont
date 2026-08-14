@@ -311,6 +311,8 @@ func main() {
 		must(runReverifyCmd(os.Args[2:]))
 	case "repair":
 		must(runRepairCmd(os.Args[2:]))
+	case "blockers":
+		must(runBlockersCmd(os.Args[2:]))
 	case "sync":
 		must(runSyncCmd(os.Args[2:]))
 	case "version", "--version", "-v":
@@ -336,6 +338,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "    (alias: belmont loop)")
 	fmt.Fprintln(w, "  belmont reverify [--feature SLUG] [--from M1] [--to M5] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont repair [--feature SLUG] [--dry-run] [--mechanical-only] [--apply-proposal FILE] [--yes] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
+	fmt.Fprintln(w, "  belmont blockers [--feature SLUG] [--summary] [--root PATH] [--format text|json] [--color auto|always|never]")
 	fmt.Fprintln(w, "  belmont sync [--root PATH]")
 	fmt.Fprintln(w, "  belmont recover [--list] [--merge SLUG] [--clean SLUG] [--clean-all] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont steer [--feature SLUG] [--milestone M5] [--message \"text\" | --file PATH | -] [--root PATH]")

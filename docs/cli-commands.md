@@ -32,6 +32,10 @@ belmont repair --feature my-feature --dry-run          # Report findings + commi
 belmont repair --feature my-feature --mechanical-only  # Apply only what the commit log settles (no agent, no tokens)
 belmont repair --feature my-feature --yes # Apply reviewed proposals without prompting
 belmont repair --feature my-feature --apply-proposal fixes.json  # Validate + apply a proposal file
+belmont blockers                         # Every [!] task across every feature, with its detail
+belmont blockers --feature my-feature    # One feature's decision queue
+belmont blockers --summary               # One line per blocker, no task body
+belmont blockers --format json           # Machine-readable decision queue
 belmont sync                             # Sync master PROGRESS.md with feature states (explicit only, no longer auto-hooked)
 belmont recover                          # List preserved worktrees from failed merges
 belmont recover --list                   # Same as above
@@ -49,6 +53,52 @@ belmont version                         # Show version, commit, build date
 # Note: "belmont loop" still works as an alias for "belmont auto"
 # If a previous run was interrupted, auto detects stale branches and prompts to resume or restart
 ```
+
+## The decision queue: `belmont blockers`
+
+`[!]` usually means the work is waiting on a person — an approval, a product
+ruling, a credential, a console action, a spec change that belongs to
+`/belmont:tech-plan` — and that kind no skill may clear. (Two `[!]`s carry a
+condition an agent *can* check: one raised against a later milestone, and one
+the reconciliation agent raised over a merge. The reason line says which.)
+`mergeProgressState` never ranks over `[!]` from either direction, but
+protecting a signal is not the same as surfacing it.
+
+A long run banks them up. Each `[!]` task carries a paragraph explaining what is
+being asked and of whom — and that paragraph is exactly what `belmont status`
+never showed. It listed every blocker's headline, in both views, interleaved
+with progress counts and spread across however many features are in flight; the
+person who had to answer them read them one headline at a time, in the middle of
+a report about something else.
+
+`belmont blockers` prints them together, grouped by feature and milestone, with
+the indented body intact:
+
+```bash
+belmont blockers                          # every feature
+belmont blockers --feature auth           # one feature
+belmont blockers --summary                # one line each — the scannable view
+belmont blockers --format json            # machine-readable
+```
+
+It reports and never writes — a command that both raised a question and resolved
+it would be free to guess at the answer. Answering a blocker means flipping the
+marker to `[ ]` yourself in the file the output names; `/belmont:next` only ever
+selects a `[ ]` task, so it cannot act on one while it is still `[!]`.
+
+During an active `belmont auto` run the paths printed are inside the run's
+worktrees, and the output says so: master's copy has different line numbers, and
+an edit made there is overwritten by `mergeProgressState` when the worktree
+merges. Use `belmont steer`, or edit the worktree file.
+
+Blocked task lines sitting **outside** every milestone are reported in their own
+section. They are invisible to `parseMilestones` and therefore to every count in
+Belmont, and a decision queue that printed "nothing is waiting on you" about a
+file it could not fully read would be worse than no queue at all.
+
+`belmont status` names it: the `--feature` detail view lists every blocker and
+then points here, and the multi-feature listing prints the first three per
+feature before deferring to this command with an exact count of what it withheld.
 
 ## Repairing a PROGRESS.md that no longer parses
 
