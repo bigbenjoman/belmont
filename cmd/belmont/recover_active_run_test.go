@@ -120,6 +120,13 @@ func TestRecoverListLabelsLiveWorktreesRatherThanRefusing(t *testing.T) {
 	if !strings.Contains(out, "demo") {
 		t.Errorf("the listing did not name the running feature.\ngot:\n%s", out)
 	}
+	// The fixture has exactly one live worktree, which is also the common case —
+	// by the time anyone reaches for `recover` a wave usually has one left. So
+	// the singular is the form most readers actually see, and it has to read as
+	// English: "1 of these belongs … and is NOT preserved", never "belong … are".
+	if !strings.Contains(out, "1 of these belongs") || !strings.Contains(out, "is NOT preserved") {
+		t.Errorf("the one-worktree trailer does not agree with itself grammatically.\ngot:\n%s", out)
+	}
 	low := strings.ToLower(out)
 	if !strings.Contains(low, "in flight") && !strings.Contains(low, "active") && !strings.Contains(low, "running") {
 		t.Errorf("the listing did not mark the worktree as belonging to a run still in flight.\ngot:\n%s", out)
