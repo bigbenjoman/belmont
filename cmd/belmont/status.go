@@ -348,11 +348,13 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 		for _, g := range report.LiveGaps {
 			sb.WriteString("  " + g.describe() + "\n")
 		}
-		// Deliberately NOT "run belmont recover": a gap only exists while
-		// auto.json is active, and `belmont recover --list` scans the same
-		// directory the live wave worktrees are in with no active-run filter — so
-		// mid-run it lists them as preserved and offers to clean them. The path
-		// above is the thing to look at.
+		// Deliberately NOT "run belmont recover": the path above is the thing to
+		// look at, and `recover` answers a different question.
+		//
+		// It is no longer a TRAP, though, which is what this comment used to say.
+		// `recover` now reads auto.json, marks a live wave's worktrees IN FLIGHT
+		// in `--list`, and refuses the mutating actions on them without --force.
+		// See issue #52.
 		sb.WriteString("  A run still in flight can also be a copy caught mid-write — re-run this before treating the worktree as broken.\n\n")
 	}
 
