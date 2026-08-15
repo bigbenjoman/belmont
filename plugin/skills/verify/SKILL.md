@@ -308,9 +308,11 @@ Use the **first** approach below whose required tool is available to you. Check 
 
 Then **state which approach you selected, in one line, before you dispatch anything** — e.g. `Dispatching via Approach A (Agent).` This costs one line and it is the only thing that makes a wrong selection visible: if you silently fall back, nobody can tell the difference between "this CLI cannot dispatch" and "the check was wrong".
 
-**Running this skill is the request to dispatch.** Some sessions carry a standing rule not to call the dispatch tool unless the user asked for it. That condition is already satisfied here, and you should not re-litigate it: a human ran `/belmont:<skill>` themselves, or ran `belmont auto`, which shells out on their behalf — and the skill they invoked is defined as delegation. There is no version of "do what this skill says" that excludes dispatching. The prompt in front of you *is* the user asking, relayed through Belmont.
+**Running this skill is the request to dispatch.** Some sessions carry a standing rule not to call the dispatch tool unless the user asked for it. That condition is met here: this skill only ever runs because someone invoked it — directly, or through `belmont auto` / `belmont reverify` / a loop they started — and the skill they invoked is defined as delegation rather than as doing the work yourself. The prompt in front of you *is* that request, relayed through Belmont; under `belmont auto` on Claude Code it arrives as a literal `/belmont:<skill>` slash command.
 
-So the only question is whether the tool is **present**, never whether you are permitted to use it. Choose Approach B because a name below is missing from your tool list — never because dispatching felt unrequested. If the tool is present but a specific call is *refused* at runtime by the permission system, that is a different thing: fall back, and say that is what happened.
+So when you choose, the question is whether a dispatch tool is **present**, not whether you are permitted to use one. Never take the inline fallback because dispatching felt unrequested.
+
+A dispatch call that *fails* is not the same as having no tool. If one is refused by the permission system, or rejected because this CLI names its sub-agents differently from the example below, say what happened and then fall back — the fallback stays open to you. One exception: if a **user** declined the call, stop and ask. Do not perform the declined work inline instead.
 
 #### Approach A: Parallel Sub-Agent Dispatch (preferred)
 
@@ -332,7 +334,7 @@ If you have one of them, you MUST use this approach:
 
 #### Approach B: Sequential Inline Execution (fallback)
 
-If you have **neither** `Agent` nor `Task` — several supported CLIs genuinely have no sub-agent dispatch. That is the only entry condition: if either name is in your tool list, you are in Approach A and this section does not apply to you. Otherwise:
+Reach this when you have **neither** `Agent` nor `Task` — several supported CLIs genuinely have no sub-agent dispatch — or when a dispatch call failed and you have said so. Never reach it because dispatching felt unrequested. Then:
 
 1. For each agent, read its agent file (e.g. `.agents/belmont/<agent-name>.md`)
 2. Execute its instructions fully within your own context
@@ -364,7 +366,7 @@ Agent(description: "implementation-agent", subagent_type: "general-purpose",
 
 **Under Approach B the tiers cannot be honoured**, since there is no dispatch call to put `model:` on. Nothing else reports that — `models.yaml` has no runtime validation — so if you fall back, say so.
 
-**Non-Claude CLIs** (Codex, Gemini, Cursor, Copilot, Pi, opencode): they don't have a sub-agent dispatch tool, so mid-session model override is impossible. Use the preflight partial (`tier-preflight.md`) instead, which surfaces a warning if the session model doesn't match the tier the skill expects. Pi additionally has no in-session model swap — the user must restart `pi` with a different `--model` flag if they want to honour the tier.
+**Non-Claude CLIs** (Codex, Gemini, Cursor, Copilot, Pi, opencode): Belmont does not drive a per-dispatch `model:` override on these, so mid-session model override is not available. Use the preflight partial (`tier-preflight.md`) instead, which surfaces a warning if the session model doesn't match the tier the skill expects. Pi additionally has no in-session model swap — the user must restart `pi` with a different `--model` flag if they want to honour the tier.
 
 ### User Context Forwarding (CRITICAL)
 
