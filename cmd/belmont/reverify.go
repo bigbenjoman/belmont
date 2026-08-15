@@ -51,6 +51,58 @@ func resetVerifiedTasks(content string, resetIDs map[string]bool) (string, bool)
 	return strings.Join(lines, "\n"), changed
 }
 
+// resetMilestoneBeforeVerify rewrites one milestone's verified markers back to
+// `[x]` and reports how many it changed.
+//
+// Two properties matter, and both are about bounding damage rather than about
+// the rewrite itself.
+//
+// **Scoped to one milestone, called immediately before that milestone is
+// dispatched.** The reset is destructive and runs before anything justifies it:
+// nothing here restores a `[v]`, there is no backup and no signal handler, and
+// the caller's failure branch records the error and moves on. Doing it for the
+// whole range up front meant a run killed seconds in — Ctrl-C, a laptop
+// sleeping, an agent hitting a rate limit — left every milestone downgraded and
+// none re-verified, a diff that reads exactly like a regression. No Go code ever
+// promotes a `[v]` (see knowledge/cross-cutting/verified-flip-recording.md), so
+// each mark destroyed costs another verification agent run to earn back.
+//
+// **Re-read from disk on every call, never from a startup snapshot.** The
+// verification agent commits its own edits to PROGRESS.md between milestones, so
+// by the second iteration the content read at startup is stale; writing M2's
+// reset from it would revert whatever M1's agent just recorded. That is the
+// idempotency question issue #49 flagged as worth settling first, and this is
+// the answer: the function owns the read, so there is no stale copy to get
+// wrong.
+func resetMilestoneBeforeVerify(progressPath, milestoneID string) (int, error) {
+	content, err := os.ReadFile(progressPath)
+	if err != nil {
+		return 0, fmt.Errorf("reverify: cannot read %s: %w", progressPath, err)
+	}
+	newContent, changed := resetVerifiedTasks(string(content), map[string]bool{milestoneID: true})
+	if !changed {
+		return 0, nil
+	}
+	// Counted through parseMilestones rather than by diffing lines, so the count
+	// reported to the user comes from the same reader that decides what a marker
+	// means. A second opinion here would be a fourth definition of `[v]`.
+	n := 0
+	for _, m := range parseMilestones(string(content)) {
+		if m.ID != milestoneID {
+			continue
+		}
+		for _, t := range m.Tasks {
+			if t.Status == taskVerified {
+				n++
+			}
+		}
+	}
+	if err := os.WriteFile(progressPath, []byte(newContent), 0644); err != nil {
+		return 0, fmt.Errorf("reverify: failed to reset verified tasks in %s: %w", milestoneID, err)
+	}
+	return n, nil
+}
+
 // runReverifyCmd handles the "belmont reverify" command.
 // Walks through completed milestones and runs verification on each sequentially.
 // Reports which milestones passed and which had follow-up tasks created.
@@ -93,45 +145,23 @@ func runReverifyCmd(args []string) error {
 	milestones := parseMilestones(string(progressContent))
 	inRange := milestonesInRange(milestones, from, to)
 
-	// Reset [v] (verified) tasks to [x] (done) in targeted milestones so the
-	// verification agent will pick them up again. Only milestones in range that
-	// have [v] or [x] tasks are candidates for re-verification.
+	// Milestones this command can act on: `[x]` is done-not-verified and gets
+	// verified as-is; `[v]` is re-verified, which means resetting it to `[x]`
+	// first so the agent picks it up.
 	//
-	// Build a set of milestone IDs that contain [v] tasks and need resetting.
-	resetIDs := map[string]bool{}
-	for _, m := range inRange {
-		for _, t := range m.Tasks {
-			if t.Status == taskVerified {
-				resetIDs[m.ID] = true
-				break
-			}
-		}
-	}
-
-	if len(resetIDs) > 0 {
-		newContent, changed := resetVerifiedTasks(string(progressContent), resetIDs)
-		if changed {
-			if err := os.WriteFile(progressPath, []byte(newContent), 0644); err != nil {
-				return fmt.Errorf("reverify: failed to reset verified tasks: %w", err)
-			}
-			// Re-parse after rewrite so downstream filtering sees [x] tasks.
-			milestones = parseMilestones(newContent)
-			inRange = milestonesInRange(milestones, from, to)
-		}
-	}
-
-	// Find milestones that have [x] (done but not verified) tasks
+	// Selected BEFORE any reset, and deliberately so. The reset used to run for
+	// the whole range up front purely to make `[v]` milestones visible to this
+	// filter — which meant a run interrupted during M1 had already destroyed
+	// M7's verified marks having verified nothing. Reading both states here
+	// removes the reason for the bulk write; each milestone is reset
+	// immediately before it is dispatched instead. See issue #49.
 	var targets []milestone
 	for _, m := range inRange {
-		hasDoneTasks := false
 		for _, t := range m.Tasks {
-			if t.Status == taskDone {
-				hasDoneTasks = true
+			if t.Status == taskDone || t.Status == taskVerified {
+				targets = append(targets, m)
 				break
 			}
-		}
-		if hasDoneTasks {
-			targets = append(targets, m)
 		}
 	}
 
@@ -173,6 +203,14 @@ func runReverifyCmd(args []string) error {
 
 	for i, m := range targets {
 		fmt.Fprintf(os.Stderr, "━━ [%d/%d] VERIFY ━━ %s › %s: %s ━━\n", i+1, len(targets), feature, m.ID, m.Name)
+
+		// Reset THIS milestone's verified tasks, and only now, so an interrupted
+		// or failing run has downgraded at most the milestone in flight.
+		if n, err := resetMilestoneBeforeVerify(progressPath, m.ID); err != nil {
+			return err
+		} else if n > 0 {
+			fmt.Fprintf(os.Stderr, "   resetting %d verified task(s) in %s before re-verification\n", n, m.ID)
+		}
 
 		// Build milestone-scoped verify prompt
 		prompt := fmt.Sprintf("/belmont:verify --feature %s", feature)
