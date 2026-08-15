@@ -625,7 +625,18 @@ func recoverList(root string, worktrees []worktreeEntry, format string, live map
 		}
 	}
 
-	fmt.Printf("Preserved worktrees (%d):\n\n", len(worktrees))
+	// The heading has to change too, not just the per-entry label. "Preserved
+	// worktrees" is a claim about every row beneath it, and with a live wave in
+	// the list it contradicts the trailer below — which says in as many words
+	// that some of them are NOT preserved from a failed merge. Leaving the
+	// heading alone would have this command assert and deny the same thing eight
+	// lines apart, which is the framing #52 is actually about.
+	if liveCount > 0 {
+		fmt.Printf("Worktrees found (%d) — %d preserved from a failed merge, %d still in flight:\n\n",
+			len(worktrees), len(worktrees)-liveCount, liveCount)
+	} else {
+		fmt.Printf("Preserved worktrees (%d):\n\n", len(worktrees))
+	}
 	for _, wt := range worktrees {
 		slug := filepath.Base(wt.Path)
 		if live[absPathOrSelf(wt.Path)] {
