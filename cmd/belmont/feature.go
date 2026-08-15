@@ -73,6 +73,32 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 		if progressContent, err := os.ReadFile(progressPath); err == nil {
 			milestones = parseMilestones(string(progressContent))
 			orphaned = len(orphanedTaskLines(string(progressContent)))
+		} else if featurePath != filepath.Join(featuresDir, slug) {
+			// A worktree override we could not read. Before #55 this branch did
+			// not exist: `milestones` stayed nil and the row rendered `0/0`, with
+			// no fallback to master either — so there was not even a baseline
+			// behind the number.
+			//
+			// `0/0` is the worst available rendering of "I could not read this".
+			// It is indistinguishable from a feature with no tasks, and it reads
+			// as FINISHED NOTHING rather than KNOW NOTHING — on the view
+			// `status.md`'s fast path runs, which is the half an agent sees.
+			//
+			// So: master's copy as the baseline, exactly what the parallel path
+			// does, and a gap recorded so no reader treats the counts as live.
+			// The gap is the same type and the same `describe()` #48 introduced;
+			// the milestone slot says "all milestones" because an unreadable file
+			// means every one of them fell back, not a named few.
+			if masterContent, mErr := os.ReadFile(filepath.Join(featuresDir, slug, "PROGRESS.md")); mErr == nil {
+				milestones = parseMilestones(string(masterContent))
+				orphaned = len(orphanedTaskLines(string(masterContent)))
+			}
+			liveGaps = append(liveGaps, liveOverlayGap{
+				Milestone: "all milestones",
+				Path:      featurePath,
+				Kind:      gapUnreadable,
+				Reason:    err.Error(),
+			})
 		}
 		if parallelLive {
 			// Each milestone from its own worktree, master for the rest —
