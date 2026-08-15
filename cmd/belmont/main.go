@@ -332,9 +332,15 @@ func main() {
 // backs both `belmont --help` and `belmont <cmd> --help`, because two
 // hand-maintained copies is exactly how the first one drifted: `--features` and
 // `--all` are real modes of `belmont auto`, carry their own help strings, and
-// appeared in no usage text at all — only in an error message. A reader
-// concluded that parallelism meant "within one feature" and never found the mode
-// `--max-parallel` exists for. See issue #50.
+// appeared in neither this usage text nor any FlagSet output — so from the CLI
+// itself the only way to meet them was the error `belmont auto` prints when you
+// omit `--feature`. A reader concluded that parallelism meant "within one
+// feature" and never found the mode `--max-parallel` exists for.
+//
+// Scoped to the CLI deliberately: `docs/cli-commands.md` HAS documented both
+// since before this branch, so "they surfaced only in an error message" — the
+// phrasing issue #50 uses, and which an earlier draft of this comment repeated —
+// is not true of the project as a whole. See issue #50.
 var commandSynopsis = []struct {
 	Name string
 	Args string
