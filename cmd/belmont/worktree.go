@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -506,10 +507,24 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	// is what keeps `OAuth-2 migration` from carrying `OAuth-2` as its identity
 	// without stranding a colon-less `P<n>-` line. See its comment.
 
+	// A task is a bullet PLUS its indented body, and anything that relocates one
+	// relocates both — the rule `moveTaskLines` follows in `repair` and
+	// `resolveProgressConflict` follows on the conflict path. Carrying `line`
+	// alone stranded a carried task's `**Verification**` / `**Evidence**` lines
+	// on the side they came from, where they re-attach to whatever task now
+	// precedes them. Nothing catches that: the file parses, the count is
+	// unchanged, and `belmont validate` reports clean. See issues #53 and #33.
+	//
+	// `parent` is the enclosing task's ID, "" at top level, because a nested
+	// bullet's meaning is positional: spliced at the end of its milestone it has
+	// silently become a child of whichever task sits last. See issue #47 for the
+	// same defect on the conflict path.
 	type masterTask struct {
 		marker    string
 		line      string
+		block     []string
 		milestone string
+		parent    string
 	}
 	// Tasks are matched by ID, so a duplicated ID makes the match ambiguous:
 	// a plain map would silently collapse the entries and merge the wrong
@@ -589,9 +604,31 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	masterTasks := map[string]masterTask{}
 	var masterOrder []string // document order, so the carry-over splice is deterministic
 	currentMS := ""
-	for _, line := range strings.Split(masterContent, "\n") {
+	masterLines := strings.Split(masterContent, "\n")
+	// Enclosing task bullets, innermost last, each held open until the line its
+	// body ends on.
+	//
+	// The bound is `taskBodyEnd`'s range and NOT an indent comparison, because
+	// the rule this feeds — "a nested task travels inside its parent's block" —
+	// is expressed in exactly that range. An indent-only stack disagreed with it
+	// and silently dropped a task: a body ends at the first non-blank line at the
+	// task's own indent or shallower, so a column-zero note closes it, while an
+	// indent stack kept the task open across that note. A deeper bullet written
+	// after the note was then recorded as that task's child and skipped as
+	// travelling inside a block that does not contain it. That was a real
+	// regression on the conflict path, caught by review rather than by the
+	// gates; see `a19f7f7` and AGENTS.md's "derive a concept from the function
+	// that defines it".
+	type openTask struct {
+		end int
+		id  string
+	}
+	var open []openTask
+	for i := 0; i < len(masterLines); i++ {
+		line := masterLines[i]
 		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 2 {
 			currentMS = "M" + m[1]
+			open = open[:0]
 			continue
 		}
 		// A `## ` at column zero ends the milestones region — same rule every
@@ -601,16 +638,36 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		// See isSectionBreak and issue #31.
 		if isSectionBreak(line) {
 			currentMS = ""
+			open = open[:0]
 			continue
 		}
 		if marker, id, ok := mergeTaskLine(line); ok {
+			for len(open) > 0 && i > open[len(open)-1].end {
+				open = open[:len(open)-1]
+			}
+			parent := ""
+			if len(open) > 0 {
+				parent = open[len(open)-1].id
+			}
+			end := taskBodyEnd(masterLines, i)
+			// Pushed even for a task this merge will not record, so parentage
+			// describes the DOCUMENT rather than the merge decision. Dropping a
+			// skipped bullet out of the stack would hand its children the
+			// grandparent, quietly re-parenting them one level up.
+			open = append(open, openTask{end: end, id: id})
 			if dupIDs[id] || currentMS == "" || dupMS[currentMS] {
 				continue // orphans belong to no milestone; never carry them into one
 			}
 			if _, dup := masterTasks[id]; !dup {
 				masterOrder = append(masterOrder, id)
 			}
-			masterTasks[id] = masterTask{marker: marker, line: line, milestone: currentMS}
+			masterTasks[id] = masterTask{
+				marker:    marker,
+				line:      line,
+				block:     append([]string{}, masterLines[i:end+1]...),
+				milestone: currentMS,
+				parent:    parent,
+			}
 		}
 	}
 	for id := range dupIDs {
@@ -638,6 +695,8 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	// written and reported — never silently reconciled, never silently dropped.
 	wtInRegionID := map[string]bool{}
 	wtOrphanID := map[string]bool{}
+	wtTaskIdx := map[string]int{}     // task ID -> index of its bullet line here
+	wtTaskMS := map[string]string{}   // task ID -> the milestone it sits under here
 	lastTaskIdx := map[string]int{}   // milestone -> index of its final task line
 	lastHeaderIdx := map[string]int{} // milestone -> index of its header line
 	out := strings.Split(worktreeContent, "\n")
@@ -663,6 +722,8 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		}
 		id := wtLineID
 		wtInRegionID[id] = true
+		wtTaskIdx[id] = i
+		wtTaskMS[id] = currentMS
 		if dupMS[currentMS] {
 			// Ambiguous heading: never rewrite a line whose milestone cannot be
 			// attributed, and never let it anchor a carry — warned above.
@@ -770,12 +831,40 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	// forked. Collect first, keyed by the milestone's final task line, then
 	// splice in one pass: computing indices as we mutate would mis-place
 	// insertions whenever the two documents order milestones differently.
-	pending := map[int][]string{}
+	// A task whose PARENT is also being carried travels inside that parent's
+	// block, exactly as `moveTaskLines` relocates a nested bullet with the block
+	// enclosing it. Carrying both would splice the child twice, and a duplicated
+	// ID is durable damage rather than cosmetic: countIDs above refuses to
+	// reconcile that task on every later merge and tells the user to
+	// de-duplicate by hand.
+	missingHere := map[string]bool{}
+	for _, id := range masterOrder {
+		if !wtInRegionID[id] {
+			missingHere[id] = true
+		}
+	}
+
+	// Each carried block is filed against the index in `out` it goes after, and
+	// `depth` records what kind of anchor that is so a collision can be broken.
+	// Two anchors are the SAME index whenever a parent is the last task in its
+	// milestone here, and then the order inside the bucket decides PARENTAGE
+	// rather than merely tidiness: a new top-level task emitted first would take
+	// a carried child with it, which is the re-parenting the parent anchor exists
+	// to prevent. Deeper anchors are emitted first, ties in document order.
+	type carriedBlock struct {
+		depth int // indent of the anchoring task line here; -1 for a milestone anchor
+		lines []string
+	}
+	pending := map[int][]carriedBlock{}
+	carried := 0
 	for _, id := range masterOrder {
 		if wtInRegionID[id] {
 			continue // reconciled in place by the walk above
 		}
 		mt := masterTasks[id]
+		if missingHere[mt.parent] {
+			continue // travels inside its parent's block
+		}
 		// Anchor after the milestone's last task line — past its indented body,
 		// so the carry cannot land between a task and its own continuation — or
 		// after its header when the milestone exists here but holds no tasks
@@ -793,23 +882,89 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 				id, nonEmpty(mt.milestone, "an unknown milestone")))
 			continue
 		}
-		pending[at] = append(pending[at], mt.line)
+		depth := -1
+		if mt.parent != "" && wtInRegionID[mt.parent] {
+			if wtTaskMS[mt.parent] != mt.milestone {
+				// The two sides file the parent under different milestones, so
+				// nesting the child under it would move the child too — and a task
+				// whose ID names another milestone is `cross_milestone_task_id`,
+				// severityError. Fall back to the milestone anchor and say so,
+				// rather than relocating work across milestones on a guess.
+				warnings = append(warnings, fmt.Sprintf(
+					"task %s is nested under %s on main, which this worktree files under %s rather than %s — carried to the end of %s instead of under its parent",
+					id, mt.parent, nonEmpty(wtTaskMS[mt.parent], "no milestone"), mt.milestone, mt.milestone))
+			} else {
+				// Land it inside the parent's body, past the parent's own
+				// `**Verification**` / `**Evidence**` lines. Appending at the end
+				// of the milestone instead re-parents it to whichever task sits
+				// last.
+				at = taskBodyEnd(out, wtTaskIdx[mt.parent])
+				depth = lineIndentWidth(out[wtTaskIdx[mt.parent]])
+			}
+		}
+		// The block is the bullet plus its body, and that body can hold nested
+		// task bullets of its own. Only the block's own ID was checked against
+		// this side, so a nested bullet whose ID already exists here would be
+		// spliced in a second time — the duplicate-ID damage described above.
+		// Excise it instead of skipping the whole carry: the nested task's state
+		// is already reconciled in place by the walk above, so nothing is lost,
+		// whereas dropping the parent would lose work held in no commit.
+		block, dropped := exciseKnownNestedTasks(mt.block, wtInRegionID)
+		for _, d := range dropped {
+			warnings = append(warnings, fmt.Sprintf(
+				"task %s on main nests %s, which already exists here in its own right — %s was carried without it, and the copy here was left as written",
+				id, d, id))
+		}
+		pending[at] = append(pending[at], carriedBlock{depth: depth, lines: block})
+		carried++
 		if wtOrphanID[id] {
 			warnings = append(warnings, fmt.Sprintf(
 				"task %s is recorded under %s on main but sits outside every milestone here — main's copy was placed under %s and the stray line left as written; move or delete the stray one",
 				id, nonEmpty(mt.milestone, "an unknown milestone"), nonEmpty(mt.milestone, "its milestone")))
 		}
 	}
-	if len(pending) == 0 {
+	if carried == 0 {
 		return strings.Join(out, "\n"), warnings
 	}
 
 	merged := make([]string, 0, len(out)+len(masterTasks))
 	for i, line := range out {
 		merged = append(merged, line)
-		merged = append(merged, pending[i]...)
+		blocks := pending[i]
+		// Stable, so equal-depth blocks keep the order the master document wrote
+		// them in.
+		sort.SliceStable(blocks, func(a, b int) bool { return blocks[a].depth > blocks[b].depth })
+		for _, b := range blocks {
+			merged = append(merged, b.lines...)
+		}
 	}
 	return strings.Join(merged, "\n"), warnings
+}
+
+// exciseKnownNestedTasks removes, from a carried block, any nested task bullet
+// (and that bullet's own body) whose ID the receiving side already holds.
+//
+// Returns the trimmed block and the IDs removed. The block's first line is the
+// carried task's own bullet and is never considered — the caller has already
+// established that this side does not have it.
+//
+// The extent removed is `taskBodyEnd`'s range, not "the bullet line", for the
+// same reason the carry itself moves a range: a bullet excised without its body
+// leaves that body behind to re-attach to the task above it.
+func exciseKnownNestedTasks(block []string, known map[string]bool) ([]string, []string) {
+	var dropped []string
+	out := make([]string, 0, len(block))
+	for i := 0; i < len(block); i++ {
+		if i > 0 {
+			if _, id, ok := mergeTaskLine(block[i]); ok && known[id] {
+				dropped = append(dropped, id)
+				i = taskBodyEnd(block, i)
+				continue
+			}
+		}
+		out = append(out, block[i])
+	}
+	return out, dropped
 }
 
 // commitWorktreeChanges commits all uncommitted changes in a worktree before merge.
