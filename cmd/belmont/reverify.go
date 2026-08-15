@@ -85,7 +85,8 @@ func resetMilestoneBeforeVerify(progressPath, milestoneID string) (int, error) {
 	}
 	// Counted through parseMilestones rather than by diffing lines, so the count
 	// reported to the user comes from the same reader that decides what a marker
-	// means. A second opinion here would be a fourth definition of `[v]`.
+	// means. Counting the rewrite's own line changes instead would add one more
+	// place answering "what is a `[v]`", which is the shape of #27 and #31.
 	n := 0
 	for _, m := range parseMilestones(string(content)) {
 		if m.ID != milestoneID {
