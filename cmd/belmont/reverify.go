@@ -116,8 +116,8 @@ func runReverifyCmd(args []string) error {
 	fs.StringVar(&to, "to", "", "end milestone (e.g. M10)")
 	fs.StringVar(&format, "format", "text", "output format (text|json)")
 	fs.StringVar(&tool, "tool", "", "CLI tool (claude|codex|gemini|copilot|cursor|pi|opencode)")
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("reverify: %w", err)
+	if handled, err := parseCommandFlags(fs, args, "reverify"); err != nil || handled {
+		return err
 	}
 	root, _ = filepath.Abs(root)
 

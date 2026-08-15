@@ -4,6 +4,14 @@ Belmont ships a small Go CLI (`belmont`) for status checks, automated feature im
 
 ## Usage
 
+Every subcommand answers `--help` (and `-h`) with its own synopsis plus its own
+flag defaults, and exits 0 — so `belmont auto --help` is a reliable way to see
+what a command actually takes, including flags this page might not list:
+
+```bash
+belmont auto --help                     # Synopsis + every flag auto really accepts
+```
+
 ```bash
 belmont install                         # Install skills/agents into current project
 belmont update                          # Update to latest release (auto-commits Belmont-managed files)

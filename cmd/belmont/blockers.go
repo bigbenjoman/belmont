@@ -115,8 +115,8 @@ func runBlockersCmd(args []string) error {
 	fsFlags.StringVar(&feature, "feature", "", "feature slug (default: every feature)")
 	fsFlags.StringVar(&colorMode, "color", "auto", "auto, always, or never")
 	fsFlags.BoolVar(&summary, "summary", false, "one line per blocker; omit the task body")
-	if err := fsFlags.Parse(args); err != nil {
-		return fmt.Errorf("blockers: %w", err)
+	if handled, err := parseCommandFlags(fsFlags, args, "blockers"); err != nil || handled {
+		return err
 	}
 
 	absRoot, err := filepath.Abs(root)

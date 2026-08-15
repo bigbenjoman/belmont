@@ -1229,8 +1229,8 @@ func runRepairCmd(args []string) error {
 	fs.BoolVar(&dryRun, "dry-run", false, "report findings and commit evidence; change nothing")
 	fs.BoolVar(&mechanicalOnly, "mechanical-only", false, "apply only what commit evidence settles; do not dispatch an agent")
 	fs.BoolVar(&yes, "yes", false, "apply reviewed proposals without prompting")
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("repair: %w", err)
+	if handled, err := parseCommandFlags(fs, args, "repair"); err != nil || handled {
+		return err
 	}
 	root, _ = filepath.Abs(root)
 

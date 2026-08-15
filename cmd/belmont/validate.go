@@ -67,8 +67,8 @@ func runSyncCmd(args []string) error {
 	fs.SetOutput(io.Discard)
 	var root string
 	fs.StringVar(&root, "root", ".", "project root")
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("sync: %w", err)
+	if handled, err := parseCommandFlags(fs, args, "sync"); err != nil || handled {
+		return err
 	}
 	root, _ = filepath.Abs(root)
 
@@ -101,8 +101,8 @@ func runValidateCmd(args []string) error {
 	fs.StringVar(&feature, "feature", "", "feature slug (default: scan every feature)")
 	fs.StringVar(&format, "format", "text", "output format (text|json)")
 	fs.BoolVar(&strict, "strict", false, "exit non-zero on warnings as well as errors")
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("validate: %w", err)
+	if handled, err := parseCommandFlags(fs, args, "validate"); err != nil || handled {
+		return err
 	}
 	absRoot, err := filepath.Abs(root)
 	if err != nil {

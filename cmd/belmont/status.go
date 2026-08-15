@@ -29,8 +29,8 @@ func runStatus(args []string) error {
 	fsFlags.StringVar(&feature, "feature", "", "feature slug")
 	fsFlags.StringVar(&colorMode, "color", "auto", "auto, always, or never")
 	fsFlags.BoolVar(&showArchived, "show-archived", false, "include archived features in the listing (text mode)")
-	if err := fsFlags.Parse(args); err != nil {
-		return fmt.Errorf("status: %w", err)
+	if handled, err := parseCommandFlags(fsFlags, args, "status"); err != nil || handled {
+		return err
 	}
 
 	absRoot, err := filepath.Abs(root)
