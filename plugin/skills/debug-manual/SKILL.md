@@ -277,6 +277,10 @@ Use the **first** approach below whose required tool is available to you. Check 
 
 Then **state which approach you selected, in one line, before you dispatch anything** — e.g. `Dispatching via Approach A (Agent).` This costs one line and it is the only thing that makes a wrong selection visible: if you silently fall back, nobody can tell the difference between "this CLI cannot dispatch" and "the check was wrong".
 
+**Running this skill is the request to dispatch.** Some sessions carry a standing rule not to call the dispatch tool unless the user asked for it. That condition is already satisfied here, and you should not re-litigate it: a human ran `/belmont:<skill>` themselves, or ran `belmont auto`, which shells out on their behalf — and the skill they invoked is defined as delegation. There is no version of "do what this skill says" that excludes dispatching. The prompt in front of you *is* the user asking, relayed through Belmont.
+
+So the only question is whether the tool is **present**, never whether you are permitted to use it. Choose Approach B because a name below is missing from your tool list — never because dispatching felt unrequested. If the tool is present but a specific call is *refused* at runtime by the permission system, that is a different thing: fall back, and say that is what happened.
+
 #### Approach A: Parallel Sub-Agent Dispatch (preferred)
 
 **Required tool**: `Agent` — or `Task`, which is the same tool under its older name on earlier CLI versions. **Either one alone is enough.** If both appear in your tool list, use `Agent`.
@@ -297,7 +301,7 @@ If you have one of them, you MUST use this approach:
 
 #### Approach B: Sequential Inline Execution (fallback)
 
-If you have **neither** `Agent` nor `Task` — several supported CLIs genuinely have no sub-agent dispatch:
+If you have **neither** `Agent` nor `Task` — several supported CLIs genuinely have no sub-agent dispatch. That is the only entry condition: if either name is in your tool list, you are in Approach A and this section does not apply to you. Otherwise:
 
 1. For each agent, read its agent file (e.g. `.agents/belmont/<agent-name>.md`)
 2. Execute its instructions fully within your own context
