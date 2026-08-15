@@ -454,8 +454,8 @@ func runRecover(args []string) error {
 	fs.BoolVar(&cleanAll, "clean-all", false, "clean all preserved worktrees")
 	fs.StringVar(&tool, "tool", "", "CLI tool for reconciliation (claude|codex|gemini|copilot|cursor|pi|opencode) — auto-detected if omitted")
 	fs.BoolVar(&force, "force", false, "act on worktrees an active run owns (use only when auto.json is stale)")
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("recover: %w", err)
+	if handled, err := parseCommandFlags(fs, args, "recover"); err != nil || handled {
+		return err
 	}
 
 	root, err := filepath.Abs(root)
@@ -502,9 +502,8 @@ func runRecover(args []string) error {
 		// report partial success for a command whose whole contract is "all".
 		for _, wt := range worktrees {
 			if live[absPathOrSelf(wt.Path)] {
-				return fmt.Errorf("recover: %s is still in flight and owns %s — refusing --clean-all.\n"+
-					"Deleting a live worktree loses every task state the run has completed but not merged; `.belmont/` is assume-unchanged inside a worktree, so it is in no commit.\n"+
-					"Wait for the run to finish, or pass --force if you are certain .belmont/auto.json is stale (a run killed with SIGKILL leaves it behind).",
+				printActiveRunGuidance()
+				return fmt.Errorf("recover: %s is still in flight and owns %s — refusing --clean-all",
 					liveLabel, filepath.Base(wt.Path))
 			}
 		}
@@ -565,12 +564,24 @@ func refuseIfRunOwns(live map[string]bool, liveLabel string, worktrees []worktre
 		if filepath.Base(wt.Path) != slug || !live[absPathOrSelf(wt.Path)] {
 			continue
 		}
-		return fmt.Errorf("recover: %s is still in flight and owns %s — refusing --%s.\n"+
-			"Its uncommitted `.belmont/` state is in no commit, so acting on it now can lose completed work.\n"+
-			"Wait for the run to finish, or pass --force if you are certain .belmont/auto.json is stale.",
+		printActiveRunGuidance()
+		return fmt.Errorf("recover: %s is still in flight and owns %s — refusing --%s",
 			liveLabel, slug, action)
 	}
 	return nil
+}
+
+// printActiveRunGuidance explains the refusal and names the way past it.
+//
+// Kept off the error value itself: the error is what `must()` prints on the last
+// line before exiting, and a three-line error reads badly there. This is also
+// what keeps the message a single sentence with no trailing punctuation, which
+// is the house style staticcheck enforces (ST1005).
+func printActiveRunGuidance() {
+	fmt.Fprintln(os.Stderr, "  Deleting or merging a live worktree loses every task state the run has completed but not merged:")
+	fmt.Fprintln(os.Stderr, "  `.belmont/` is assume-unchanged inside a worktree, so that state is in no commit anywhere.")
+	fmt.Fprintln(os.Stderr, "  Wait for the run to finish, or pass --force if you are certain .belmont/auto.json is stale")
+	fmt.Fprintln(os.Stderr, "  (a run killed with SIGKILL leaves it behind with active: true).")
 }
 
 func recoverList(root string, worktrees []worktreeEntry, format string, live map[string]bool, liveLabel string) error {

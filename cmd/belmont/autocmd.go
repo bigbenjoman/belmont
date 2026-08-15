@@ -76,8 +76,8 @@ func runAutoCmd(args []string) error {
 	fs.BoolVar(&allowDirty, "allow-dirty", false, "skip the clean-working-tree check (not recommended — risks merge failures)")
 	fs.StringVar(&cfg.Root, "root", ".", "project root")
 
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("auto: %w", err)
+	if handled, err := parseCommandFlags(fs, args, "auto"); err != nil || handled {
+		return err
 	}
 
 	// Validate mutual exclusivity
