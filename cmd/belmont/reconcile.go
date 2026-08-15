@@ -641,8 +641,14 @@ func recoverList(root string, worktrees []worktreeEntry, format string, live map
 		fmt.Println()
 	}
 	if liveCount > 0 {
-		fmt.Printf("%d of these belong to a run still in flight (%s) and are NOT preserved from a failed merge.\n",
-			liveCount, liveLabel)
+		// One is the common case — a wave usually has a single worktree left to
+		// look at by the time anyone reaches for `recover` — so the singular is
+		// the form most readers will actually see.
+		sentence := "1 of these belongs to a run still in flight (%s) and is NOT preserved from a failed merge.\n"
+		if liveCount != 1 {
+			sentence = fmt.Sprintf("%d of these belong to a run still in flight (%%s) and are NOT preserved from a failed merge.\n", liveCount)
+		}
+		fmt.Printf(sentence, liveLabel)
 		fmt.Println("Cleaning or merging one now loses task state the run has completed but not merged.")
 		fmt.Println("--merge / --clean / --clean-all will refuse to touch them until the run finishes.")
 		fmt.Println()
