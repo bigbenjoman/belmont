@@ -120,6 +120,17 @@ func TestRecoverListLabelsLiveWorktreesRatherThanRefusing(t *testing.T) {
 	if !strings.Contains(out, "demo") {
 		t.Errorf("the listing did not name the running feature.\ngot:\n%s", out)
 	}
+	// The HEADING is a claim about every row beneath it. With a live wave listed,
+	// "Preserved worktrees (N)" contradicts the trailer that says some of them
+	// are NOT preserved — the command asserting and denying the same thing a few
+	// lines apart.
+	if strings.Contains(out, "Preserved worktrees") {
+		t.Errorf("the heading still calls a live worktree preserved, which the trailer then denies.\ngot:\n%s", out)
+	}
+	if !strings.Contains(out, "still in flight:") {
+		t.Errorf("the heading does not say any worktree is in flight.\ngot:\n%s", out)
+	}
+
 	// The fixture has exactly one live worktree, which is also the common case —
 	// by the time anyone reaches for `recover` a wave usually has one left. So
 	// the singular is the form most readers actually see, and it has to read as
@@ -138,6 +149,23 @@ func TestRecoverListLabelsLiveWorktreesRatherThanRefusing(t *testing.T) {
 // because recover IS the recovery path.
 func TestRecoverStillCleansWhenNoRunIsActive(t *testing.T) {
 	root, wtPath, slug := recoverFixture(t, false)
+
+	// The listing keeps its original heading and grows no trailer when nothing
+	// is in flight. Over-correcting here would make every ordinary `recover
+	// --list` talk about runs that are not happening.
+	out := captureStdout(t, func() {
+		if err := runRecover([]string{"--root", root, "--list"}); err != nil {
+			t.Fatalf("recover --list failed with no active run: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Preserved worktrees") {
+		t.Errorf("the plain listing lost its heading.\ngot:\n%s", out)
+	}
+	for _, unwanted := range []string{"in flight", "IN FLIGHT"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("the listing mentions %q with no run active.\ngot:\n%s", unwanted, out)
+		}
+	}
 
 	if err := runRecover([]string{"--root", root, "--clean", slug}); err != nil {
 		t.Fatalf("recover --clean failed with no active run: %v", err)
