@@ -42,6 +42,7 @@ belmont recover --list                   # Same as above
 belmont recover --merge auth             # Retry merge for a preserved worktree
 belmont recover --clean auth             # Delete worktree and branch
 belmont recover --clean-all              # Clean all preserved worktrees
+belmont recover --clean auth --force     # Act anyway when .belmont/auto.json is stale
 belmont steer --message "pin all axes"   # Inject instructions into an in-flight auto run
 belmont steer --milestone M5 --file fix.md   # Scope to one milestone, read from file
 belmont steer -                          # Read steering text from stdin
@@ -189,7 +190,7 @@ remembered. The JSON shape is `{"repairs": [{"line": N, "task_id": "...",
 
 - **A milestone whose live worktree state could not be read.** During a parallel run each milestone's state is overlaid from the worktree that owns it. When that worktree's `PROGRESS.md` is missing or unreadable — a half-cleaned worktree, a failed merge that left the directory behind, a `.belmont/` copy interrupted mid-write — the view falls back to master's fork-point copy. That fallback used to be silent, which meant `belmont validate` printed a clean bill of health for a file it had only partly seen, and `belmont auto` started on it. It is now stated, by `validate`, `status` and `blockers` alike, and the path that could not be read is printed so you can look at it directly. The same warning covers the serial / multi-feature shape, where the whole feature is read from one worktree.
 
-  It deliberately does **not** tell you to run `belmont recover`: this condition only arises while a run is active, and `belmont recover --list` scans the directory the live wave worktrees are in with no active-run filter, so mid-run it lists them as preserved and offers to clean them.
+  It deliberately does **not** tell you to run `belmont recover`: this condition only arises while a run is active, and the path named above is the thing to look at. `recover` itself is no longer a trap — since #52 it reads `.belmont/auto.json`, marks a live wave's worktrees `[IN FLIGHT]` in `--list`, and refuses `--merge` / `--clean` / `--clean-all` on them unless `--force` is passed.
 
 ```bash
 belmont validate                            # Scan every feature

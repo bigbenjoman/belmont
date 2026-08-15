@@ -340,7 +340,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  belmont repair [--feature SLUG] [--dry-run] [--mechanical-only] [--apply-proposal FILE] [--yes] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont blockers [--feature SLUG] [--summary] [--root PATH] [--format text|json] [--color auto|always|never]")
 	fmt.Fprintln(w, "  belmont sync [--root PATH]")
-	fmt.Fprintln(w, "  belmont recover [--list] [--merge SLUG] [--clean SLUG] [--clean-all] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
+	fmt.Fprintln(w, "  belmont recover [--list] [--merge SLUG] [--clean SLUG] [--clean-all] [--force] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont steer [--feature SLUG] [--milestone M5] [--message \"text\" | --file PATH | -] [--root PATH]")
 	fmt.Fprintln(w, "  belmont validate [--feature SLUG] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont version")
