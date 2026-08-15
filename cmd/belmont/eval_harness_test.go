@@ -30,8 +30,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -505,21 +507,59 @@ func TestEvalLive(t *testing.T) {
 				}
 			}
 			// Flag nondeterminism explicitly rather than letting run 1 speak
-			// for all of them.
-			for i := 1; i < len(results); i++ {
-				for id, v := range results[0] {
-					if results[i][id] != v {
-						t.Errorf("nondeterministic across runs: task %s was %v in run 1, %v in run %d",
-							id, v, results[i][id], i+1)
-					}
-				}
+			// for all of them — over the fixture's seeded tasks only.
+			for _, d := range crossRunDivergences(seededTaskIDs(fx), results) {
+				t.Errorf("nondeterministic across runs: %s", d)
 			}
+			// No silent caps: say what this deliberately does not compare.
+			t.Logf("cross-run check covered %d seeded task ID(s); agent-invented follow-up IDs are excluded by design",
+				len(seededTaskIDs(fx)))
 		})
 	}
 }
 
 // evalLiveRuns is the N in "N >= 3 runs".
 const evalLiveRuns = 3
+
+// seededTaskIDs returns the task IDs the fixture itself defines — the ones a
+// run can be held to reproducing. Anything else in a result map was invented by
+// the agent during the run.
+func seededTaskIDs(fx evalFixture) []string {
+	ids := make([]string, 0, len(fx.TaskStates))
+	for id := range fx.TaskStates {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// crossRunDivergences reports seeded tasks that did not land in the same state
+// in every run. It is deliberately scoped to seeded IDs.
+//
+// The wider version compared every ID present in run 1, which pinned the
+// follow-up task IDs a verify agent invents — asserting that a model's choice
+// of task *granularity* is reproducible. It is not, and that is not a defect:
+// with the dispatch path held uniform (3 runs of 3 dispatching), one run still
+// filed three follow-ups for a seeded defect where another filed two, folding
+// "add the npm test script" into the test task rather than splitting it out.
+// Both verdicts were correct. Pinning that is the prose-assertion this suite
+// forbids elsewhere, and it produced an intermittently red suite that no code
+// change could settle. Seeded IDs keep the property worth having: a fixture's
+// own tasks must reach the same state every time.
+//
+// Scoping it further — or dropping it — would give up that property. Don't.
+func crossRunDivergences(seeded []string, results []map[string]taskStatus) []string {
+	var out []string
+	for i := 1; i < len(results); i++ {
+		for _, id := range seeded {
+			if results[i][id] != results[0][id] {
+				out = append(out, fmt.Sprintf("task %s was %v in run 1, %v in run %d",
+					id, results[0][id], results[i][id], i+1))
+			}
+		}
+	}
+	return out
+}
 
 // liveActionFor picks the phase each live fixture exercises.
 //
@@ -592,4 +632,61 @@ func describeWaves(waves []wave) []string {
 		out = append(out, strings.Join(ids, "+"))
 	}
 	return out
+}
+
+// TestCrossRunDivergencesScope pins both halves of the scoping decision: the
+// check must still catch a seeded task landing differently across runs, and it
+// must ignore the follow-up IDs an agent invents.
+//
+// Both directions matter. Without the first, scoping the check would have
+// silently disarmed it — the failure mode of relaxing a guard because it is the
+// thing currently failing. Without the second, the suite stays intermittently
+// red on a judgement call no code change can settle.
+func TestCrossRunDivergencesScope(t *testing.T) {
+	seeded := []string{"P1-M1-1"}
+
+	t.Run("catches a seeded task diverging", func(t *testing.T) {
+		got := crossRunDivergences(seeded, []map[string]taskStatus{
+			{"P1-M1-1": taskDone},
+			{"P1-M1-1": taskVerified},
+		})
+		if len(got) != 1 {
+			t.Fatalf("want 1 divergence for a seeded task, got %d: %v", len(got), got)
+		}
+		if !strings.Contains(got[0], "P1-M1-1") {
+			t.Errorf("divergence should name the task: %q", got[0])
+		}
+	})
+
+	t.Run("catches a seeded task vanishing", func(t *testing.T) {
+		got := crossRunDivergences(seeded, []map[string]taskStatus{
+			{"P1-M1-1": taskDone},
+			{},
+		})
+		if len(got) != 1 {
+			t.Fatalf("a seeded task absent from a later run is a divergence, got %d: %v", len(got), got)
+		}
+	})
+
+	t.Run("ignores agent-invented follow-up IDs", func(t *testing.T) {
+		got := crossRunDivergences(seeded, []map[string]taskStatus{
+			{"P1-M1-1": taskDone, "P1-M1-FIX-1": taskTodo, "P1-M1-FIX-2": taskTodo, "P1-M1-FIX-3": taskTodo},
+			{"P1-M1-1": taskDone, "P1-M1-FIX-1": taskTodo, "P1-M1-FIX-2": taskTodo},
+		})
+		if len(got) != 0 {
+			t.Errorf("follow-up granularity is not a divergence, got %v", got)
+		}
+	})
+
+	t.Run("seededTaskIDs reads the fixture, not the run", func(t *testing.T) {
+		for _, fx := range evalFixtures() {
+			if fx.Name != "failing-acceptance" {
+				continue
+			}
+			ids := seededTaskIDs(fx)
+			if len(ids) != 1 || ids[0] != "P1-M1-1" {
+				t.Errorf("failing-acceptance seeded IDs = %v, want [P1-M1-1]", ids)
+			}
+		}
+	})
 }
