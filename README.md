@@ -184,6 +184,16 @@ Each skill checks its available tools **by name** and takes the first approach t
 
 Nothing to configure either way.
 
+### Why not agent teams
+
+This section used to advertise agent-team support. Belmont no longer uses it, and turning your tool's agent-team feature on changes nothing here.
+
+It came out because it had stopped working — the tools that gated it (`TeamCreate`, `TeamDelete`, `Task` with `team_name`) were withdrawn from Claude Code in v2.1.178, so the branch was unreachable and every skill was silently taking the fallback. It stays out for a better reason: Belmont already coordinates its agents through **files**. `MILESTONE.md` and `DEBUG.md` are the shared blackboard, `PROGRESS.md` is the task list — the same two jobs a team's mailbox and shared task list do, except a file survives a resumed session, shows up in a diff, and costs nothing per message.
+
+The parallelism is already there too, one level up: `belmont auto` runs independent milestones concurrently in isolated git worktrees, each with its own ports and a merge-back. Teammates share a single working tree, so they would trade away the isolation that makes parallel implementation safe — and they cannot spawn at all under `belmont auto`, which runs headless.
+
+The skill-by-skill reasoning is in [`knowledge/cross-cutting/dispatch-authorization.md`](knowledge/cross-cutting/dispatch-authorization.md).
+
 ---
 
 ## Monorepo Support
