@@ -42,6 +42,25 @@ This mirrors the host's own carve-out rather than fighting it: Claude Code's `Wo
 
 Tracked as issue #54. Until it closes, do not read "four orchestrator skills" as "everywhere that dispatches".
 
+## Why Approach A is sub-agents and not agent teams
+
+`main` ranked Agent Teams *above* plain sub-agent dispatch. #45 removed it because it could not run at all: the gate named `TeamCreate`, `TeamDelete` and `Task` with a `team_name` parameter, and all three were withdrawn from Claude Code in v2.1.178 — `team_name` is now accepted and ignored on the `Agent` tool. That much is a correctness fix and needs no defending; the uniform inline result on `main` in the Evidence section is what it looks like from the outside.
+
+What follows is the separate question — whether it should come back when a stable teams API ships — and it is an argument from Belmont's design, **not an eval result**. Recorded so the next person does not re-derive it.
+
+**Belmont already has both of the things a team provides.** A team's two differentiators are a shared task list and inter-agent messaging. Belmont's agents coordinate through `MILESTONE.md` / `DEBUG.md` and track through `PROGRESS.md`. Those are files: they survive `/resume`, they show up in a diff, they are what the archive step preserves, and they cost nothing per message. A team's mailboxes live under `~/.claude/teams/{team}/inboxes/`, in a directory removed when the session ends, and in-process teammates are documented as not restored by `/resume` or `/rewind`.
+
+**It is absent exactly where Belmont parallelises hardest.** `belmont auto` shells out `claude -p` (`toolexec.go`), and teammates do not spawn in non-interactive mode. Auto's parallelism is wave-level across isolated git worktrees with their own ports and a merge-back — real filesystem isolation. Teammates share one working tree.
+
+Skill by skill, for the four that include this partial:
+
+- **`implement`, phases 1–2.** `codebase-agent` and `design-agent` run simultaneously, never address each other, and write disjoint sections of the MILESTONE file. There is nothing to message about, and they already run concurrently as parallel dispatch calls in one message. A team buys two extra session spawns and no additional concurrency.
+- **`implement`, phase 3.** This is the one to not restore. `main` carried the only instruction where a team changed behaviour: *"Add an implementation-agent into the team per task in the milestone… Use the team-lead to coordinate between them if they need to edit the same areas."* A milestone is 3–6 tasks in one vertical slice, so they routinely touch the same files; `implementation-agent` commits each task separately; and every one of those agents appends to the same `## Implementation Log`, which Step 4 reads and which is the only record of what actually ran. "The team-lead coordinates" is prose, not a lock.
+- **`verify`.** The one that would *break* rather than merely cost more. Both agents return their findings as call output — *"Collect: The code review report document"*, then Step 3 merges the two. A teammate does not return output: the lead receives an idle notification and has to be sent the result separately.
+- **`debug-auto`, `debug-manual`.** Both declare **"Parallel agents: None by default"** — a strictly sequential design → implementation → verification chain over a single `DEBUG.md`, bounded at 3 iterations. Team setup and teardown around a serial chain is overhead with no counterpart.
+
+**The one case worth revisiting is not this dispatch path.** Parallel competing-hypothesis debugging — several investigators trying to disprove each other's theories — is a real technique, and Belmont's debug skills do not do it. That is a redesign of `debug-*`, it works just as well over plain sub-agent dispatch, and it is not a reason to restore an approach in `dispatch-strategy.md`.
+
 ## Failure mode if you break it
 
 - **Silent Approach B.** Every phase runs in the orchestrator's own context. A long `implement` burns context far faster than its phase count suggests, and nothing in the output says why.
@@ -55,6 +74,7 @@ Tracked as issue #54. Until it closes, do not read "four orchestrator skills" as
 - **"Tell the model to ignore its system prompt."** Rejected, and it is not what the fix does. The host's rule is conditional — *unless the user requested it* — so the honest move is to establish that the condition is met, which it is. Prose instructing an agent to disregard its host would be both untrue and unstable.
 - **"Set `--permission-mode bypassPermissions` and the problem goes away."** It does not. Belmont already passes it, and `Agent` is already in the `--allowedTools` list (`toolexec.go`). Permission was never the blocker; the blocker was an instruction about *when to choose* to call, which no permission flag addresses.
 - **Three mechanical alternatives on the auto path**, all rejected for the same reason: each fixes **one** invocation path, and this repo's bar is both. (a) `--append-system-prompt` carrying the authorization, which would rank it alongside the rule it answers; (b) rewording the assembled prompt to read as an explicit request to delegate; (c) steering the child to invoke the skill through its own `Skill` tool, landing the invocation in the host's blessed category rather than arguing equivalence to it. All three are invisible to an interactive `/belmont:implement`, which is where half the exposure is. **(a) remains the best candidate for belt-and-braces reinforcement** if the prose ever proves insufficient under `belmont auto` — it is cheap and does not conflict with the prose.
+- **"Restore Agent Teams as the preferred approach once the API stabilises."** The withdrawn tools are why it was removed; they are not why it stays out. See *Why Approach A is sub-agents and not agent teams* above — Belmont's file-mediated coordination already does the job a team's task list and mailbox do, and does it durably, while auto's worktree waves already provide the isolation a shared working tree cannot. The specific line never to reinstate is `main`'s per-task `implementation-agent` fan-out inside a team.
 - **"Assert dispatch happened in the eval."** Tempting, and forbidden by `meta/evals.md` — that is an assertion on prose, and it breaks on the first model swap. The announcement line exists so a human reading a transcript can see it; it is not an assertion target.
 
 ## Evidence
@@ -73,3 +93,4 @@ Tracked as issue #54. Until it closes, do not read "four orchestrator skills" as
 
 - 2026-08-15 — initial. Records the host-vs-skill dispatch conflict found while diagnosing a nondeterministic Tier 2 run after #45, the authorization prose that resolves it, and the measurements ruling out session leak and permission flags as causes.
 - 2026-08-15 — red-teamed. Corrected the stated cause (auto sends a literal slash command on Claude; the "Read …SKILL.md" phrasing is pi/opencode-only), narrowed the `models.yaml` claim to per-agent differentiation, scoped "every Claude Code session" to the measured build/account, added `## Known rough edges` for the four dispatching skills the partial does not reach, recorded three rejected mechanical alternatives, and noted #45's approach-letter renumbering so the evidence cannot be misread. Re-measured against the rewritten prose: full live suite green, 13 dispatch announcements, zero inline.
+- 2026-08-16 — recorded why Agent Teams should not return when a stable API ships, skill by skill, and separated that design argument from the correctness fix that removed it. Added the matching `Don't re-do` entry. No new measurement: the section reasons from the four skills' own dispatch configurations and the host's documented teammate semantics.
