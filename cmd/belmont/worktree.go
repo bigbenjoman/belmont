@@ -617,8 +617,8 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	// after the note was then recorded as that task's child and skipped as
 	// travelling inside a block that does not contain it. That was a real
 	// regression on the conflict path, caught by review rather than by the
-	// gates; see `a19f7f7` and AGENTS.md's "derive a concept from the function
-	// that defines it".
+	// gates; see `324a965` ("Two the nested-carry fix broke, and three claims
+	// that were not true").
 	type openTask struct {
 		end int
 		id  string
