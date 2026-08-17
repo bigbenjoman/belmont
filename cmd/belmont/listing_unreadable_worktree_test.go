@@ -108,6 +108,16 @@ func TestListingReportsTheGapWhenItFallsBackToMaster(t *testing.T) {
 	if !strings.Contains(g.describe(), "master's copy is shown instead") {
 		t.Errorf("gap does not use the shared phrasing: %q", g.describe())
 	}
+	// …and the Reason has to name the worktree copy as the thing that failed,
+	// like the two state.go sites do. `324a965` moved that prose out of
+	// describe()'s format string into each construction site, so this is now the
+	// caller's job and nothing else checks it. Asserting only on the describe()
+	// suffix above passes for a bare err.Error() too, which is exactly the
+	// divergence that reached the branch: one gap of three opening with a raw Go
+	// error and never saying which file could not be read.
+	if !strings.Contains(g.Reason, "worktree's PROGRESS.md could not be read") {
+		t.Errorf("gap Reason = %q, want it to name the worktree copy as what failed", g.Reason)
+	}
 }
 
 // The listing is what `status.md`'s fast path runs, so the warning has to reach
