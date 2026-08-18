@@ -11,6 +11,33 @@ import (
 	"time"
 )
 
+// worktreeLoopConfig derives the child config a worktree's runLoop is given from
+// the orchestrator's own. It answers, in ONE place, the question
+// knowledge/cross-cutting/dual-invocation-paths.md says to ask of every path
+// root: which of the two roots does this resolve to under runAutoParallel?
+//
+//   - Root becomes the worktree. That is the whole point — the loop reads and
+//     writes the feature's state inside its isolated tree.
+//   - MetricsRoot does NOT. The worktree is deleted by removeWorktree once its
+//     branch merges, .belmont/metrics/ is gitignored so no commit carries it, and
+//     syncFeatureStateAfterMerge copies back only PROGRESS.md. A record written
+//     under the worktree is destroyed before anything can read it, silently. So
+//     metrics stay pinned to the originating root, which outlives the wave.
+//   - RunID comes across unchanged, so a wave of N milestones is one run rather
+//     than N. runLoop mints an ID from its own start time when it finds none,
+//     which is right for a serial run and wrong for a wave: `belmont metrics`
+//     aggregates per run, and N run IDs make one invocation look like N.
+//
+// Both worktree call sites go through here so the two cannot drift — the defect
+// this replaces existed because only one execution path was ever exercised.
+func worktreeLoopConfig(cfg loopConfig, wtPath string) loopConfig {
+	child := cfg
+	child.Root = wtPath
+	child.MetricsRoot = cfg.metricsRoot()
+	child.RunID = cfg.RunID
+	return child
+}
+
 // runFeatureInWorktree creates a worktree for a feature, installs belmont, and runs the full loop.
 func runFeatureInWorktree(cfg loopConfig, slug, branch, wtPath string, tracker *worktreeTracker, resumed bool) error {
 	if err := createWorktreeIfNeeded(cfg.Root, wtPath, branch, slug, resumed); err != nil {
@@ -70,9 +97,9 @@ func runFeatureInWorktree(cfg loopConfig, slug, branch, wtPath string, tracker *
 		}
 	}
 
-	// Run loop for this feature (all milestones)
-	mCfg := cfg
-	mCfg.Root = wtPath
+	// Run loop for this feature (all milestones). worktreeLoopConfig sets Root to
+	// the worktree while keeping MetricsRoot and RunID on the originating run.
+	mCfg := worktreeLoopConfig(cfg, wtPath)
 	mCfg.Feature = slug
 	mCfg.Port = port
 	mCfg.Workspaces = workspaces
@@ -134,6 +161,16 @@ func mergeFeatureBranch(cfg loopConfig, slug, branch, wtPath string, tracker *wo
 // runAutoParallel executes milestones with dependency-aware parallel waves using worktrees.
 func runAutoParallel(cfg loopConfig, milestones []milestone) error {
 	startTime := time.Now()
+
+	// Identify the run HERE rather than letting each worktree's runLoop mint its
+	// own. runLoop's fallback keys off its own start time, so N worktrees would
+	// produce N run IDs for what is one invocation, and `belmont metrics` — which
+	// aggregates per run — would report a wave of five milestones as five runs.
+	// Same format as runLoop's fallback so serial and parallel records sort and
+	// compare identically.
+	if cfg.RunID == "" {
+		cfg.RunID = startTime.UTC().Format(time.RFC3339)
+	}
 
 	// Pre-flight: ensure repo is in a clean state before starting
 	if err := validateRepoState(cfg.Root); err != nil {
@@ -468,9 +505,11 @@ func runMilestoneInWorktree(cfg loopConfig, ms milestone, branch, wtPath string,
 		}
 	}
 
-	// Run loop for this single milestone
-	mCfg := cfg
-	mCfg.Root = wtPath
+	// Run loop for this single milestone. worktreeLoopConfig sets Root to the
+	// worktree while keeping MetricsRoot and RunID on the originating run, so a
+	// wave of N milestones records as one run under the main root rather than as
+	// N runs inside trees that are about to be deleted.
+	mCfg := worktreeLoopConfig(cfg, wtPath)
 	mCfg.From = ms.ID
 	mCfg.To = ms.ID
 	mCfg.Port = port

@@ -617,13 +617,18 @@ func attachUsageCapture(cmd *exec.Cmd, tool string, tw *tailWriter, prefix strin
 // succeeded, and it must never be the reason a milestone is retried. An empty
 // RunID disables recording, which is what keeps unit tests and dry runs from
 // leaving records behind.
+//
+// Writes to cfg.metricsRoot(), NOT cfg.Root. Under runAutoParallel, Root is the
+// worktree and the worktree is deleted on merge, so records written there are
+// destroyed before anything can read them; MetricsRoot is the originating root
+// that outlives the wave. See loopConfig.MetricsRoot.
 func recordPhaseMetrics(cfg loopConfig, milestoneID, phase string, durationMs int64, usage *toolUsage) {
 	if cfg.RunID == "" {
 		return
 	}
 	rec := buildMetricsRecord(cfg.RunID, cfg.Feature, milestoneID, phase, cfg.Tool,
 		durationMs, usage, cfg.CriticalPath[milestoneID])
-	if err := appendMetricsRecord(cfg.Root, rec); err != nil {
+	if err := appendMetricsRecord(cfg.metricsRoot(), rec); err != nil {
 		fmt.Fprintf(os.Stderr, "\033[33m⚠ metrics write failed: %s\033[0m\n", err)
 	}
 }

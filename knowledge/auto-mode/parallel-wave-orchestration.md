@@ -9,6 +9,8 @@
 - Worktree-local files that master never holds (`STEERING.md`, and potentially others added later) are preserved across the resume-time wipe-and-recopy.
 - Merges happen in milestone-ID order, sequentially, with pre-merge overlap reporting.
 - **`MaxParallel <= 1` interleaves merges with execution.** When the user passes `--max-parallel=1`, both `runWaveParallel` (single-feature) and `runAutoMultiFeature` (multi-feature) take a serial branch: run unit N → merge unit N → run unit N+1. The merge happens inline before the next worktree is created so subsequent units fork from the post-merge tip. Stale-worktree resolution and rebase-on-resume are deferred to just-in-time in this branch. With `MaxParallel > 1` the parallel-then-post-wave-merge sequence above remains the only path. This is **not** the previously rejected master-tree shortcut — every unit still runs in its own worktree, only the merge timing changes.
+- **Anything that must outlive the wave does not live under `Root`.** The worktree is deleted by `removeWorktree` on merge, `.belmont/` is `--assume-unchanged` inside it so no commit carries it out, and `syncFeatureStateAfterMerge` copies back only `PROGRESS.md`. `.belmont/metrics/` is the case that proved it: gitignored as well, so records written under the worktree were destroyed unread. `loopConfig.MetricsRoot` pins them to the originating root, and `worktreeLoopConfig` is where both worktree sites get it. **If you add a path root to `loopConfig`, decide there which of the two roots it resolves to** — see [cross-cutting/dual-invocation-paths.md](../cross-cutting/dual-invocation-paths.md).
+- **One wave is one run.** `RunID` is minted by `runAutoParallel` / `runAutoMultiFeature` before any worktree is created and carried into each child, not left to `runLoop`'s own start-time fallback. `belmont metrics` aggregates per run, so N worktrees minting N IDs would report one invocation as N runs.
 - Live state is observable from outside the run via `belmont status --feature <slug>`, which per-milestone overlays each worktree's view of its own milestone on top of master's baseline.
 
 ## How it's enforced
@@ -20,7 +22,7 @@ In `cmd/belmont/auto_parallel.go`:
   - `git worktree add -b belmont/auto/<feature>/<ms>`
   - `copyBelmontStateToWorktree` overlays master's feature state on top of the worktree's HEAD checkout. Preserves `STEERING.md` (and future peers — see `ensureMigrations` if more appear) across the wipe-and-recopy.
   - Setup hooks run with the worktree's `$PORT` / `$BELMONT_PORT` / `$BELMONT_BASE_URL` etc. (see [cross-cutting/port-isolation.md](../cross-cutting/port-isolation.md)).
-  - `runLoop(mCfg)` executes inside the worktree; `cfg.Root = wtPath` so everything the loop reads/writes is worktree-scoped.
+  - `runLoop(mCfg)` executes inside the worktree, with `mCfg` built by `worktreeLoopConfig(cfg, wtPath)` — the single place that decides which of a config's roots follows the worktree and which stays behind. `Root = wtPath` scopes everything the loop reads and writes to the worktree; `MetricsRoot` and `RunID` stay on the originating run.
 - Merge loop in `runWaveParallel`:
   - Sort successes by `parseMilestoneNum`.
   - Before each merge, `reportMergeOverlap(cfg.Root, branch, msID, mergedFiles)` prints a visibility warning listing files the branch touches that earlier-merged siblings also touched. **Does not block** — scope guards + verify evidence + milestone-immutability should catch the cases where overlap implies scope leak; this is diagnostic so a human can still review before pushing.
@@ -35,6 +37,7 @@ In `cmd/belmont/auto_parallel.go`:
 - **Re-introducing the single-milestone shortcut**: M1 runs in master tree; scope-guard amends rewrite the user's working branch history directly; `belmont steer` targets the wrong root; rollback is a `git reset` rather than `worktree remove`. Asymmetry between waves makes every other mechanism harder to reason about.
 - **Not preserving STEERING.md across state copy**: the resume-time wipe-and-recopy silently deletes any pending user instructions that landed before auto resumed. User's steer reports success; zero injection fires. (This was the 2026-04-21 STEERING.md loss bug.)
 - **Missing merge overlap report**: two branches write the same file, git picks one arbitrarily, the other's work disappears. Only detectable later when the feature "looks wrong." (This was the hero-section.tsx overwrite in the about-2 run.)
+- **Writing something durable under the worktree root**: it disappears on merge with no error anywhere. Metrics did exactly this — the instrumentation an entire feature was to be judged by recorded nothing in the only mode that feature runs in, and the symptom was an absent file, not a failure.
 - **Missing live status overlay**: user has no way to observe parallel work in progress; has to wait until merge to see whether M2 is stuck or making progress. Blind flying on 30–60 minute wave durations.
 
 ## Don't re-do
@@ -49,7 +52,7 @@ In `cmd/belmont/auto_parallel.go`:
 
 `belmont-test/about-4-fresh` in the canonical test repo: clean parallel wave (M2/M3/M4) with merge-overlap report firing on `about/page.tsx`, reconciliation-agent resolving the import-union at high confidence, live status overlay showing `(live from worktree)` tags during the run. See [meta/validated-runs.md](../meta/validated-runs.md).
 
-Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestOverlayLiveMilestones_*`, `TestCopyBelmontStateToWorktreePreservesSteering`.
+Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestOverlayLiveMilestones_*`, `TestCopyBelmontStateToWorktreePreservesSteering`. For the root split: `cmd/belmont/metrics_test.go` → `TestWorktreeLoopConfigKeepsMetricsOnTheOriginatingRoot`, `TestRecordPhaseMetricsWritesUnderMainRootNotWorktree`, `TestWaveOfMilestonesRecordsAsOneRun`, plus `TestRecordPhaseMetricsFallsBackToRoot` for the serial path — the worktree case needs its own test because the serial path passes either way.
 
 ## Known rough edges
 
@@ -66,3 +69,4 @@ Unit coverage: `cmd/belmont/scope_guard_test.go` → `TestOverlayLiveMilestones_
 - 2026-05-12 — added `MaxParallel <= 1` inline-merge semantic (every unit still goes through a worktree; only the merge interleaves). Paired with `resume-rebase.md`. See [`auto-mode/multi-feature-scheduling.md`](multi-feature-scheduling.md) for the multi-feature-mode equivalent.
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
 - 2026-08-14 — the live overlay stopped falling back to master in silence (#48). `overlayLiveMilestones` returns the gaps it hit; `status`, `blockers` and `validate` all name them, and validate files `unreadable_live_milestone` as a warning. Recorded because the "shouldn't happen" comment on the second fallback was a fair bet when this governed display only, and had not been revisited after the overlay became a gate.
+- 2026-08-18 — `mCfg` derivation moved into `worktreeLoopConfig`, and `loopConfig.MetricsRoot` added, after every metrics record in parallel-wave mode was found to be written into the worktree and deleted with it (`throughput` P0-M1-FIX-1). `RunID` is now minted by the orchestrator so a wave records as one run. Recorded as an invariant about *any* durable write, not as a metrics detail.

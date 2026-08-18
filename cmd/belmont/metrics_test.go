@@ -2,10 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -383,4 +386,237 @@ func TestFormatDurationMs(t *testing.T) {
 			t.Errorf("formatDurationMs(%d): got %s, want %s", c.ms, got, c.want)
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// P0-M1-FIX-1 — metrics must outlive the worktree
+// ---------------------------------------------------------------------------
+//
+// The defect: recordPhaseMetrics wrote to cfg.Root, and both worktree sites in
+// auto_parallel.go set Root to the worktree path before calling runLoop. Since
+// .belmont/metrics/ is gitignored, syncFeatureStateAfterMerge copies back only
+// PROGRESS.md, and removeWorktree then deletes the tree, every record produced
+// in parallel-wave mode was destroyed unread — and autocmd.go routes to
+// runAutoParallel whenever any milestone declares `(depends: …)`, which is the
+// mode this feature actually runs in. Nothing errored; the file simply was not
+// there afterwards.
+//
+// These tests exercise the worktree path specifically, which is the prevention
+// rule NOTES.md §Root Cause Patterns records for exactly this class of bug.
+
+// TestWorktreeLoopConfigKeepsMetricsOnTheOriginatingRoot pins the derivation the
+// two auto_parallel.go sites use: Root moves to the worktree, MetricsRoot and
+// RunID do not.
+func TestWorktreeLoopConfigKeepsMetricsOnTheOriginatingRoot(t *testing.T) {
+	mainRoot := t.TempDir()
+	wtPath := filepath.Join(t.TempDir(), "belmont-worktrees", "M3")
+
+	parent := loopConfig{Root: mainRoot, Feature: "throughput", Tool: "claude", RunID: "2026-08-18T09:00:00Z"}
+	child := worktreeLoopConfig(parent, wtPath)
+
+	if child.Root != wtPath {
+		t.Fatalf("Root: got %s, want the worktree %s", child.Root, wtPath)
+	}
+	if child.MetricsRoot != mainRoot {
+		t.Errorf("MetricsRoot: got %s, want the originating root %s", child.MetricsRoot, mainRoot)
+	}
+	if child.metricsRoot() == child.Root {
+		t.Error("metrics still resolve under the worktree — this is the defect P0-M1-FIX-1 fixes")
+	}
+	if child.RunID != parent.RunID {
+		t.Errorf("RunID: got %q, want the parent's %q — a wave must record as one run", child.RunID, parent.RunID)
+	}
+}
+
+// TestRecordPhaseMetricsWritesUnderMainRootNotWorktree is the end-of-fix
+// assertion: with the worktree config, the record lands under the main root and
+// the worktree gets no .belmont/metrics/ at all — so deleting the worktree loses
+// nothing.
+func TestRecordPhaseMetricsWritesUnderMainRootNotWorktree(t *testing.T) {
+	mainRoot := t.TempDir()
+	wtPath := t.TempDir()
+
+	parent := loopConfig{
+		Root:         mainRoot,
+		Feature:      "throughput",
+		Tool:         "claude",
+		RunID:        "2026-08-18T09:00:00Z",
+		CriticalPath: map[string]bool{"M3": true},
+	}
+	cfg := worktreeLoopConfig(parent, wtPath)
+
+	recordPhaseMetrics(cfg, "M3", "IMPLEMENT_MILESTONE", 60000,
+		&toolUsage{Input: 100, Output: 50})
+
+	recs, err := readMetricsRecords(mainRoot, "throughput")
+	if err != nil {
+		t.Fatalf("read from main root: %v", err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("main root records: got %d, want 1 — the wave's measurement is the deliverable", len(recs))
+	}
+	if recs[0].Run != parent.RunID || recs[0].Milestone != "M3" || !recs[0].CriticalPath {
+		t.Errorf("record content wrong: %+v", recs[0])
+	}
+
+	// The worktree must hold nothing. If it does, that copy dies with the tree.
+	if _, err := os.Stat(filepath.Join(wtPath, ".belmont", "metrics")); !os.IsNotExist(err) {
+		t.Errorf("worktree has a metrics dir (err=%v) — it would be deleted with the worktree", err)
+	}
+}
+
+// TestWaveOfMilestonesRecordsAsOneRun pins RunID propagation. runLoop mints an
+// ID from its own start time when it finds none, which is right for a serial run
+// and wrong for a wave: `belmont metrics` aggregates per run, so N worktrees each
+// minting their own would report one invocation as N runs and make the P3-3
+// comparison against the M1 baseline meaningless.
+func TestWaveOfMilestonesRecordsAsOneRun(t *testing.T) {
+	mainRoot := t.TempDir()
+	parent := loopConfig{Root: mainRoot, Feature: "throughput", Tool: "claude", RunID: "2026-08-18T09:00:00Z"}
+
+	for _, ms := range []string{"M2", "M3", "M4"} {
+		cfg := worktreeLoopConfig(parent, filepath.Join(t.TempDir(), ms))
+		cfg.From, cfg.To = ms, ms
+		recordPhaseMetrics(cfg, ms, "IMPLEMENT_MILESTONE", 60000, &toolUsage{Input: 100, Output: 50})
+	}
+
+	recs, err := readMetricsRecords(mainRoot, "throughput")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	s := summariseMetrics("throughput", recs)
+	if s.Phases != 3 {
+		t.Fatalf("phases: got %d, want 3", s.Phases)
+	}
+	if s.Runs != 1 {
+		t.Errorf("runs: got %d, want 1 — one wave is one run, not one run per worktree", s.Runs)
+	}
+	if s.Input != 300 {
+		t.Errorf("input: got %d, want 300", s.Input)
+	}
+}
+
+// TestRecordPhaseMetricsFallsBackToRoot keeps the serial path honest: an unset
+// MetricsRoot must behave exactly as before this change, so no construction site
+// has to remember the new field.
+func TestRecordPhaseMetricsFallsBackToRoot(t *testing.T) {
+	root := t.TempDir()
+	cfg := loopConfig{Root: root, Feature: "throughput", Tool: "claude", RunID: "2026-08-18T09:00:00Z"}
+
+	if cfg.metricsRoot() != root {
+		t.Fatalf("metricsRoot fallback: got %s, want %s", cfg.metricsRoot(), root)
+	}
+	recordPhaseMetrics(cfg, "M1", "VERIFY", 1000, nil)
+
+	recs, err := readMetricsRecords(root, "throughput")
+	if err != nil || len(recs) != 1 {
+		t.Fatalf("serial path regressed: %d record(s), err=%v", len(recs), err)
+	}
+}
+
+// TestAppendMetricsRecordIsConcurrencySafe covers what the fix newly exposes:
+// several worktrees in one wave now append to ONE file under the main root, so
+// the append path is shared across goroutines (and across any other belmont
+// process on the same checkout).
+//
+// It is safe because O_APPEND makes the seek-to-EOF and the write one operation,
+// AND because appendMetricsRecord emits the record and its newline in a single
+// f.Write. The second half is the fragile one, so the test carries its own
+// negative control: writing the payload and the '\n' as two calls, which is the
+// most plausible way for a later edit to break this. Measured 2026-08-18 on
+// macOS/APFS, 16 goroutines × 400 records: the single-write path produced 6400
+// intact lines with zero unparseable, the split-write control lost ~47% of its
+// lines and left ~1850 unparseable, on every run. A concurrency test with no
+// failing control proves nothing.
+func TestAppendMetricsRecordIsConcurrencySafe(t *testing.T) {
+	const goroutines, perGoroutine = 16, 400
+
+	countLines := func(t *testing.T, path string) (total, unparseable int) {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			total++
+			var rec metricsRecord
+			if json.Unmarshal([]byte(line), &rec) != nil {
+				unparseable++
+			}
+		}
+		return total, unparseable
+	}
+
+	hammer := func(t *testing.T, root string, write func(root string, rec metricsRecord) error) (total, unparseable int) {
+		t.Helper()
+		var wg sync.WaitGroup
+		for g := 0; g < goroutines; g++ {
+			wg.Add(1)
+			go func(g int) {
+				defer wg.Done()
+				for i := 0; i < perGoroutine; i++ {
+					rec := buildMetricsRecord("2026-08-18T09:00:00Z", "throughput",
+						fmt.Sprintf("M%d", g), fmt.Sprintf("PHASE_%d", i), "claude",
+						int64(i), &toolUsage{Input: 100, Output: 50}, g == 0)
+					// A note long enough that a spliced line is unmistakable,
+					// while staying far below any size a local filesystem would
+					// split one write() at.
+					rec.Note = strings.Repeat("x", 200)
+					if err := write(root, rec); err != nil {
+						t.Errorf("append: %v", err)
+						return
+					}
+				}
+			}(g)
+		}
+		wg.Wait()
+		return countLines(t, metricsPath(root, "throughput"))
+	}
+
+	root := t.TempDir()
+	total, unparseable := hammer(t, root, appendMetricsRecord)
+	if want := goroutines * perGoroutine; total != want {
+		t.Errorf("lines: got %d, want %d — concurrent appends lost or spliced records", total, want)
+	}
+	if unparseable != 0 {
+		t.Errorf("unparseable lines: got %d, want 0 — the shared append path is garbling records", unparseable)
+	}
+
+	// Negative control. Skipped when the scheduler cannot interleave the two
+	// writes, because then it would pass for the wrong reason.
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("negative control needs GOMAXPROCS >= 2 to interleave")
+	}
+	ncRoot := t.TempDir()
+	_, ncUnparseable := hammer(t, ncRoot, appendSplitWriteForTest)
+	if ncUnparseable == 0 {
+		t.Error("negative control produced no damage — this test cannot detect a split write, so it proves nothing about the real one")
+	}
+}
+
+// appendSplitWriteForTest is appendMetricsRecord with the one property under
+// test removed: the record and its newline go out as two writes. Test-only, and
+// it exists solely to be the control that fails.
+func appendSplitWriteForTest(root string, rec metricsRecord) error {
+	path := metricsPath(root, rec.Feature)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+	_, err = f.Write([]byte("\n"))
+	return err
 }

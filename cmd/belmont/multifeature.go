@@ -207,6 +207,15 @@ func computeFeatureWaves(features []featureSummary) ([]featureWave, error) {
 func runAutoMultiFeature(cfg loopConfig, slugs []string) error {
 	startTime := time.Now()
 
+	// Identify the run HERE rather than letting each worktree's runLoop mint its
+	// own — see the same block in runAutoParallel. One `belmont auto --all` is
+	// one run across every feature it launches; each feature still writes its own
+	// .belmont/metrics/<feature>.jsonl, so the shared ID is what lets the run be
+	// reassembled across those files.
+	if cfg.RunID == "" {
+		cfg.RunID = startTime.UTC().Format(time.RFC3339)
+	}
+
 	// Pre-flight: ensure repo is in a clean state before starting
 	if err := validateRepoState(cfg.Root); err != nil {
 		return fmt.Errorf("auto: %w", err)

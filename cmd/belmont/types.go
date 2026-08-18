@@ -269,6 +269,23 @@ type loopConfig struct {
 	// once at loop start; empty disables metrics recording, which is what keeps
 	// unit tests and dry runs from writing records.
 	RunID string
+	// MetricsRoot is the root that .belmont/metrics/ resolves under. Empty means
+	// "same as Root", so the serial path needs no change and no construction site
+	// has to remember the field.
+	//
+	// It exists because Root is NOT one root: runFeatureInWorktree and
+	// runMilestoneInWorktree both set Root to the worktree path before calling
+	// runLoop, and a worktree is deleted by removeWorktree once its branch merges
+	// — .belmont/metrics/ is gitignored, and syncFeatureStateAfterMerge copies
+	// back only PROGRESS.md, so anything recorded there dies with the tree. Since
+	// autocmd.go routes to runAutoParallel whenever any milestone declares
+	// `(depends: …)`, that is the normal mode, not a corner case.
+	//
+	// Metrics are the one thing that must outlive the worktree, so the two
+	// worktree sites set this to the originating (main) root. If you add another
+	// path root to this struct, ask the same question of it — see
+	// knowledge/cross-cutting/dual-invocation-paths.md.
+	MetricsRoot string
 	// CriticalPath marks the milestones lying on a longest chain through the
 	// dependency DAG. NOT the wave index — see criticalPathMilestones.
 	CriticalPath map[string]bool

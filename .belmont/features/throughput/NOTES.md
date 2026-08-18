@@ -49,6 +49,12 @@
 - Reuse `parseMilestones` + `taskBodyEnd` for anything that needs a task's body extent — `blockers.go:taskDetail` already composes them. Do not write a third line-scanner.
 - When summing what a task body would move, record **which line indices** move rather than summing per-task lengths: a nested task bullet lies inside its parent's body *and* is a task itself, so the naive sum double-counts.
 
+### Pattern
+- **`loopConfig` has two roots, not one.** `Root` follows the worktree under `runAutoParallel`; anything that must outlive the wave must not. `worktreeLoopConfig` (auto_parallel.go) is now the single place both worktree sites derive the child config, so the question "which root does this resolve to?" is asked once. Ask it of any new path root added to `loopConfig`.
+- **`RunID` must be minted by the orchestrator, not by `runLoop`.** `runLoop`'s fallback keys off its own start time, which is right serially and wrong for a wave — N worktrees produce N run IDs for one invocation, and `belmont metrics` aggregates per run. Seeded in `runAutoParallel` and `runAutoMultiFeature` before any worktree exists.
+- **O_APPEND concurrency safety is per `write()` call, not per file handle.** Measured 2026-08-18, macOS/APFS, 16 goroutines x 400 records to one file: `appendMetricsRecord`'s single `f.Write(append(data, '\n'))` produced 6400 intact lines, 0 unparseable. A negative control splitting the payload and the newline into two writes lost ~47% of its lines and left ~1850 unparseable **on every run**. So the shared-append path is safe, but only while the record and its newline stay in one write — no `bufio.Writer`, no second `Write`. The failure class is a garbled line, not a torn file, which is categorically different from what `writeStateFile` exists to prevent.
+- **A serial-path test passes either way here.** `recordPhaseMetrics` with `MetricsRoot` unset behaves exactly as before the fix, so only a test that sets `MetricsRoot != Root` can detect the defect. Confirmed by reverting the fix and watching the three worktree tests fail and the serial test pass.
+
 ## Polish
 
 ### From verification [2026-08-18]

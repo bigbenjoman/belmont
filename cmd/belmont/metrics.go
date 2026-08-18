@@ -165,12 +165,47 @@ func metricsPath(root, feature string) string {
 	return filepath.Join(root, ".belmont", "metrics", slug+".jsonl")
 }
 
+// metricsRoot is the root .belmont/metrics/ resolves under: MetricsRoot when
+// set, Root otherwise. The fallback is what keeps the serial path unchanged —
+// only the two worktree sites in auto_parallel.go need to know the difference.
+func (cfg loopConfig) metricsRoot() string {
+	if cfg.MetricsRoot != "" {
+		return cfg.MetricsRoot
+	}
+	return cfg.Root
+}
+
 // appendMetricsRecord appends one JSONL line. Deliberately best-effort at the
 // call sites: a metrics failure must never fail a run that otherwise succeeded.
 //
 // This is an append of a single complete line, not a rewrite, so it does not go
 // through writeStateFile — converting an append into a read-modify-rewrite would
 // widen the window rather than close it (see knowledge/cross-cutting/state-atomicity.md).
+//
+// Concurrency: every milestone in a parallel wave appends to this one file under
+// the main root, so the path is shared — by goroutines within a wave, and by any
+// other belmont process running against the same checkout. It is safe, and the
+// reason is narrow enough to be worth writing down rather than trusting:
+//
+//   - The file is opened O_APPEND, so the kernel seeks to end-of-file and writes
+//     as one indivisible operation. Two appenders cannot land at the same offset
+//     and overwrite each other. (Go maps O_APPEND to FILE_APPEND_DATA on Windows,
+//     which carries the same guarantee.)
+//   - The whole record INCLUDING its terminating newline goes out in a single
+//     f.Write. That is the load-bearing detail: writing the payload and the '\n'
+//     as two calls would let another appender interleave between them and splice
+//     two records into one unparseable line. Do not split this write, and do not
+//     wrap the file in a bufio.Writer — a buffer flushes on its own boundaries,
+//     not on record boundaries.
+//   - Records are a few hundred bytes, far below any size at which a local
+//     filesystem would split one write() into several.
+//
+// So the hazard here is a garbled *line*, not a torn *file* — categorically
+// unlike the truncate-then-write window writeStateFile exists to close — and the
+// single-write rule removes it. TestAppendMetricsRecordIsConcurrencySafe pins it.
+// What this does NOT survive is a network filesystem: O_APPEND is not atomic over
+// NFS. Belmont's metrics live beside the checkout, so that is out of scope — but
+// if .belmont/ ever legitimately lands on NFS, this is the call site to lock.
 func appendMetricsRecord(root string, rec metricsRecord) error {
 	path := metricsPath(root, rec.Feature)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
