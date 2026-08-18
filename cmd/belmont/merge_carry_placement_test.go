@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -386,10 +387,18 @@ func TestBothMergePathsPlaceACarriedTaskTheSameWay(t *testing.T) {
 	}
 }
 
-// namesTask reports whether any warning mentions the task ID.
+// namesTask reports whether any warning mentions the task ID as a whole token.
+//
+// Bare `strings.Contains` matches a PREFIX: `namesTask(warnings, "P0-M2-1")` is
+// satisfied by a warning that only ever mentions `P0-M2-1a` or `P0-M2-10`. Both
+// fixtures here use hand-written sequential IDs, so a tenth task or an
+// `a`-suffixed child would quietly make an assertion unfalsifiable — the same
+// substring class as the `--all` / `--allow-dirty` hole this branch already fixed
+// twice.
 func namesTask(warnings []string, id string) bool {
+	delimited := regexp.MustCompile(regexp.QuoteMeta(id) + `([^A-Za-z0-9_-]|$)`)
 	for _, w := range warnings {
-		if strings.Contains(w, id) {
+		if delimited.MatchString(w) {
 			return true
 		}
 	}
@@ -449,6 +458,13 @@ func TestFallbackToMilestoneAnchorFlattensTheBlock(t *testing.T) {
 		if !namesTask(warnings, "P0-M1-1a") {
 			t.Errorf("the fallback was silent about placement: %v", warnings)
 		}
+		// The wording itself, not just the ID. The pre-fix message said "carried
+		// to the end of M1 instead of under its parent", which reads as top level
+		// and was not what came out — the whole point of the fix. Nothing pinned
+		// that, so reverting the wording alone left the suite green.
+		if !warningSaying(warnings, "at top level") {
+			t.Errorf("the warning does not say where the task actually went: %v", warnings)
+		}
 	})
 
 	// (b) The parent's ID is duplicated on main, so it never enters masterOrder:
@@ -469,11 +485,24 @@ func TestFallbackToMilestoneAnchorFlattensTheBlock(t *testing.T) {
 		if !namesTask(warnings, "P0-M1-1a") {
 			t.Errorf("the carried task was re-placed with no warning naming it: %v", warnings)
 		}
+		if !warningSaying(warnings, "at top level") {
+			t.Errorf("the warning does not say where the task actually went: %v", warnings)
+		}
 	})
 }
 
 // assertCarriedAtTopLevel checks that `carried` was emitted at the same indent
-// as `sibling` — i.e. as its peer, not as its child.
+// as `sibling` — i.e. as its peer, not as its child — AND under the same
+// milestone heading.
+//
+// The milestone half is not decoration. Asserting indent alone passed a mutation
+// that re-anchored the carry into the milestone THIS side files the parent
+// under: both lines sit at indent 0, in different milestones, so the helper saw
+// nothing. That outcome is a task whose ID names M1 filed under M2, which
+// `belmont validate` rates `cross_milestone_task_id`, severityError — and the
+// code comment at the fallback says in as many words that it must not relocate
+// work across milestones on a guess. A helper that certifies that as correct is
+// worse than no helper.
 func assertCarriedAtTopLevel(t *testing.T, doc, carried, sibling string) {
 	t.Helper()
 	lines := strings.Split(doc, "\n")
@@ -495,6 +524,24 @@ func assertCarriedAtTopLevel(t *testing.T, doc, carried, sibling string) {
 	if lineIndentWidth(lines[ci]) > lineIndentWidth(lines[si]) {
 		t.Errorf("%s landed nested under %s, a task it has nothing to do with:\n%s", carried, sibling, doc)
 	}
+	if cm, sm := enclosingMilestone(lines, ci), enclosingMilestone(lines, si); cm != sm {
+		t.Errorf("%s was relocated into %s, but %s sits under %s — a task filed under a milestone its ID does not name is cross_milestone_task_id, severityError:\n%s",
+			carried, nonEmpty(cm, "no milestone"), sibling, nonEmpty(sm, "no milestone"), doc)
+	}
+}
+
+// enclosingMilestone returns the ID of the `### M<n>:` heading `idx` sits under,
+// or "" when it sits outside every milestone.
+func enclosingMilestone(lines []string, idx int) string {
+	for i := idx; i >= 0; i-- {
+		if m := msHeaderRe.FindStringSubmatch(lines[i]); len(m) >= 2 {
+			return "M" + m[1]
+		}
+		if i != idx && isSectionBreak(lines[i]) {
+			return ""
+		}
+	}
+	return ""
 }
 
 // Issue #60. `TestBothMergePathsPlaceACarriedTaskTheSameWay` compares `id@indent`
@@ -705,5 +752,95 @@ func TestBothPathsFlattenABulletNestedUnderANonTaskItem(t *testing.T) {
 	}
 	if syncIndent != 0 {
 		t.Errorf("the carried task stayed nested, so it became a child of an unrelated task (indent %d):\n%s", syncIndent, syncOut)
+	}
+}
+
+// warningSaying reports whether any warning contains the phrase.
+func warningSaying(warnings []string, phrase string) bool {
+	for _, w := range warnings {
+		if strings.Contains(w, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// `dedentBlock`'s documented contract is that internal structure survives: a
+// line indented deeper than the block's own bullet stays deeper by the same
+// amount, so a carried parent keeps its own children and its own body. Nothing
+// tested that — the flatten subtests each carry a single childless, body-less
+// bullet, so replacing the whole function with `strings.TrimLeft(l, " \t")`
+// passed the entire suite while destroying exactly what the doc comment
+// promises. The clamp was untested for the same reason.
+func TestDedentBlockKeepsInternalStructure(t *testing.T) {
+	block := []string{
+		"  - [ ] P0-M1-1a: Parent",
+		"    **Verification**: it works",
+		"",
+		"    - [ ] P0-M1-1b: Child",
+		"      **Evidence**: commit bbb222",
+	}
+	got := dedentBlock(block, 2)
+	want := []string{
+		"- [ ] P0-M1-1a: Parent",
+		"  **Verification**: it works",
+		"",
+		"  - [ ] P0-M1-1b: Child",
+		"    **Evidence**: commit bbb222",
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line %d\n got %q\nwant %q", i, got[i], want[i])
+		}
+	}
+	// Relative nesting is the property, stated independently of the exact strings
+	// so a reader sees what is actually being protected.
+	if lineIndentWidth(got[3]) <= lineIndentWidth(got[0]) {
+		t.Errorf("the carried parent lost its child: parent indent %d, child indent %d\n%v",
+			lineIndentWidth(got[0]), lineIndentWidth(got[3]), got)
+	}
+	// The clamp: a blank line has no indent to give and must survive as a blank,
+	// not as a fragment of anything else.
+	if got[2] != "" {
+		t.Errorf("the blank separator was mangled to %q", got[2])
+	}
+}
+
+// The anchor must land the carry INSIDE the milestone's list, not past the blank
+// line that ends it. `milestoneCarryAnchor` returning `taskBodyEnd(...) + 1`
+// passed every other test here: both paths shift equally so the agreement
+// assertions hold, and the task stays above a closing note so the prose
+// assertion holds too. The placement it produces is the one the anchor's own
+// history names as wrong.
+func TestCarryLandsInsideTheListNotPastItsTrailingBlank(t *testing.T) {
+	ours := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+
+### M2: Emitting
+- [x] P0-M2-1: Emit
+`
+	theirs := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+- [ ] P0-M1-9: Emit a summary
+
+### M2: Emitting
+- [x] P0-M2-1: Emit
+`
+	out, _ := mergeProgressState(theirs, ours)
+	lines := strings.Split(out, "\n")
+	carried := -1
+	for i, l := range lines {
+		if strings.Contains(l, "P0-M1-9") {
+			carried = i
+		}
+	}
+	if carried == -1 {
+		t.Fatalf("the carried task is missing:\n%s", out)
+	}
+	if strings.TrimSpace(lines[carried-1]) == "" {
+		t.Errorf("the carried task landed past the blank line that ends M1's list, detached from it:\n%s", out)
+	}
+	if ms := enclosingMilestone(lines, carried); ms != "M1" {
+		t.Errorf("the carried task landed under %s, not M1:\n%s", nonEmpty(ms, "no milestone"), out)
 	}
 }
