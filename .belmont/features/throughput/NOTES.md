@@ -48,3 +48,50 @@
 ### Pattern
 - Reuse `parseMilestones` + `taskBodyEnd` for anything that needs a task's body extent — `blockers.go:taskDetail` already composes them. Do not write a third line-scanner.
 - When summing what a task body would move, record **which line indices** move rather than summing per-task lengths: a nested task bullet lies inside its parent's body *and* is a task itself, so the naive sum double-counts.
+
+## Polish
+
+### From verification [2026-08-18]
+- `streamLine.Subtype` added with a comment but never read anywhere in the tree — `cmd/belmont/render.go:249`
+- `extract --all` is registered then discarded (`_ = all`) and absent from `printUsage`, though TECH_PLAN §Commands names `--all --dry-run` as *the* census invocation — `cmd/belmont/extract.go:280,290`
+- `TestWriteStateFileOverwriteKeepsExistingPermissions` cannot fail as written (seeds 0644, writes 0644). The real behaviour is the opposite of the name: `os.WriteFile` ignores `perm` on an existing file, `writeStateFile` forces it — so a file a user tightened to 0600 is reset to 0644. Rename, seed at 0600, and note the divergence in the helper's doc comment — `cmd/belmont/fsutil_test.go:119-146`
+- `TestWriteStateFileTempIsSiblingNotTempDir` relies on Unix directory-permission enforcement; it compiles under `GOOS=windows` but would fail if tests ran there. Add a `runtime.GOOS == "windows"` skip — `cmd/belmont/fsutil_test.go:169-190`
+- Both `state-atomicity.md` and `fsutil_test.go:20-22` claim the race proof is meaningful *only* under `-race`. It isn't — it detects torn reads by comparing file contents, which the race detector does not instrument, and fails identically without it. Overstating this invites someone to drop the test when `-race` is inconvenient
+- `state-atomicity.md` §"What this does NOT fix" names `copyBelmontStateToWorktree` (`worktree.go:241`) but not the identical `os.RemoveAll` + `copyDir` in `syncFeatureStateAfterMerge` (`worktree.go:397`). The section is otherwise exemplary; naming both would close it
+- `toolReportsUsage` is referenced only from `metrics_test.go:365` — fine as an invariant checker, but say so in a comment or use it in `attachUsageCapture` instead of the duplicated switch — `cmd/belmont/metrics.go:86-91`
+- `censusFeature` marks every line in a parent task's body as moved, including nested task *head* lines M3's extraction is specified to leave in place, so `IndexBytes` is a lower bound. Cannot change P0-4's answer (it can only push the over-threshold count higher, and the answer is already YES) but M3 should know the census under-reports the residual index — `cmd/belmont/extract.go:113-127`
+- `copyFile` for master context files still discards its error (pre-existing, "best-effort"). No orphan risk — the helper's `defer` always cleans the temp — only a silent loss. Inconsistent with the five sites upgraded to a stderr warning — `cmd/belmont/worktree.go:258`
+- CI does not run `go test -race ./cmd/belmont`, so P0-1's acceptance rests on a command CI never executes
+- This file has four separate `### Discovery` headings; merge or number them
+
+## Root Cause Patterns
+
+### [2026-08-18] Pattern: a new state write was only ever exercised on one of two execution paths
+**Issue**: Every metrics record is written to `cfg.Root`, which `auto_parallel.go` sets to the worktree path — so the instrumentation the whole feature is judged by produces nothing in parallel-wave mode, the mode this feature itself will run in.
+**Root Cause**: Belmont has two execution paths for the same loop (serial `runLoop`, and `runAutoParallel` per worktree). The repo documents this in `knowledge/cross-cutting/dual-invocation-paths.md`, and the codebase scan explicitly named that rule for P0-2 — but the rule exists only as prose, so applying it depended on the implementer recalling it at the moment of writing the path expression. Nothing mechanical gates it.
+**Prevention**: Any new write under `.belmont/` must be exercised on **both** paths before the task is marked done, with a test that pins the worktree case specifically. If a value is a path root, ask which of the two roots it resolves to under `runAutoParallel` — the answer is usually not the one you want.
+**Source**: M1 / P0-2
+
+### [2026-08-18] Pattern: a census derived its own scope instead of taking the spec's enumeration
+**Issue**: The extraction census walked five roots, but not the five the PRD names — `repo-2` (31 feature dirs, 18 live registers) was never measured, so the denominator is 138/65 instead of 168/82.
+**Root Cause**: The scope was assembled from what was conveniently to hand rather than from the PRD's explicit list, and `runCensus` swallows an unreadable root (`os.IsNotExist → continue`). An incomplete walk is therefore indistinguishable from a complete one at every level — no error, no warning, just a smaller number that looks like a finding.
+**Prevention**: When a spec enumerates its subjects, use that enumeration verbatim as the input list and **fail loudly** on any member that cannot be read. A missing input must never degrade silently into a smaller denominator.
+**Source**: M1 / P0-4
+
+### [2026-08-18] Pattern: a measurement was used to correct the spec before it was known to be complete
+**Issue**: CENSUS.md declares *"the PRD's phrase 'the other 83' does not match disk"* — but the PRD's figure reproduces exactly once the omitted repo is included. The PRD was right; the correction was the error. Separately, "three of the five contain no indented lines at all" is wrong (two do), and was copied verbatim into four files, one of them directly beneath a human-gated escalation the owner will read when deciding whether to restructure the waves.
+**Root Cause**: Same shape as the numeric-drift pattern already recorded in `framework-evaluation`'s NOTES: a derived figure was restated across documents instead of living in one canonical place, and it was trusted enough to contradict the spec before its own coverage was checked.
+**Prevention**: Before contradicting a spec's number, prove your measurement covers the spec's full scope. State a measured figure once, in one file, and have every other document link to it rather than repeat it — a wrong number repeated four times is four times as expensive to retract.
+**Source**: M1 / P0-4
+
+### [2026-08-18] Pattern: triage verdicts written from summary evidence rather than from content
+**Issue**: `origin/feat/maintenance-ci` was verdicted *abandon* on the claim that both leftover commits are already on `main`. One is not — `1129cf84`'s 23-line `--max-parallel` gotcha is absent, and the triage mis-describes it as a different change entirely. A second abandon verdict gives a reason (`main` "already scopes the sync per milestone") that is simply untrue of `main`'s code.
+**Root Cause**: Verdicts were formed from commit counts and plausible-sounding mechanisms rather than by reading the specific content in question. `git cherry` tells you a patch-id is unmatched; it does not tell you whether the *content* landed by another route, and a mechanism that sounds right is not evidence that it exists.
+**Prevention**: An "already landed" verdict must name the commit **and** show its content present on `main` (`grep` the heading, diff the file). An "abandon" reason must name the superseding mechanism on `main` and cite the lines that implement it. A destructive recommendation carries a higher evidence bar than a keep.
+**Source**: M1 / P0-13
+
+### [2026-08-18] Pattern: identically-named fields from different vendors normalised without recording their semantics
+**Issue**: `summariseMetrics` sums `Input` across tools whose `input_tokens` differ in meaning — claude's excludes cache reads, codex's includes them.
+**Root Cause**: Two schemas share a field name but not a definition. The per-tool parsers are individually correct (and the field names are *not* transposed — that trap was avoided and pinned by tests), but the divergence was recorded only in a comment at the parse site, not carried to the aggregation boundary where it actually bites.
+**Prevention**: When ingesting the same-named field from different vendors, record the semantic **at ingest** as data, not as a comment, and refuse to aggregate across sources whose semantics differ. A summary that silently mixes definitions produces a plausible wrong number — the exact failure mode the "never estimate" rule exists to prevent, arriving by a different door.
+**Source**: M1 / P0-2
