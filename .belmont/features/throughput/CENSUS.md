@@ -176,12 +176,13 @@ document changes.*
 > `total_bytes` and `detail_bytes` figures exactly. The clause is withdrawn and restated; no figure,
 > table or conclusion in this document changes.
 
-> **CORRECTED by `P0-M1-FIX-9` (2026-08-18).** Term **(ii)** above previously read *"only (ii) is
-> left and moved exceeds indented"* — the same over-assertion the reconciliation directly above
-> withdraws, standing one paragraph up and left there by that round. Term (ii) counts in-body blank
-> lines and is frequently zero, so the relation the rule actually supports is *at least*, not
-> *exceeds*; the distribution measured in the blockquote above — canonical, not restated here —
-> makes equality the normal case and "above" the two-register exception. As with the first
+> **CORRECTED by `P0-M1-FIX-9` (2026-08-18; wording corrected by `P0-M1-FIX-11` same day).** Term
+> **(ii)** above previously read *"only (ii) is left and moved exceeds indented"* — the same **class
+> of** over-assertion the reconciliation directly above withdraws, in the paragraph above both
+> corrections and left there by that round. Term (ii) counts in-body blank lines and is frequently
+> zero — only 5 of the 82 registers have any — so the relation the rule actually supports is *at
+> least*, not *exceeds*; the distribution measured in the blockquote above — canonical, not restated
+> here — makes equality the normal case and "above" the two-register exception. As with the first
 > correction, **both quoted numbers were right and only the claim relating them was wrong**. The
 > 82-register replay was run once more against the registers on disk before this was written and
 > reproduced that distribution and both above-cases exactly. The clause is withdrawn and restated;
