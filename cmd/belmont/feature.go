@@ -110,9 +110,15 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 			// Each milestone from its own worktree, master for the rest —
 			// the same overlay `belmont status --feature` and `belmont
 			// blockers` already use, so all three agree during a run.
+			// Appended, not assigned. Nothing can reach both this and the
+			// unreadable-worktree gap above today — `parallelLive` keeps
+			// `featurePath` at master, which is the branch that gap needs — but
+			// that is two conditions seventy lines apart holding a data-loss bug
+			// shut, and the gap it would discard is the only record that a
+			// feature's counts are not live.
 			var gaps []liveOverlayGap
 			milestones, gaps = overlayLiveMilestones(milestones, perMilestoneLive)
-			liveGaps = gaps
+			liveGaps = append(liveGaps, gaps...)
 			// Orphans cannot ride that overlay: a task line outside every
 			// milestone belongs to no milestone ID to be overlaid by, and lives
 			// in one specific document. Union across master and every live

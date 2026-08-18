@@ -207,8 +207,31 @@ func runReverifyCmd(args []string) error {
 
 		// Reset THIS milestone's verified tasks, and only now, so an interrupted
 		// or failing run has downgraded at most the milestone in flight.
+		//
+		// A reset failure is recorded and skipped, not returned. Returning here
+		// threw away the whole report: a run over M1..M3 that failed to reset M3
+		// printed nothing at all about M1 and M2, which had already been
+		// verified by then and whose results are the reason the user ran it. The
+		// agent-failure branch below already records-and-continues; this is the
+		// same shape.
+		//
+		// It does change the exit code: a reset failure used to be the one thing
+		// in this loop that made `belmont reverify` exit non-zero, and now it
+		// exits 0 like every other per-milestone failure, because this function
+		// returns nil once it reaches the summary. That is the existing
+		// convention rather than a new one — an agent that fails outright is
+		// already reported and not returned — and the signal is the summary,
+		// where the milestone prints as `✗ … — error: …`, is absent from the
+		// `n/n passed` count, and carries a non-null `error` in `--format json`.
 		if n, err := resetMilestoneBeforeVerify(progressPath, m.ID); err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "\n\033[31m  ✗ %s could not be reset for re-verification: %s — skipped\033[0m\n\n", m.ID, err)
+			results = append(results, msResult{
+				ID:     m.ID,
+				Name:   m.Name,
+				Passed: false,
+				Error:  fmt.Sprintf("reset before verification failed: %s", err),
+			})
+			continue
 		} else if n > 0 {
 			fmt.Fprintf(os.Stderr, "   resetting %d verified task(s) in %s before re-verification\n", n, m.ID)
 		}

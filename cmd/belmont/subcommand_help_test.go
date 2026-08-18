@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -180,5 +181,52 @@ func TestUnknownFlagIsStillAnError(t *testing.T) {
 				t.Errorf("belmont %s --definitely-not-a-flag exited 0", c.name)
 			}
 		})
+	}
+}
+
+// TestCommandHelpAndTopLevelUsageAgree above proves the two texts are the same
+// string, which is worth having and is also the reason it cannot notice a flag
+// missing from BOTH. Both sides render from `commandSynopsis` via `usageLine`,
+// so gutting an entry to `{Name: "recover"}` removes eight real flags from every
+// usage text and the agreement still holds perfectly.
+//
+// This is the other half: the FlagSet is the authority on what a command
+// accepts, so every flag it defines has to appear in that command's synopsis.
+// The FlagSet's own `PrintDefaults()` output is how we read it — `--help` prints
+// it, and it lists every flag whether or not anyone remembered the table.
+//
+// Seven flags were missing when this was written: `install --no-prompt`,
+// `status --max-task-name` / `--show-archived`, `auto --dry-run` /
+// `--max-failures`, `reverify --tool`, `validate --strict`.
+func TestTopLevelUsageNamesEveryFlagEachCommandDefines(t *testing.T) {
+	var sb strings.Builder
+	printUsage(&sb)
+	top := sb.String()
+
+	// PrintDefaults indents each flag as "  -name" / "  -name value".
+	flagRe := regexp.MustCompile(`(?m)^\s+-([A-Za-z0-9_-]+)`)
+
+	for _, c := range everyCommandWithFlags {
+		out := captureStdout(t, func() {
+			if err := c.run([]string{"--help"}); err != nil {
+				t.Fatalf("%s --help: %v", c.name, err)
+			}
+		})
+		topLine := ""
+		for _, l := range strings.Split(top, "\n") {
+			if strings.Contains(l, "belmont "+c.name) {
+				topLine = l
+				break
+			}
+		}
+		if topLine == "" {
+			t.Errorf("`belmont --help` has no line for %s at all", c.name)
+			continue
+		}
+		for _, m := range flagRe.FindAllStringSubmatch(out, -1) {
+			if !strings.Contains(topLine, "--"+m[1]) {
+				t.Errorf("%s defines --%s but `belmont --help` never names it:\n  %s", c.name, m[1], topLine)
+			}
+		}
 	}
 }
