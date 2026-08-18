@@ -16,7 +16,12 @@
   - Unblocks nothing in M1. It does not gate M2: `docs/branch-triage.md` records both the merge verdict for `origin/docs/pr-proposals` and the `git show` command that reads proposal 0004 rev 5 off the remote branch without it.
 - [x] P0-1: Atomic state writes
 - [x] P0-2: Token and wall-clock instrumentation
-- [ ] P0-3: Capture the pre-change baseline
+- [x] P0-3: Capture the pre-change baseline
+- [!] P0-3a: Capture the per-milestone token and wall-clock half of the baseline — BLOCKED, needs instrumented runs
+  - `BASELINE.md` + `baseline.json` record the **read-path** half in full for both repos (per-feature register bytes, `status` text and JSON costs, the six registers over the 100 KB ceiling), plus the Belmont version, repo commit and Go toolchain. The **tokens/wall-clock per verified milestone** half is recorded as `NOT CAPTURED`.
+  - **Why**: the orchestrating binary is pinned to Homebrew v0.11.0, which carries no instrumentation — P0-2's code exists only in this working tree — and neither `~/repo-3/.belmont/metrics/` nor `~/repo-4/.belmont/metrics/` exists (verified, not assumed). No figure was invented to fill the gap; the PRD is explicit that instrumentation reports nothing rather than guessing, and a baseline is the last place to break that.
+  - **Asked of**: Ben Lavender. **The decision**: whether to run at least one milestone to `[v]` in each repo using a build of this tree, which is live agent work costing real tokens against two production repositories.
+  - `BASELINE.md` §How to capture it holds the exact commands. Until then M11/P3-3 compares the read-path half and reports the cost half as unevidenced.
 - [ ] P0-4: Extraction census across all feature directories
 
 ### M2: The verify read (depends: M1)

@@ -1,0 +1,265 @@
+{
+  "captured": "2026-08-18",
+  "captured_by": "throughput P0-3",
+  "belmont_version": "belmont 0.11.0 (bb5f6ef, 2026-08-17T10:56:07Z)",
+  "belmont_commit": "25249853a727dd251861557801f67e4b940867e5",
+  "go_toolchain": "go version go1.26.0 darwin/arm64",
+  "bytes_per_token": 4,
+  "orchestrator_binary": "/opt/homebrew/bin/belmont (pinned Homebrew v0.11.0)",
+  "read_path_baseline": {
+    "repo-3": {
+      "features": {
+        "feat-004": {
+          "progress_bytes": 24097,
+          "status_text_bytes": 4388,
+          "status_json_bytes": 15925
+        },
+        "feat-007": {
+          "progress_bytes": 71379,
+          "status_text_bytes": 9405,
+          "status_json_bytes": 63563
+        },
+        "feat-009": {
+          "progress_bytes": 5255,
+          "status_text_bytes": 2596,
+          "status_json_bytes": 13530
+        },
+        "feat-010": {
+          "progress_bytes": 100523,
+          "status_text_bytes": 12805,
+          "status_json_bytes": 105489
+        },
+        "feat-011": {
+          "progress_bytes": 8822,
+          "status_text_bytes": 4481,
+          "status_json_bytes": 14805
+        },
+        "feat-012": {
+          "progress_bytes": 10944,
+          "status_text_bytes": 4649,
+          "status_json_bytes": 11174
+        },
+        "feat-014": {
+          "progress_bytes": 57707,
+          "status_text_bytes": 10974,
+          "status_json_bytes": 76983
+        },
+        "feat-015": {
+          "progress_bytes": 1022749,
+          "status_text_bytes": 61850,
+          "status_json_bytes": 1014731
+        },
+        "feat-019": {
+          "progress_bytes": 16196,
+          "status_text_bytes": 11303,
+          "status_json_bytes": 66272
+        },
+        "feat-021": {
+          "progress_bytes": 19127,
+          "status_text_bytes": 4853,
+          "status_json_bytes": 29345
+        },
+        "feat-025": {
+          "progress_bytes": 7869,
+          "status_text_bytes": 2734,
+          "status_json_bytes": 12077
+        },
+        "feat-032": {
+          "progress_bytes": 17114,
+          "status_text_bytes": 6126,
+          "status_json_bytes": 35067
+        },
+        "feat-038": {
+          "progress_bytes": 14280,
+          "status_text_bytes": 5394,
+          "status_json_bytes": 17159
+        },
+        "feat-039": {
+          "progress_bytes": 9214,
+          "status_text_bytes": 2282,
+          "status_json_bytes": 10017
+        },
+        "feat-040": {
+          "progress_bytes": 52947,
+          "status_text_bytes": 11967,
+          "status_json_bytes": 102397
+        },
+        "feat-041": {
+          "progress_bytes": 8423,
+          "status_text_bytes": 2107,
+          "status_json_bytes": 8023
+        },
+        "feat-047": {
+          "progress_bytes": 18561,
+          "status_text_bytes": 4691,
+          "status_json_bytes": 22987
+        },
+        "feat-049": {
+          "progress_bytes": 4512,
+          "status_text_bytes": 3049,
+          "status_json_bytes": 12615
+        },
+        "feat-050": {
+          "progress_bytes": 16075,
+          "status_text_bytes": 4788,
+          "status_json_bytes": 24665
+        },
+        "feat-054": {
+          "progress_bytes": 17950,
+          "status_text_bytes": 8235,
+          "status_json_bytes": 29652
+        },
+        "feat-057": {
+          "progress_bytes": 3561,
+          "status_text_bytes": 1904,
+          "status_json_bytes": 9363
+        },
+        "feat-058": {
+          "progress_bytes": 114941,
+          "status_text_bytes": 11312,
+          "status_json_bytes": 81779
+        },
+        "feat-059": {
+          "progress_bytes": 30730,
+          "status_text_bytes": 7765,
+          "status_json_bytes": 33459
+        },
+        "feat-063": {
+          "progress_bytes": 22187,
+          "status_text_bytes": 3404,
+          "status_json_bytes": 19703
+        },
+        "feat-064": {
+          "progress_bytes": 3718,
+          "status_text_bytes": 1496,
+          "status_json_bytes": 7825
+        },
+        "feat-065": {
+          "progress_bytes": 24626,
+          "status_text_bytes": 4924,
+          "status_json_bytes": 29185
+        },
+        "feat-066": {
+          "progress_bytes": 1284,
+          "status_text_bytes": 1256,
+          "status_json_bytes": 3371
+        },
+        "feat-070": {
+          "progress_bytes": 247361,
+          "status_text_bytes": 21072,
+          "status_json_bytes": 105441
+        },
+        "feat-076": {
+          "progress_bytes": 21207,
+          "status_text_bytes": 5925,
+          "status_json_bytes": 31933
+        }
+      },
+      "master_progress_bytes": 498879,
+      "live_registers": 29,
+      "progress_total_bytes": 1973359,
+      "progress_median_bytes": 17950,
+      "progress_max_bytes": 1022749,
+      "progress_p90_bytes": 100523,
+      "status_text_total_bytes": 237735,
+      "status_json_total_bytes": 2008535,
+      "over_100kb": [
+        "feat-015",
+        "feat-070",
+        "feat-058",
+        "feat-010"
+      ]
+    },
+    "repo-4": {
+      "features": {
+        "feat-024": {
+          "progress_bytes": 29310,
+          "status_text_bytes": 7671,
+          "status_json_bytes": 47331
+        },
+        "feat-029": {
+          "progress_bytes": 6583,
+          "status_text_bytes": 2918,
+          "status_json_bytes": 10682
+        },
+        "feat-031": {
+          "progress_bytes": 129354,
+          "status_text_bytes": 12401,
+          "status_json_bytes": 106755
+        },
+        "feat-044": {
+          "progress_bytes": 3158,
+          "status_text_bytes": 1782,
+          "status_json_bytes": 5482
+        },
+        "feat-052": {
+          "progress_bytes": 24439,
+          "status_text_bytes": 6691,
+          "status_json_bytes": 40275
+        },
+        "feat-055": {
+          "progress_bytes": 2869,
+          "status_text_bytes": 2211,
+          "status_json_bytes": 7858
+        },
+        "feat-057": {
+          "progress_bytes": 3481,
+          "status_text_bytes": 1886,
+          "status_json_bytes": 8279
+        },
+        "feat-058": {
+          "progress_bytes": 53653,
+          "status_text_bytes": 11766,
+          "status_json_bytes": 55910
+        },
+        "feat-061": {
+          "progress_bytes": 20297,
+          "status_text_bytes": 8507,
+          "status_json_bytes": 36185
+        },
+        "feat-071": {
+          "progress_bytes": 13882,
+          "status_text_bytes": 2457,
+          "status_json_bytes": 9551
+        },
+        "feat-072": {
+          "progress_bytes": 6398,
+          "status_text_bytes": 2158,
+          "status_json_bytes": 5461
+        },
+        "feat-074": {
+          "progress_bytes": 4086,
+          "status_text_bytes": 2430,
+          "status_json_bytes": 8111
+        },
+        "feat-075": {
+          "progress_bytes": 1860979,
+          "status_text_bytes": 57145,
+          "status_json_bytes": 682148
+        },
+        "feat-077": {
+          "progress_bytes": 60678,
+          "status_text_bytes": 16615,
+          "status_json_bytes": 66707
+        }
+      },
+      "master_progress_bytes": 247645,
+      "live_registers": 14,
+      "progress_total_bytes": 2219167,
+      "progress_median_bytes": 17089,
+      "progress_max_bytes": 1860979,
+      "progress_p90_bytes": 60678,
+      "status_text_total_bytes": 136638,
+      "status_json_total_bytes": 1090735,
+      "over_100kb": [
+        "feat-075",
+        "feat-031"
+      ]
+    }
+  },
+  "per_milestone_cost_baseline": {
+    "status": "NOT CAPTURED",
+    "reason": "Requires instrumented `belmont auto` runs. The P0-2 instrumentation exists only in this working tree; the orchestrating binary is pinned to Homebrew v0.11.0, which has no metrics code, and no .belmont/metrics/ directory exists in either repo. Numbers were NOT invented to fill the gap.",
+    "how_to_capture": "Build this tree (`go build ./cmd/belmont`), run at least one milestone to `[v]` in each repo with that binary, then `belmont metrics --feature SLUG --format json`."
+  }
+}
