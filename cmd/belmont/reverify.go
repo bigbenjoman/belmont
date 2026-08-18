@@ -334,9 +334,21 @@ func runReverifyCmd(args []string) error {
 			if i > 0 {
 				fmt.Print(",")
 			}
+			// Escaped per element with %q, like every sibling field in this
+			// block. Hand-concatenating quotes around the joined slice emitted
+			// invalid JSON the moment a follow-up label contained a `"` or a
+			// `\` — and these labels are not ID-shaped by construction: the
+			// label is `t.ID` falling back to `t.Name`, so any free-text task
+			// name a human wrote in PROGRESS.md reaches this writer verbatim.
+			// `- [ ] Add the "verified" marker check` was enough to make the
+			// whole document unparseable.
 			fwlupsJSON := "[]"
 			if len(r.Fwlups) > 0 {
-				fwlupsJSON = `["` + strings.Join(r.Fwlups, `","`) + `"]`
+				quoted := make([]string, len(r.Fwlups))
+				for i, f := range r.Fwlups {
+					quoted[i] = fmt.Sprintf("%q", f)
+				}
+				fwlupsJSON = "[" + strings.Join(quoted, ",") + "]"
 			}
 			errJSON := "null"
 			if r.Error != "" {
