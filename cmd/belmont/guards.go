@@ -72,7 +72,7 @@ func runScopeGuard(cfg loopConfig, action loopAction, pre *progressSnapshot) {
 		// identical bytes — should be impossible, but bail safely).
 		return
 	}
-	if err := os.WriteFile(pre.Path, []byte(rebuilt), 0644); err != nil {
+	if err := writeStateFile(pre.Path, []byte(rebuilt), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "\033[33m⚠ scope guard write failed: %s\033[0m\n", err)
 		return
 	}
@@ -255,7 +255,7 @@ func runEvidenceCheck(cfg loopConfig, action loopAction, pre *progressSnapshot) 
 	if rebuilt == post.Raw {
 		return
 	}
-	if err := os.WriteFile(pre.Path, []byte(rebuilt), 0644); err != nil {
+	if err := writeStateFile(pre.Path, []byte(rebuilt), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "\033[33m⚠ evidence check write failed: %s\033[0m\n", err)
 		return
 	}

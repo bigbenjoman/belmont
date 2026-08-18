@@ -8,6 +8,66 @@ import (
 	"strings"
 )
 
+// writeStateFile writes data to path so that a concurrent reader observes either
+// the complete previous content or the complete new content, never a partial
+// file. It replaces the bare os.WriteFile truncate-then-write used by every
+// Belmont state writer, which leaves a window in which a reader in another
+// worktree sees a half-written PROGRESS.md and parses zero milestones.
+//
+// The mechanism is write-to-sibling-temp-then-rename. Four things about it are
+// load-bearing:
+//
+//   - The temp file MUST be a sibling of the destination, not in os.TempDir().
+//     os.Rename is atomic only within a single filesystem; on macOS /tmp is
+//     routinely a different volume from a project's .belmont/, and a
+//     cross-device rename degrades to copy-then-delete — which reintroduces
+//     precisely the torn window this helper exists to close.
+//   - perm is applied explicitly, because os.CreateTemp creates 0600. Without
+//     the chmod the first atomic write would silently tighten every state file
+//     in the tree from 0644 to 0600.
+//   - The temp file is fsynced before the rename, so the rename cannot publish a
+//     file whose contents the kernel has not yet written back.
+//   - The parent directory is deliberately NOT fsynced. This helper promises
+//     visibility to a concurrent reader, not durability across a machine crash,
+//     and a directory fsync would cost a synchronous metadata flush on every
+//     state write to buy a guarantee nothing here relies on.
+//
+// Two limits callers must know about. First, rename REPLACES a symlink at path
+// rather than writing through it, where os.WriteFile would follow it — callers
+// that must preserve symlink-ness resolve that above the call (see
+// writeReconciliationResolution in reconcile.go and copyFile in main.go).
+// Second, on Windows os.Rename maps to MoveFileEx with MOVEFILE_REPLACE_EXISTING,
+// which fails while another process holds the destination open; that is a
+// failed write, not a torn one, so the guarantee still holds.
+func writeStateFile(path string, data []byte, perm os.FileMode) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".belmont-tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	// Every failure path below must clear the temp file. A stale .belmont-tmp-*
+	// left inside a feature directory is walked by the directory readers as if
+	// it were state, so an orphan is not merely litter.
+	defer os.Remove(tmp)
+
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Chmod(perm); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 func resolveSourceRoot(source string) (string, error) {
 	if source != "" {
 		abs, err := filepath.Abs(source)
@@ -126,7 +186,7 @@ func ensureStateFiles(projectRoot string) error {
 	// Create PR_FAQ.md template
 	prfaqPath := filepath.Join(stateDir, "PR_FAQ.md")
 	if !fileExists(prfaqPath) {
-		if err := os.WriteFile(prfaqPath, []byte("Run /belmont:working-backwards to create your PR/FAQ document.\n"), 0o644); err != nil {
+		if err := writeStateFile(prfaqPath, []byte("Run /belmont:working-backwards to create your PR/FAQ document.\n"), 0o644); err != nil {
 			return err
 		}
 		fmt.Println("  + .belmont/PR_FAQ.md")
@@ -136,7 +196,7 @@ func ensureStateFiles(projectRoot string) error {
 
 	prdPath := filepath.Join(stateDir, "PRD.md")
 	if !fileExists(prdPath) {
-		if err := os.WriteFile(prdPath, []byte("Run the /belmont:product-plan skill to create a plan for your feature.\n"), 0o644); err != nil {
+		if err := writeStateFile(prdPath, []byte("Run the /belmont:product-plan skill to create a plan for your feature.\n"), 0o644); err != nil {
 			return err
 		}
 		fmt.Println("  + .belmont/PRD.md")

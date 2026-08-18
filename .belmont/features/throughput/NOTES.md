@@ -18,3 +18,11 @@
 ### Discovery
 - The MILESTONE's two "most dangerous" branches are phantoms: `origin/fix/unrecognised-task-markers` (64 files, "widest collision in the backlog") is 24/24 landed, and `origin/feat/maintenance-ci` (said to collide with P0-12, P0-1 and P0-2 at once) is 29/31 landed with both leftovers verified present. Four of the TECH_PLAN's five named M3/M4/M6 collisions are already on `main`. **M3, M4 and M6 are not standing on contested ground.**
 - The real hazard is `origin/fix/post-51-triage` (2026-08-17, newest, 15 unlanded commits, 6 new regression tests) — it merges with **zero** conflicts and touches `reconcile.go` + `worktree.go`, which P0-1 rewrites.
+
+### Pattern
+- **The torn-write window is huge, not theoretical.** A negative control (same concurrent harness, old `os.WriteFile`) observed a **0-byte read on every run within 0.02s** against 300 rewrites. `os.WriteFile` truncates then writes, and Belmont's readers parse an empty `PROGRESS.md` as zero milestones without erroring. Always pair an atomicity fix with a negative control — a race test that cannot fail proves nothing.
+- `os.CreateTemp` creates **0600**. Any temp-file-then-rename helper must `Chmod` to the caller's perm before the rename or it silently tightens every file it touches from 0644.
+- Rename **replaces** a symlink where `os.WriteFile` **follows** it. Two callers depend on the old behaviour (`writeReconciliationResolution`, `copyFile`) and both resolve symlink-ness above the call — convert the final write only, never the whole function.
+
+### Discovery
+- `os.RemoveAll(dstFeature)` before `copyDir` in `copyBelmontStateToWorktree` (worktree.go) is a **directory**-level tear that no per-file write helper closes. Left open deliberately in P0-1 and recorded in `knowledge/cross-cutting/state-atomicity.md` so nobody reads "atomic writes: done" and assumes otherwise.

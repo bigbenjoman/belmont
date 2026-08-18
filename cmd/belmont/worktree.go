@@ -243,7 +243,7 @@ func copyBelmontStateToWorktree(root, wtPath, slug string) error {
 			return fmt.Errorf("copy feature state: %w", err)
 		}
 		if steeringData != nil {
-			if err := os.WriteFile(filepath.Join(dstFeature, "STEERING.md"), steeringData, 0644); err != nil {
+			if err := writeStateFile(filepath.Join(dstFeature, "STEERING.md"), steeringData, 0644); err != nil {
 				return fmt.Errorf("restore STEERING.md: %w", err)
 			}
 		}
@@ -266,7 +266,9 @@ func copyBelmontStateToWorktree(root, wtPath, slug string) error {
 
 	// 4. Write .worktree marker file (used by sync to detect worktree context)
 	markerPath := filepath.Join(dstBelmont, ".worktree")
-	os.WriteFile(markerPath, []byte(slug+"\n"), 0644)
+	if err := writeStateFile(markerPath, []byte(slug+"\n"), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "\033[33m⚠ worktree marker write failed: %s\033[0m\n", err)
+	}
 
 	// 5. Mark TRACKED .belmont/ files as assume-unchanged. This prevents the
 	// worktree from committing edits to existing state (which would delete other
@@ -410,7 +412,7 @@ func syncFeatureStateAfterMerge(mainRoot, wtPath, slug string) {
 		fmt.Fprintf(os.Stderr, "  \033[33m⚠ %s: %s\033[0m\n", slug, w)
 	}
 	if merged != string(wtProgress) {
-		if err := os.WriteFile(progressPath, []byte(merged), 0644); err != nil {
+		if err := writeStateFile(progressPath, []byte(merged), 0644); err != nil {
 			fmt.Fprintf(os.Stderr, "  \033[33m⚠ Failed to merge PROGRESS.md for %s: %s\033[0m\n", slug, err)
 		}
 	}
@@ -1072,7 +1074,9 @@ func (wt *worktreeTracker) persistAutoJSON() {
 		return
 	}
 	autoPath := filepath.Join(wt.root, ".belmont", "auto.json")
-	os.WriteFile(autoPath, data, 0644) // best-effort
+	if err := writeStateFile(autoPath, data, 0644); err != nil { // best-effort, but say so
+		fmt.Fprintf(os.Stderr, "\033[33m⚠ auto.json write failed: %s\033[0m\n", err)
+	}
 }
 
 // writeLoopAutoJSON writes a minimal auto.json for single-feature runLoop mode,
@@ -1091,7 +1095,9 @@ func writeLoopAutoJSON(autoPath string, cfg loopConfig) {
 	if err != nil {
 		return
 	}
-	os.WriteFile(autoPath, data, 0644) // best-effort
+	if err := writeStateFile(autoPath, data, 0644); err != nil { // best-effort, but say so
+		fmt.Fprintf(os.Stderr, "\033[33m⚠ auto.json write failed: %s\033[0m\n", err)
+	}
 }
 
 // removeAutoJSON deletes .belmont/auto.json when auto is done.

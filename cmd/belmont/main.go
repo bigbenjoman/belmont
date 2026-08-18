@@ -843,7 +843,7 @@ func copyFile(src, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(dest, data, 0o644)
+	return writeStateFile(dest, data, 0o644)
 }
 
 func ensureDir(path string) error {

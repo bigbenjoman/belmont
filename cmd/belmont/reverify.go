@@ -111,7 +111,7 @@ func runReverifyCmd(args []string) error {
 	if len(resetIDs) > 0 {
 		newContent, changed := resetVerifiedTasks(string(progressContent), resetIDs)
 		if changed {
-			if err := os.WriteFile(progressPath, []byte(newContent), 0644); err != nil {
+			if err := writeStateFile(progressPath, []byte(newContent), 0644); err != nil {
 				return fmt.Errorf("reverify: failed to reset verified tasks: %w", err)
 			}
 			// Re-parse after rewrite so downstream filtering sees [x] tasks.

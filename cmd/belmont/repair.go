@@ -1290,7 +1290,7 @@ func runRepairCmd(args []string) error {
 	if !dryRun && len(plans) > 0 {
 		newContent, applied, warnings := applyRepairPlans(string(content), plans, today)
 		if newContent != string(content) {
-			if err := os.WriteFile(progressPath, []byte(newContent), 0644); err != nil {
+			if err := writeStateFile(progressPath, []byte(newContent), 0644); err != nil {
 				return fmt.Errorf("repair: write %s: %w", progressPath, err)
 			}
 			content = []byte(newContent)
@@ -1499,7 +1499,7 @@ func runRepairCmd(args []string) error {
 	if len(accepted) > 0 {
 		newContent, applied, warnings := applyRepairPlans(string(content), accepted, today)
 		if newContent != string(content) {
-			if err := os.WriteFile(progressPath, []byte(newContent), 0644); err != nil {
+			if err := writeStateFile(progressPath, []byte(newContent), 0644); err != nil {
 				return fmt.Errorf("repair: write %s: %w", progressPath, err)
 			}
 			out.Changed = true

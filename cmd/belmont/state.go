@@ -1021,7 +1021,7 @@ func skipMilestoneInProgress(root, feature, milestoneID string) (int, error) {
 		return 0, fmt.Errorf("milestone %s not found or already done", milestoneID)
 	}
 
-	return blockersLeft, os.WriteFile(progressPath, []byte(strings.Join(lines, "\n")), 0644)
+	return blockersLeft, writeStateFile(progressPath, []byte(strings.Join(lines, "\n")), 0644)
 }
 
 func detectFwlupTasks(root, feature string, report statusReport) bool {

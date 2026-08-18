@@ -719,7 +719,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	}
 
 	result := strings.Join(merged, "\n")
-	if err := os.WriteFile(filePath, []byte(result), 0644); err != nil {
+	if err := writeStateFile(filePath, []byte(result), 0644); err != nil {
 		return false
 	}
 

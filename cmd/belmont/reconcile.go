@@ -330,7 +330,7 @@ func writeReconciliationResolution(filePath, content string) error {
 		return os.Symlink(trimmed, filePath)
 	}
 
-	return os.WriteFile(filePath, []byte(content), 0o644)
+	return writeStateFile(filePath, []byte(content), 0o644)
 }
 
 // reviewConflict prompts the user to review a low-confidence conflict resolution.
@@ -369,7 +369,7 @@ func reviewConflict(root string, f reconciliationFile) (string, error) {
 		case "e":
 			// Write proposed resolution to file for editing
 			filePath := filepath.Join(root, f.File)
-			if err := os.WriteFile(filePath, []byte(f.ResolvedContent), 0644); err != nil {
+			if err := writeStateFile(filePath, []byte(f.ResolvedContent), 0644); err != nil {
 				return "", fmt.Errorf("write for edit %s: %w", f.File, err)
 			}
 			editor := os.Getenv("EDITOR")

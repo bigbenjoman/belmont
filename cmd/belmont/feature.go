@@ -271,7 +271,12 @@ func syncMasterFeatureStatuses(root string, features []featureSummary) {
 	}
 
 	if changed {
-		os.WriteFile(progressPath, []byte(strings.Join(lines, "\n")), 0644)
+		// Warn rather than discard: writeStateFile stages a sibling temp file, so a
+		// swallowed failure here can leave an orphan .belmont-tmp-* behind as well as
+		// losing the update.
+		if err := writeStateFile(progressPath, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "\033[33m⚠ master feature-status write failed: %s\033[0m\n", err)
+		}
 	}
 }
 

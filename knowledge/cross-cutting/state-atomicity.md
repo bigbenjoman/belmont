@@ -1,0 +1,46 @@
+# State Atomicity: Truncate-Then-Write Was the Real Cause
+
+**Domains:** cli, state, auto-mode
+
+**Why this matters.** Every Belmont state write used a bare `os.WriteFile`, which opens the destination with `O_TRUNC` and *then* writes. Between those two steps the file is zero bytes long on disk. Any reader that opens it in that window gets an empty document — and Belmont's readers do not error on an empty `PROGRESS.md`, they parse zero milestones from it and carry on.
+
+This is not theoretical and the window is not small. A negative control run during P0-1 — the same concurrent harness as `TestWriteStateFileIsNeverObservedPartiallyWritten`, but writing with the old `os.WriteFile` — observed a **0-byte read on every run, within 0.02 seconds**, against a writer doing 300 rewrites. Under parallel waves this is the normal case, not the corner: `belmont status` in one worktree reads the same paths `belmont auto` is rewriting in another, and `.belmont/` is `--assume-unchanged` inside a worktree, so the copy being torn is the *only* transport that state has.
+
+The failure signature is the one this repository keeps re-learning: **information disappears and nothing errors.** A milestone renders as 0/0, a wave looks finished, a blocker looks cleared — and the file is perfectly well-formed a millisecond later, so the evidence is gone before anyone looks. It had previously been blamed on the worktree isolation design; that design was not the cause.
+
+## Invariant
+
+- **`writeStateFile(path, data, perm)` (`cmd/belmont/fsutil.go`) is the only way Belmont state reaches disk.** It stages a sibling temp file, fsyncs it, chmods it and renames it over the destination. Rename is atomic within a filesystem, so a concurrent reader observes either the complete previous content or the complete new content and never a partial file. Nineteen call sites route through it. **Do not add a bare `os.WriteFile` for anything under `.belmont/`.**
+- **The temp file must be a sibling of the destination, never `os.TempDir()`.** `os.Rename` is atomic only *within one filesystem*. On macOS `/tmp` is routinely a different volume from a project's `.belmont/`, and a cross-device rename degrades to copy-then-delete — which reintroduces exactly the torn window the helper exists to close, while looking like it fixed it. `TestWriteStateFileTempIsSiblingNotTempDir` pins this by writing into a read-only directory: staging elsewhere would succeed, and succeeding is the failure.
+- **`perm` is applied explicitly, because `os.CreateTemp` creates `0600`.** Without the chmod the first atomic write silently tightens every state file in the tree from `0644` to `0600`. That is a permissions change nobody asked for, arriving through a correctness fix, and it would only surface on a shared checkout.
+- **The parent directory is deliberately not fsynced.** The helper promises *visibility to a concurrent reader*, not *durability across a machine crash*. Those are different guarantees with different costs, and nothing in Belmont relies on the second. If a future change needs crash-durability, add the directory fsync and say so here — do not assume the helper already provides it.
+- **Rename replaces a symlink at the destination; `os.WriteFile` followed it.** This is a real behaviour change. Two callers depend on symlink handling and both resolve it *above* the call: `writeReconciliationResolution` (`reconcile.go`) removes an existing symlink and may recreate the resolution as a symlink when the resolved content is a single-line path, and `copyFile` (`main.go`) unlinks a symlinked destination first. **A mechanical swap of `writeReconciliationResolution`'s whole body to a rename-based helper is wrong** — it converts symlinks into regular files silently. Convert the final write only, leave the symlink branch alone.
+- **An orphaned `.belmont-tmp-*` is not litter.** The temp file is a sibling, so it lands *inside* a feature directory, and the directory walkers treat what they find there as state. Every failure path in the helper clears it, and the five call sites that used to discard the write error now warn on stderr instead: a swallowed *rename* failure is worse than a swallowed truncate failure, because it leaves the orphan behind as well as losing the update.
+- **On Windows, `os.Rename` maps to `MoveFileEx` with `MOVEFILE_REPLACE_EXISTING`.** Overwrite-by-rename works, but fails while another process holds the destination open. That is a *failed* write, not a *torn* one, so the guarantee still holds — it degrades to an error rather than to corruption. No `_windows.go` variant is needed; CI vets `GOOS=windows` and cross-builds the target.
+
+## What this does NOT fix
+
+**`os.RemoveAll(dstFeature)` immediately before `copyDir` in `copyBelmontStateToWorktree` (`worktree.go`) is a hole no write helper can close.** For the duration of the recopy a concurrent reader sees no file at all, then a partially populated tree, then the complete one. Per-file atomicity does not help: the *directory* is the thing being torn.
+
+Closing it means staging the recopy into a sibling directory and renaming that — a larger change than P0-1, deliberately not attempted here. **Do not read "atomic state writes: done" and assume this window is gone.** If a milestone ever reports a feature directory that looked half-present, this is the first place to look.
+
+Two further sites were ruled on and deliberately left alone:
+
+- **`appendSteeringEntry` (`steer.go`) uses `O_APPEND`, not truncate.** Its torn-file mode is different and much narrower: a single `Write` of a complete block appends atomically on local filesystems. Converting an append into a read-modify-rewrite would be strictly *worse* — it widens the window to the whole file and introduces a lost-update race between two appenders that `O_APPEND` does not have.
+- **`ensureGitignoreEntry` (`main.go`) has the same `O_APPEND` shape** and writes `.gitignore`, which is a git file rather than Belmont state. Out of scope by definition.
+
+Everything under `install.go`, `install_sync.go`, `monorepo.go` (`.env` seeding), `copyEnvFiles`, the release download and the write-access probe is **not Belmont state** and stays on `os.WriteFile`.
+
+## How it's enforced
+
+In `cmd/belmont/fsutil.go`: `writeStateFile` is the helper, with the four load-bearing properties written into its doc comment rather than left to be rediscovered.
+
+Nineteen call sites: `feature.go` (master feature table), `guards.go` ×2 (scope guard, evidence check), `merge_conflict.go` (resolved conflict), `reverify.go`, `state.go` (skip-milestone), `repair.go` ×2 (mechanical and agent tiers), `worktree.go` ×5 (merged register, STEERING.md restore, `.worktree` marker, `auto.json` ×2), `reconcile.go` ×2 (resolution, `$EDITOR` review), `steer.go` (STEERING.md rewrite), `main.go` (`copyFile` — the transport for `PROGRESS.md` into a worktree, and the highest-exposure site of the lot), `fsutil.go` ×2 (`ensureStateFiles` templates).
+
+Test coverage in `cmd/belmont/fsutil_test.go`. `TestWriteStateFileIsNeverObservedPartiallyWritten` is the proof the fix is real and is meaningful **only under `go test -race`** — an atomicity claim with no race test is an assertion, not a result. It was validated against a negative control using the old writer, which tore immediately and reproducibly; keep that fact in mind before weakening the test's payload sizes or iteration count, because a test that cannot fail proves nothing. The remaining cases pin the chmod, the sibling-temp requirement, temp-file cleanup, and the symlink-replacement behaviour.
+
+`go test -race ./cmd/belmont` is not in `ci.yml` as of this entry. It was clean on the whole suite both before and after P0-1.
+
+## Revisions
+
+- 2026-08-18 — initial (`throughput` P0-1). Sixteen state writers converted, plus `copyFile` and the two `ensureStateFiles` templates. Recorded the `os.RemoveAll`-before-`copyDir` window as explicitly *not* closed, and the two `O_APPEND` sites as deliberately left alone.

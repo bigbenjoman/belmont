@@ -131,7 +131,9 @@ func consumePendingSteering(root, feature, milestoneID, phase string) (string, i
 	if len(remainingPending) == 0 {
 		_ = os.Remove(path)
 	} else {
-		_ = os.WriteFile(path, []byte(renderSteeringEntries(remainingPending)), 0644)
+		if err := writeStateFile(path, []byte(renderSteeringEntries(remainingPending)), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "\033[33m⚠ steering rewrite failed: %s\033[0m\n", err)
+		}
 	}
 
 	if len(newlyConsumed) == 0 {
