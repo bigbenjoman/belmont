@@ -183,7 +183,7 @@ Bytes rather than tokens because a zero-dependency Go binary has no tokenizer.
 Added via the existing `ensureGitignoreEntry` mechanism in `fsutil.go`, alongside `.belmont/auto.json` and `.belmont/worktrees/`. Local-only: bookkeeping commits are already 41–46% of commit volume in these repos.
 
 ```json
-{"run":"2026-08-19T09:14:02Z","feature":"throughput","milestone":"M3","phase":"implement","tool":"claude","wall_ms":2814000,"input":30903,"output":8871,"cache_creation":22387,"cache_read":8506,"critical_path":true}
+{"run":"2026-08-19T09:14:02Z","feature":"throughput","milestone":"M3","phase":"implement","tool":"claude","wall_ms":2814000,"input":30903,"output":8871,"cache_creation":22387,"cache_read":8506,"critical_path":true,"input_semantics":"excludes_cache_read"}
 {"run":"2026-08-19T09:14:02Z","feature":"throughput","milestone":"M3","phase":"verify","tool":"claude","wall_ms":1102000,"input":null,"output":null,"cache_creation":null,"cache_read":null,"note":"tool reports no usage"}
 ```
 
@@ -200,6 +200,15 @@ Usage source per tool — no extra API calls, exact figures rather than estimate
 | opencode | `run` (plain text, deliberately not `--format json`) | No — wall-clock only |
 
 `input`/`output`/`cache_*` are `null` with a stated `note` where the tool cannot report. **This degradation is load-bearing**: opencode is the Oct 2026 local-LLM target, and the plan must not pretend it will report tokens.
+
+`input_semantics` records what that tool's `input_tokens` counts, written at ingest: `excludes_cache_read`
+(claude — the uncached remainder only) or `includes_cache_read` (codex — the whole prompt, verified against a
+live codex-cli 0.147.0 run on 2026-08-18, not assumed). A tool with no recorded definition writes `unknown`.
+**`belmont metrics` reports a combined `input` only when every contributing record shares one definition**;
+where they differ it reports `null` with a stated reason plus a per-tool breakdown (`tools_detail`), the same
+way it reports a host that cannot measure. Summing the two definitions would give a figure that is neither the
+uncached total nor the prompt total — an undefined number in the baseline every later milestone is scored
+against, which is the "never estimate" rule failing by a different door.
 
 `critical_path` marks phases on the longest dependency chain. Latency correlates with critical-path tokens at r = 0.901 — attributing tokens to the chain, not merely summing them, is what makes P3-3's verdict meaningful.
 

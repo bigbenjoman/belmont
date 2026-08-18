@@ -2,53 +2,59 @@
 
 ## Status
 - **Milestone**: M1: Toolchain, atomic writes & baseline
-- **Git Baseline**: `d2ae8061` (run `git rev-parse HEAD` to confirm)
-- **Mode**: Lightweight (next skill — single task, no analysis agents). Batch round 3 of 7.
-- **Created**: 2026-08-18T13:55:00Z
+- **Git Baseline**: `2e7d6f43`
+- **Mode**: Lightweight (next skill — single task, no analysis agents). Batch round 4 of 7.
+- **Created**: 2026-08-18T14:20:00Z
 - **Tasks**:
-  - [x] P0-M1-FIX-3: `origin/feat/maintenance-ci` wrongly verdicted abandon — commit `1129cf84` is not on `main`
+  - [ ] P0-M1-FIX-4: `summariseMetrics` sums `Input` across tools whose `input_tokens` mean different things
 
 ## Orchestrator Context
 
 ### Current Task
-`P0-M1-FIX-3` — the only task in this run. A wrong "already landed" verdict on an **abandon** recommendation, which would destroy real content if acted on.
+`P0-M1-FIX-4` — the only task in this run. A Warning from M1's code review, in the file that produces the baseline every later milestone is scored against.
 
 ### Active Task IDs
-`P0-M1-FIX-3`
+`P0-M1-FIX-4`
 
 ### File Paths
 
 **Absolute paths. Use them verbatim.** The session working directory is `/Users/benlavender/belmont` — a *different repository*, the planning workspace, holding a different feature with open tasks. Never resolve `.belmont/` from the working directory and never write anything under `/Users/benlavender/belmont`. The harness resets the working directory after every Bash call, so prefix each shell command with `cd /Users/benlavender/repos/belmont &&`.
 
 - **Repository root**: `/Users/benlavender/repos/belmont`
-- **PRD**: `/Users/benlavender/repos/belmont/.belmont/features/throughput/PRD.md` — §P0-13 holds the parent task's acceptance criteria
+- **PRD**: `/Users/benlavender/repos/belmont/.belmont/features/throughput/PRD.md` — §P0-2 holds the parent task's acceptance criteria; §Clarifications carries the "instrumentation reports nothing rather than guessing" rule
+- **TECH_PLAN**: `/Users/benlavender/repos/belmont/.belmont/features/throughput/TECH_PLAN.md` — §File-Format Specifications (Metrics), §Go Implementation Notes (P0-2/P0-3)
 - **PROGRESS**: `/Users/benlavender/repos/belmont/.belmont/features/throughput/PROGRESS.md` — the task's full description is on its own task line
 - **Feature Notes**: `/Users/benlavender/repos/belmont/.belmont/features/throughput/NOTES.md`
-- **Prior implementation log**: `MILESTONE-M1.done.md` — Pass 1 holds the original triage; `## Task P0-M1-FIX-1` records the knowledge-file amendment that will collide with this cherry-pick
-- **The artefact to correct**: `docs/branch-triage.md` (the `origin/feat/maintenance-ci` row, around line 99)
-- **The file the cherry-pick touches**: `knowledge/auto-mode/parallel-wave-orchestration.md`
+- **Prior implementation log**: `MILESTONE-M1.done.md` — Pass 1 documents the metrics design as built; `## Task P0-M1-FIX-1` documents the `MetricsRoot` change to the same file
+- **The code**: `cmd/belmont/metrics.go` (`summariseMetrics`, around lines 296–341) and `cmd/belmont/metrics_test.go`
 
 ### The defect
 
-`docs/branch-triage.md` verdicts `origin/feat/maintenance-ci` as **abandon**, on the stated ground that its two apparent leftover commits are both already present on `main`.
+`summariseMetrics` adds `Input` across records from different tools. The field means different things depending on which tool produced it:
 
-Only one is. `7a9b7b56` (worktree-state-isolation) is on `main`. **`1129cf84` is not** — verified: `git show --stat 1129cf84` is a 23-line addition to `knowledge/auto-mode/parallel-wave-orchestration.md` titled *"knowledge: record that --max-parallel is inert without explicit deps"*, and `grep` for its heading on `main` returns nothing.
+- **claude**: `input_tokens` **excludes** `cache_read_input_tokens` and `cache_creation_input_tokens`.
+- **codex** (OpenAI lineage): `input_tokens` **includes** `cached_input_tokens` — and the parser in this same file already notes that codex's `cached_input_tokens` is "the read".
 
-The triage additionally **mis-describes** that leftover as "the `main.go` → `autocmd.go` repointing in `clean-tree-preflight.md`", which is a different change entirely.
+So a summary spanning both tools double-counts cached input for codex records relative to claude ones, and a P3-3 comparison whose two halves used different tools produces a plausible wrong number. That is precisely the failure the file's own "never estimate" discipline exists to prevent, arriving through a different door — nothing is estimated, but the arithmetic is still wrong.
 
-Why this matters beyond bookkeeping: the content records that `runAutoCmd` only reaches `runAutoParallel` when a milestone in range declares `(depends: …)`, so `--max-parallel` is silently inert without one and a smoke fixture without explicit deps proves nothing about the parallel path. That is the exact mechanism `P0-M1-FIX-1`'s Critical defect depended on, and it is directly relevant to M6 and M10. Acting on the abandon verdict would delete it.
+Note what is **not** broken, and must not be "fixed": the per-tool field mappings are correct and are pinned by tests using real captured event JSON. Both reviewers checked specifically for transposed field names and found none. This task is about the **aggregation boundary**, not the parsers.
 
 ### Required fix
 
-1. **Cherry-pick `1129cf84` onto local `main`.** Expect a conflict: `P0-M1-FIX-1` (commit `962f0e84`) amended the same file, adding invariants about `MetricsRoot` and one-wave-one-run. **Resolve by keeping both** — the two additions are complementary, not competing. Do not drop either.
-2. **Re-verdict `origin/feat/maintenance-ci`** in `docs/branch-triage.md`: correct the count of outstanding commits, correct the mis-description of what `1129cf84` contains, and state the verdict that now applies given the cherry-pick.
-3. **Re-check the other "already landed" verdicts in the same row's reasoning** if they rest on the same evidence method. Verification spot-checked eight branches and found this one wrong; you are not required to re-audit all 35, but say in your log which you checked.
+Either:
+- **normalise on ingest** — store a defined, tool-independent quantity so records are comparable by construction; or
+- **refuse to aggregate across tools** — break the summary out per tool and decline to produce a combined `Input` figure.
+
+Pick one and say why in the code. Whichever you choose, record the per-tool semantics **as data rather than as a comment**, so the distinction survives to the aggregation boundary where it actually bites — a comment at the parse site is what failed here.
+
+The code review asks that codex's inclusion semantics be confirmed against a live run rather than assumed. **If you cannot obtain a live codex run, do not guess.** Record the uncertainty explicitly and choose the option that is safe under either interpretation — refusing to aggregate is safe without knowing; normalising is not.
 
 ### Scope Boundaries
-- **In Scope**: only `P0-M1-FIX-3`.
-- **Out of Scope**: `P0-M1-FIX-5` owns the separate `origin/fix/wave-merge-state-loss` reason correction in the same file — leave that row alone. `P0-M1-FIX-4`, `-6`, `-7` each get their own run.
+- **In Scope**: only `P0-M1-FIX-4`.
+- **Out of Scope**: `P0-M1-FIX-5`, `-6`, `-7` each get their own run — leave `docs/branch-triage.md`, the "three of the five" wording, and `runCensus`'s silent skip alone.
+- Do **not** re-open `P0-M1-FIX-1`'s work in the same file (`MetricsRoot`, `worktreeLoopConfig`, the `appendMetricsRecord` concurrency contract). It is done and verified; leave it intact.
 - **Do NOT touch** `[!] P0-3a`, `[!] P0-4a`, `[!] P0-13a` — human-gated, awaiting the repository owner.
-- **LOCAL ONLY.** Cherry-pick onto local `main` and commit. Do **NOT** `git push`. Do **NOT** merge, rebase, delete or otherwise mutate any remote branch. `origin/main` is 165+ commits behind and publishing is the repository owner's decision, tracked as `[!] P0-13a`.
+- **Do NOT** run `belmont install`. **Do NOT** push, merge, rebase or delete any remote branch.
 - Do **not** start M2–M11 work.
 - **Zero external Go dependencies, no `go.sum`.**
 
@@ -64,17 +70,21 @@ staticcheck ./...          # at $(go env GOPATH)/bin — not on PATH
 gofmt -l cmd/              # must print nothing
 belmont validate --root /Users/benlavender/repos/belmont
 ```
-Plus, specific to this task: after the cherry-pick, `grep` for the `--max-parallel` gotcha heading on `main` must succeed, **and** the `MetricsRoot` invariants added by `962f0e84` must still be present in the same file. Both, not either.
+Plus, specific to this task: a test that would **fail** under the old behaviour — mixed-tool records whose combined figure is wrong today. A test that passes both before and after proves nothing, which is exactly how the `MetricsRoot` defect survived its own serial-path test.
 
 ### Learnings from Previous Sessions
 
 #### Feature Notes
-`NOTES.md` §Root Cause Patterns records this defect's cause: ***"triage verdicts written from summary evidence rather than from content."*** `git cherry` tells you a patch-id is unmatched; it does not tell you whether the *content* landed by another route, and a mechanism that sounds plausible is not evidence that it exists.
+`NOTES.md` §Root Cause Patterns records this defect's cause: ***"identically-named fields from different vendors normalised without recording their semantics."*** The per-tool parsers are individually correct; the divergence was recorded only in a comment at the parse site, not carried to the aggregation boundary.
 
-**The prevention rule is this task's bar**: an "already landed" verdict must name the commit **and** show its content present on `main` — grep the heading, diff the file. An "abandon" reason must name the superseding mechanism and cite the lines implementing it. **A destructive recommendation carries a higher evidence bar than a keep.** Apply that standard to the verdict you write, not just to the one you are correcting.
+**Prevention rule, and this task's bar**: when ingesting the same-named field from different vendors, record the semantic **at ingest as data**, and refuse to aggregate across sources whose semantics differ.
+
+Two other entries bear on it:
+- ***"never estimate"*** — token fields are `*int64` so a reported zero stays distinguishable from "not reported"; hosts that cannot report record `null` with a stated reason. Do not weaken that while editing this file.
+- ***"a new state write was only ever exercised on one of two execution paths"*** — the general lesson being that a test which passes with and without the fix is not a test of the fix.
 
 ## Codebase Analysis
-[Not populated — lightweight mode skips the codebase agent. The defect and required fix are specified above; the original triage is in `MILESTONE-M1.done.md` Pass 1. Explore further as needed.]
+[Not populated — lightweight mode skips the codebase agent. The defect and required fix are specified above; the metrics design as built is in `MILESTONE-M1.done.md` Pass 1. Explore further as needed.]
 
 ## Design Specifications
 [Not populated — no design input: this task has no Figma URL, reference image, or visible UI.]
@@ -84,86 +94,101 @@ Plus, specific to this task: after the cherry-pick, `grep` for the `--max-parall
 ### Summary
 - **Tasks Completed**: 1
 - **Tasks Blocked**: 0
-- **Total Commits**: 2 (one cherry-pick, one task commit)
+- **Total Commits**: 1
 
 ---
 
-### Task: P0-M1-FIX-3 — `origin/feat/maintenance-ci` wrongly verdicted abandon
+### Task: P0-M1-FIX-4 — `summariseMetrics` sums `Input` across tools whose `input_tokens` mean different things
 
 **Status**: SUCCESS
 
-**Files Created**: none
+**Decision — refuse to aggregate, not normalise.** Both options were open. Normalising to a
+tool-independent quantity (e.g. whole-prompt tokens) is correct only while every tool's semantics are
+known *and stay known*: a tool added later, or a vendor redefining the field under us, silently
+re-arms exactly the wrong-but-plausible baseline being fixed. Refusing is correct under every
+interpretation, including unverified ones, and costs no information because the per-tool figures are
+reported beside the null. The reasoning is in `metrics.go`'s `inputSemantics` doc comment, and the
+file header now states the rule.
+
+**The uncertainty the code review flagged was resolved, not assumed.** codex's inclusion semantics
+were confirmed against a live run (codex-cli 0.147.0, 2026-08-18): a three-turn session reported
+input/cached of 17308/4480 → 34647/21248 → 52003/38016. Those are session-cumulative, so per-turn
+they are 17308/4480, 17339/16768, 17356/16768 — each turn re-sends the same ~17.3k context with the
+cache read a subset of it. Under the excluding reading the context would have had to grow from 21,788
+to 34,107 tokens across a 26-token exchange. claude's opposite semantics are confirmed from Anthropic's
+own documentation (`input_tokens` is the uncached remainder; whole prompt = input + cache_creation +
+cache_read). One thing the run did **not** settle is recorded as unresolved in the code: whether cache
+*writes* also sit inside codex's `input_tokens` (`cache_write_input_tokens` was 0 on every turn). It
+does not need settling — the rule keys off the definitions differing at all, not which part differs.
+
+**Semantics are recorded as data, not as a comment.** `metricsRecord.InputSemantics`
+(`"input_semantics"` in the JSONL) is written at ingest by `buildMetricsRecord` from the
+`toolInputSemantics` table, so the distinction reaches `summariseMetrics` and any later reader of a
+record already on disk — which is precisely what a comment at the parse site could not do.
 
 **Files Modified**:
 | File | Changes |
 |---|---|
-| `knowledge/auto-mode/parallel-wave-orchestration.md` | `1129cf84` cherry-picked in: §*Gotcha — `--max-parallel` does not by itself produce worktrees* at lines 43–62, plus its `2026-08-07` Revisions entry. Conflict was in the Revisions list only; resolved by keeping **both** sides in date order. |
-| `docs/branch-triage.md` | `origin/feat/maintenance-ci` row rewritten; headline bullet corrected; abandon-section preamble caveated; a third measurement trap added; Revisions entry added. |
-| `.belmont/features/throughput/PROGRESS.md` | `P0-M1-FIX-3` → `[x]`. |
-| `.belmont/features/throughput/NOTES.md` | Two Debugging entries (patch-id after a conflicted cherry-pick; identifying a leftover commit from `git show`, not from a three-dot diff). |
+| `cmd/belmont/metrics.go` | New `inputSemantics` type, `toolInputSemantics` table and `inputSemanticsFor` (ingest lookup); `metricsRecord.InputSemantics` written by `buildMetricsRecord`; `summariseMetrics` rewritten around `inputAcc`/`inputAggKey` so `Input`/`CriticalInput` (now `*int64`) are reported only when one definition contributed, with `InputNote` and a new per-tool `ByTool`/`tools_detail` breakdown; `runAgg.Input` likewise `*int64`; `renderMetricsSummary` prints `n/a` (never `0`) plus the per-tool table; header comment states the rule |
+| `cmd/belmont/metrics_test.go` | Three existing assertions updated for the pointer `Input`; four new tests |
+| `.belmont/features/throughput/TECH_PLAN.md` | §Metrics file-format spec: `input_semantics` added to the record example, plus the aggregation rule |
+| `.belmont/features/throughput/NOTES.md` | codex cumulative/inclusive discovery, the `codex exec resume` flag gotcha, and the refuse-don't-normalise pattern |
+| `.belmont/features/throughput/PROGRESS.md` | `P0-M1-FIX-4` → `[x]` |
 
-**Tests Added**: none — the change is a knowledge file and a triage document. No Go code was touched.
+**Tests Added**:
+| Test | Coverage |
+|---|---|
+| `TestSummariseMetricsRefusesToMixInputSemantics` | Two phases of identical real cost (1,000-token prompt, 900 from cache) reported as claude `Input:100`/`CacheRead:900` and codex `Input:1000`/`CacheRead:900`. The old code summed these to **1100** — neither the uncached total (200) nor the prompt total (2000). Asserts null `input`/`critical_path_input`, a note naming both definitions, the per-tool rows, that Output and cache figures still aggregate, and that neither the JSON nor the text output contains `1100` |
+| `TestUnknownInputSemanticsDoNotMergeAcrossTools` | Fail-closed half: one undeclared tool still aggregates with itself; two undeclared tools do not; unknown never folds into a known definition |
+| `TestInputSemanticsRecordedAtIngestAndOnDisk` | The mechanism, not the outcome — the definition is written at ingest per tool and survives the JSONL round trip; a phase with no usage claims no definition |
+| `TestInputSemanticsCoversEveryToolThatReportsUsage` | Every tool `toolReportsUsage` says yes to has a recorded definition, and vice versa (mirrors the existing note-table invariant) |
 
-**Verification Results** (every gate in the MILESTONE's block, run at HEAD):
+**Negative control (the test would fail under the old behaviour)**: a full revert makes the new tests
+fail to compile, which proves little, so the fix was neutered in place instead — `inputAggKey` made to
+return a constant, i.e. "aggregate regardless of semantics", which is exactly the old arithmetic on
+the new API. `TestSummariseMetricsRefusesToMixInputSemantics` then failed with
+`combined input: got 1100, want null`, the JSON assertion showed `"input":1100`, and
+`TestUnknownInputSemanticsDoNotMergeAcrossTools` failed on both cross-tool cases. Restored, all green.
+
+**Verification Results** (every gate in this file's verification block):
 - `go build ./cmd/belmont`: pass
 - `go test ./cmd/belmont`: pass
-- `go test -race ./cmd/belmont`: pass
-- `go test -tags eval ./cmd/belmont`: pass
-- `go vet ./...`: pass
-- `staticcheck ./...` (from `$(go env GOPATH)/bin`): pass, no findings
-- `gofmt -l cmd/`: empty
-- `belmont validate --root /Users/benlavender/repos/belmont`: `✓ No milestone-structure violations found.`
-- Zero external Go dependencies; `go.mod` still has no `require` block and there is no `go.sum`.
+- `go test -race ./cmd/belmont`: pass (25.2s)
+- `go test -tags eval ./cmd/belmont`: pass (23.2s)
+- `go vet ./...`: clean
+- `staticcheck ./...`: clean
+- `gofmt -l cmd/`: no output
+- `belmont validate --root /Users/benlavender/repos/belmont`: ✓ no violations
+- Zero external Go dependencies; no `go.sum`; no `.belmont/metrics/` written into the tree (tests use `t.TempDir()`)
 
-**Task-specific gate — both knowledge additions survived the conflict**:
-```
-git grep -q "does not by itself produce worktrees" main -- knowledge/auto-mode/parallel-wave-orchestration.md   → PASS (1129cf84)
-git grep -q "loopConfig.MetricsRoot"                main -- knowledge/auto-mode/parallel-wave-orchestration.md   → PASS (962f0e84)
-git grep -q "One wave is one run"                   main -- knowledge/auto-mode/parallel-wave-orchestration.md   → PASS (962f0e84)
-```
-Both, not either. The two additions are disjoint: `1129cf84` adds a `## Gotcha` section between *Failure mode* and *Don't re-do*; `962f0e84` amends the `## Invariant` bullets and the *How it's enforced* / *Evidence* prose. Only their Revisions entries collided.
+**Self-Validation**:
+- Acceptance Criteria: 4/4 — combined `Input` no longer crosses definitions; the semantics are data at
+  ingest rather than a comment; the choice is safe under either reading of codex (and the reading was
+  confirmed anyway); a test that fails under the old behaviour exists and was demonstrated failing.
+- Visual Check: N/A (CLI output only; the text renderer change is covered by assertion)
 
-**What the leftovers actually were**
-
-| Commit | Content | Status |
-|---|---|---|
-| `1129cf84` | 23 lines: §*Gotcha — `--max-parallel` does not by itself produce worktrees* in `knowledge/auto-mode/parallel-wave-orchestration.md` | **Was absent from `main`.** Cherry-picked as `23e71008` (`-x`, so the commit records its source). |
-| `7a9b7b56` | 26 lines: §*Confirmed defect — the second merge in a wave clobbers the first's state* in `knowledge/auto-mode/worktree-state-isolation.md` | **Superseded on `main`** — same defect *and its fix* recorded at `worktree-state-isolation.md:44-58` (§*PROGRESS.md is merged on sync, never replaced*, issue #24, revision `2026-08-08`), implemented by `mergeProgressState` (`cmd/belmont/worktree.go:504`, called from `syncFeatureStateAfterMerge` at `worktree.go:410`). The branch's text records the defect as **open**, so picking it would regress the file. Do not cherry-pick it. |
-
-Neither is the change the original triage named. The two changes it *did* name are both on `main` (`knowledge/KNOWLEDGE.md:25`; `knowledge/auto-mode/clean-tree-preflight.md:13`) — they simply belong to other, landed commits on the same branch. The mis-attribution came from reading `git diff main...<branch>`, which shows every change the branch made since the merge-base including ones `main` has independently, and therefore cannot say which change belongs to which unlanded SHA.
-
-**Verdict now written into `docs/branch-triage.md`**: **abandon stands** — but on evidence, not on a count. `1129cf84` is recovered and cited by line; `7a9b7b56` is superseded and the superseding mechanism is named with its implementing lines. Nothing on the branch is unrecovered.
-
-**Which other verdicts I re-checked** (item 3 of the required fix)
-- `origin/fix/worktree-git-excludes` — **re-checked to the new bar and holds.** Its 2 outstanding commits are `39c5f219` (removes `writeWorktreeGitExcludes`) and `db254236` (adds the knowledge entry). `writeWorktreeGitExcludes` is absent from `cmd/`, with three removal comments at `worktree.go:286`, `worktree_state_test.go:60`, `steer_test.go:148`; `39c5f219`'s 81-line `worktree_state_test.go` is on `main`; and `main`'s `worktree-state-isolation.md` is a superset of `db254236`'s version (9 headings vs 8). The row's stated reason is accurate as written.
-- `origin/backup/loop-efficiency-pre-rebase` and `origin/backup/state-readers-pre-rebase` — **spot-checked, consistent.** Each lists 14 outstanding commits under `git cherry`, but their rebased counterparts `origin/feat/loop-efficiency` and `origin/fix/state-readers-and-live-views` both report **0** outstanding, which is what the rows claim. I did not content-verify all 14 commits.
-- `origin/fix/wave-merge-state-loss` — **deliberately not touched**; it is `P0-M1-FIX-5`'s task.
-- The remaining 30 branches were not re-audited.
-
-**Caveat now recorded in the triage doc**: `git cherry -v main origin/feat/maintenance-ci` *still* lists `1129cf84` as outstanding after the cherry-pick, because resolving the conflict changed its context lines and so its patch-id. Re-running §How this was measured will contradict the corrected row; the file content is the authority. Added as trap 3 in that section so the next reader does not "re-discover" the defect.
-
-**Scope compliance**
-- Local only. No `git push`, no merge, no rebase, no branch deletion, no remote mutation. `origin/feat/maintenance-ci` is untouched — the verdict remains a *recommendation* to delete, and publishing stays with `[!] P0-13a`.
-- `[!] P0-3a`, `[!] P0-4a`, `[!] P0-13a` untouched. `belmont install` not run.
-- No Go source changed; no dependency added.
-
-**Commits**
-| Hash | Message |
-|---|---|
-| `23e71008` | `knowledge: record that --max-parallel is inert without explicit deps` (cherry-picked from `1129cf84`, original authorship preserved, `-x` provenance line) |
-| _(this commit — find it with `git log --grep='^P0-M1-FIX-3'`; a commit cannot record its own hash in a file it carries)_ | `P0-M1-FIX-3: Re-verdict origin/feat/maintenance-ci and recover 1129cf84` |
-
-Two commits rather than one: the cherry-pick is kept as its own commit so the original author, message and `cherry picked from commit 1129cf84…` line survive as provenance for the recovery. The task's own changes are in the second.
+**Scope**: `P0-M1-FIX-1`'s work in the same file (`MetricsRoot`, `worktreeLoopConfig`, the
+`appendMetricsRecord` concurrency contract) is untouched — its three tests still pass unchanged.
+`P0-M1-FIX-5/-6/-7`, the `[!]` human-gated tasks, `docs/branch-triage.md`, the "three of the five"
+wording and `runCensus` were not touched. No `belmont install`, no push/merge/rebase/branch deletion.
 
 ---
 
 ### Out-of-Scope Issues Found
 | ID | Found During | Description | Priority |
 |---|---|---|---|
-| FWLUP-1 | P0-M1-FIX-3 | The `## Gotcha` section arrives with a stray double blank line before `## Don't re-do` (present in `1129cf84` as authored). Left as-is to keep the cherry-pick faithful; sweep it with any future edit to the file. | P3 |
-| FWLUP-2 | P0-M1-FIX-3 | 30 of the 35 triage rows have never been checked to the evidence bar this task established. The five `abandon — content verified` rows matter most, since each is a recommendation to delete. Two of the five have now been checked; three have not. | P2 |
+| FWLUP-1 | P0-M1-FIX-4 | `Output` has the same shape of question and was deliberately left alone: codex reports `reasoning_output_tokens` as a separate field, and the live probe suggests `output_tokens` already includes it (turn 1: output 20, reasoning 13, visible reply ~7), but that was not the task and is not pinned by a test. If M11 ever compares output tokens across tools, verify and record it the same way `input_semantics` now is. | P3 |
+| FWLUP-2 | P0-M1-FIX-4 | codex's `turn.completed` usage is session-cumulative (verified above). This happens to be what Belmont wants — `usageCapture` keeps the last usage-bearing line — but it is undocumented vendor behaviour that nothing pins. A per-turn regression upstream would silently under-report a multi-turn phase. | P3 |
 
 ### Notes for Verification
-- The load-bearing check is the **conjunction**: both `1129cf84`'s `--max-parallel` gotcha and `962f0e84`'s `MetricsRoot` / one-wave-one-run invariants must be present in `knowledge/auto-mode/parallel-wave-orchestration.md`. Dropping either to settle the conflict would have reproduced this task's own defect.
-- Do not use `git cherry` to confirm the recovery — see the caveat above. Grep the file.
-- Every line number cited in the new triage row was read at HEAD, not recalled: `parallel-wave-orchestration.md:43-62`, `autocmd.go:278-284` / `:286`, `worktree-state-isolation.md:44-58`, `worktree.go:504` / `:410`, `KNOWLEDGE.md:25`, `clean-tree-preflight.md:13`, `worktree.go:286`, `worktree_state_test.go:60`, `steer_test.go:148`.
+- The load-bearing behaviour is the **refusal**, not the breakdown: `s.Input == nil` plus `InputNote`
+  whenever two definitions contribute. `tools_detail` exists so the refusal loses no information.
+- `metricsSummary.Input`, `metricsSummary.CriticalInput` and `runAgg.Input` are now `*int64`. This is
+  a JSON-shape change for `belmont metrics --format json` (`"input": null` is newly possible, and
+  `input_note` / `tools_detail` are new keys). Nothing in the tree consumed those fields —
+  `.belmont/metrics/` does not exist in this repo or in repo-3/repo-4, and `baseline.json` records
+  byte counts, not metrics-summary JSON — so no captured baseline is invalidated.
+- A record written before this change carries no `input_semantics` and is therefore treated as
+  `unknown`, which refuses to merge with a declared definition. That is deliberate (fail-closed): no
+  such records exist anywhere yet, and inferring the definition from the tool name at read time would
+  re-introduce the assumption this task removes.

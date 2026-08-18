@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -28,6 +29,16 @@ import (
 // Records live at .belmont/metrics/<feature>.jsonl, are gitignored, and are
 // append-only: one line per phase, so two runs of the same feature are compared
 // by reading the file rather than by keeping any state.
+//
+// The same rule has a second edge, which is easy to miss because nothing is
+// estimated on it: **an arithmetic result that has no definition is also not a
+// measurement**. `input_tokens` does not mean the same thing to every tool, so
+// adding it across tools yields a number that is neither the uncached total nor
+// the whole prompt. Every record therefore carries what its Input counts
+// (`input_semantics`, written at ingest — see inputSemantics), and
+// summariseMetrics reports a combined Input only when every contributing record
+// shares one definition. Where they differ it reports null with a stated reason
+// and the per-tool figures, exactly as it does for a host that cannot report.
 
 // toolUsage is a token count a tool reported about itself. Every field came out
 // of the tool's own JSON; none is derived.
@@ -36,6 +47,75 @@ type toolUsage struct {
 	Output        int64
 	CacheCreation int64
 	CacheRead     int64
+}
+
+// inputSemantics records what a tool's reported `input_tokens` actually counts.
+//
+// This is the aggregation boundary's problem, not the parsers'. Both per-tool
+// parsers are correct and the field names are not transposed — but the two
+// vendors give the same-named field two different definitions:
+//
+//   - claude: `input_tokens` is the uncached remainder only. The whole prompt is
+//     input_tokens + cache_creation_input_tokens + cache_read_input_tokens.
+//   - codex (OpenAI lineage): `input_tokens` is the whole prompt, cache reads
+//     included, so it overlaps CacheRead.
+//
+// codex's half was verified against a live run rather than assumed (codex-cli
+// 0.147.0, 2026-08-18). Three turns of one session reported input/cached of
+// 17308/4480 -> 34647/21248 -> 52003/38016. Those figures are session-cumulative,
+// so the per-turn values are 17308/4480, 17339/16768 and 17356/16768: each turn
+// re-sends the same ~17.3k context and the cache read is a subset of it. Under
+// the excluding reading the context would have had to grow from 21,788 to 34,107
+// tokens across a 26-token exchange, which it plainly did not.
+//
+// What that run did NOT settle is whether cache *writes* also sit inside codex's
+// input_tokens — cache_write_input_tokens was 0 on every turn, so the question
+// never arose. It does not need settling here: the rule below keys off the
+// definitions differing at all, not off which part differs.
+//
+// Belmont **refuses to aggregate** across differing definitions rather than
+// normalising to a tool-independent quantity. Both were open. Normalising (store,
+// say, whole-prompt tokens for every tool) is only correct while every tool's
+// semantics are known and stay known; a new tool, or a vendor redefining the
+// field under us, would then silently produce a wrong-but-plausible baseline —
+// which is the failure being fixed, re-armed. Refusing is correct under every
+// interpretation, including ones nobody has verified yet, and it costs no
+// information: the per-tool figures are reported beside the null.
+//
+// The semantics travel with the record as data (metricsRecord.InputSemantics),
+// never as a comment. A comment at the parse site is precisely what failed here:
+// it does not reach summariseMetrics, and it does not reach a record already on
+// disk.
+type inputSemantics string
+
+const (
+	// inputExcludesCacheRead: Input counts only tokens processed at full price;
+	// cache reads and writes are reported separately and do not overlap it.
+	inputExcludesCacheRead inputSemantics = "excludes_cache_read"
+	// inputIncludesCacheRead: Input counts the whole prompt, cache reads
+	// included, so it overlaps CacheRead.
+	inputIncludesCacheRead inputSemantics = "includes_cache_read"
+	// inputSemanticsUnknown: a count Belmont cannot define. Recorded rather than
+	// guessed, and never summed with any other tool's.
+	inputSemanticsUnknown inputSemantics = "unknown"
+)
+
+// toolInputSemantics is the table, per tool, verified as described above. Every
+// tool toolReportsUsage says yes to must appear here — a reported count with no
+// recorded definition is the defect this table exists to prevent, and
+// TestInputSemanticsCoversEveryToolThatReportsUsage pins it.
+var toolInputSemantics = map[string]inputSemantics{
+	"claude": inputExcludesCacheRead,
+	"codex":  inputIncludesCacheRead,
+}
+
+// inputSemanticsFor is the ingest-side lookup. An unlisted tool records
+// "unknown", which is a usable fact; guessing a definition is not.
+func inputSemanticsFor(tool string) inputSemantics {
+	if s, ok := toolInputSemantics[tool]; ok {
+		return s
+	}
+	return inputSemanticsUnknown
 }
 
 // metricsRecord is one phase of one milestone: the unit the success bar is
@@ -55,6 +135,12 @@ type metricsRecord struct {
 	CacheRead     *int64 `json:"cache_read"`
 	CriticalPath  bool   `json:"critical_path"`
 	Note          string `json:"note,omitempty"`
+	// InputSemantics is what Input counts, according to the tool that reported
+	// it. Written at ingest so the distinction reaches summariseMetrics and any
+	// later reader of the file, rather than living in a comment beside a parser.
+	// Absent on a record written before this field existed; such a record
+	// aggregates as unknown, which is fail-closed by design.
+	InputSemantics inputSemantics `json:"input_semantics,omitempty"`
 }
 
 // usageUnavailableNote explains, per tool, why no token count is recorded.
@@ -143,6 +229,7 @@ func buildMetricsRecord(runID, feature, milestone, phase, tool string, wallMs in
 		in, out := usage.Input, usage.Output
 		cc, cr := usage.CacheCreation, usage.CacheRead
 		rec.Input, rec.Output, rec.CacheCreation, rec.CacheRead = &in, &out, &cc, &cr
+		rec.InputSemantics = inputSemanticsFor(tool)
 		return rec
 	}
 	if note, ok := usageUnavailableNote[tool]; ok {
@@ -345,36 +432,130 @@ func criticalPathMilestones(milestones []milestone) map[string]bool {
 }
 
 // metricsSummary aggregates one feature's records for `belmont metrics`.
+//
+// Input and CriticalInput are pointers for the same reason the record's token
+// fields are: a figure that cannot be defined is null, never a plausible number.
+// Here the cause is not a host that cannot report but records spanning tools
+// that define input_tokens differently (see inputSemantics). InputNote always
+// says which, and ByTool carries every figure the combined total would have
+// held, beside the definition it was measured under.
 type metricsSummary struct {
-	Feature       string   `json:"feature"`
-	Runs          int      `json:"runs"`
-	Phases        int      `json:"phases"`
-	WallMs        int64    `json:"wall_ms"`
-	Input         int64    `json:"input"`
-	Output        int64    `json:"output"`
-	CacheCreation int64    `json:"cache_creation"`
-	CacheRead     int64    `json:"cache_read"`
-	CriticalWall  int64    `json:"critical_path_wall_ms"`
-	CriticalInput int64    `json:"critical_path_input"`
-	Unreported    int      `json:"phases_without_usage"`
-	ByRun         []runAgg `json:"runs_detail"`
+	Feature       string    `json:"feature"`
+	Runs          int       `json:"runs"`
+	Phases        int       `json:"phases"`
+	WallMs        int64     `json:"wall_ms"`
+	Input         *int64    `json:"input"`
+	InputNote     string    `json:"input_note,omitempty"`
+	Output        int64     `json:"output"`
+	CacheCreation int64     `json:"cache_creation"`
+	CacheRead     int64     `json:"cache_read"`
+	CriticalWall  int64     `json:"critical_path_wall_ms"`
+	CriticalInput *int64    `json:"critical_path_input"`
+	Unreported    int       `json:"phases_without_usage"`
+	ByTool        []toolAgg `json:"tools_detail"`
+	ByRun         []runAgg  `json:"runs_detail"`
+}
+
+// toolAgg is the per-tool breakdown. It exists so that refusing to combine Input
+// costs no information: within one tool the definition is constant, so these
+// sums are always meaningful, whatever the mix above them.
+type toolAgg struct {
+	Tool           string         `json:"tool"`
+	InputSemantics inputSemantics `json:"input_semantics"`
+	Phases         int            `json:"phases"`
+	WallMs         int64          `json:"wall_ms"`
+	Input          int64          `json:"input"`
+	CriticalInput  int64          `json:"critical_path_input"`
+	Output         int64          `json:"output"`
+	CacheCreation  int64          `json:"cache_creation"`
+	CacheRead      int64          `json:"cache_read"`
+	Unreported     int            `json:"phases_without_usage"`
 }
 
 type runAgg struct {
 	Run           string `json:"run"`
 	Phases        int    `json:"phases"`
 	WallMs        int64  `json:"wall_ms"`
-	Input         int64  `json:"input"`
+	Input         *int64 `json:"input"`
+	InputNote     string `json:"input_note,omitempty"`
 	Output        int64  `json:"output"`
 	CacheCreation int64  `json:"cache_creation"`
 	CacheRead     int64  `json:"cache_read"`
 	Unreported    int    `json:"phases_without_usage"`
 }
 
+// inputAggKey decides whether two records' Input may be added together.
+//
+// A record whose definition Belmont knows is summable with any record sharing
+// that definition, whatever tool produced it. A record whose definition it does
+// not know is summable only with the same tool's: two undeclared tools may well
+// disagree, and assuming they agree is the assumption this whole mechanism
+// exists to remove.
+func inputAggKey(rec metricsRecord) string {
+	switch rec.InputSemantics {
+	case inputExcludesCacheRead, inputIncludesCacheRead:
+		return string(rec.InputSemantics)
+	default:
+		return "unknown(" + rec.Tool + ")"
+	}
+}
+
+// recordInputSemantics is the label for a record, treating a missing field (a
+// record written before the field existed) as unknown rather than as agreement.
+func recordInputSemantics(rec metricsRecord) inputSemantics {
+	if rec.InputSemantics == "" {
+		return inputSemanticsUnknown
+	}
+	return rec.InputSemantics
+}
+
+// inputAcc sums Input while tracking how many distinct definitions contributed.
+// One definition is a total; two are not a bigger total, they are no total.
+type inputAcc struct {
+	total    int64
+	critical int64
+	keys     map[string]bool
+}
+
+func (a *inputAcc) add(key string, input int64, criticalPath bool) {
+	if a.keys == nil {
+		a.keys = map[string]bool{}
+	}
+	a.keys[key] = true
+	a.total += input
+	if criticalPath {
+		a.critical += input
+	}
+}
+
+// resolve returns the aggregate only when every contributing record shared one
+// definition of Input, and a stated reason when it did not. A null with a reason
+// is a usable measurement; a sum across two definitions is not.
+func (a *inputAcc) resolve() (total, critical *int64, note string) {
+	switch len(a.keys) {
+	case 0:
+		return nil, nil, "not aggregated: no phase reported an input token count"
+	case 1:
+		t, c := a.total, a.critical
+		return &t, &c, ""
+	default:
+		keys := make([]string, 0, len(a.keys))
+		for k := range a.keys {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		return nil, nil, "not aggregated: phases span more than one definition of input_tokens (" +
+			strings.Join(keys, ", ") + ") — see tools_detail for the per-tool figures"
+	}
+}
+
 func summariseMetrics(feature string, recs []metricsRecord) metricsSummary {
 	s := metricsSummary{Feature: feature, Phases: len(recs)}
 	perRun := map[string]*runAgg{}
-	var order []string
+	perRunInput := map[string]*inputAcc{}
+	perTool := map[string]*toolAgg{}
+	var runOrder, toolOrder []string
+	var totalInput inputAcc
 
 	for _, r := range recs {
 		s.WallMs += r.WallMs
@@ -385,43 +566,92 @@ func summariseMetrics(feature string, recs []metricsRecord) metricsSummary {
 		if !ok {
 			agg = &runAgg{Run: r.Run}
 			perRun[r.Run] = agg
-			order = append(order, r.Run)
+			perRunInput[r.Run] = &inputAcc{}
+			runOrder = append(runOrder, r.Run)
 		}
 		agg.Phases++
 		agg.WallMs += r.WallMs
 
+		tagg, ok := perTool[r.Tool]
+		if !ok {
+			tagg = &toolAgg{Tool: r.Tool}
+			perTool[r.Tool] = tagg
+			toolOrder = append(toolOrder, r.Tool)
+		}
+		tagg.Phases++
+		tagg.WallMs += r.WallMs
+
 		if r.Input == nil && r.Output == nil {
 			s.Unreported++
 			agg.Unreported++
+			tagg.Unreported++
 			continue
 		}
 		if r.Input != nil {
-			s.Input += *r.Input
-			agg.Input += *r.Input
+			key := inputAggKey(r)
+			totalInput.add(key, *r.Input, r.CriticalPath)
+			perRunInput[r.Run].add(key, *r.Input, r.CriticalPath)
+			tagg.Input += *r.Input
 			if r.CriticalPath {
-				s.CriticalInput += *r.Input
+				tagg.CriticalInput += *r.Input
+			}
+			// Within a tool the definition is constant in practice; if a file
+			// ever mixes them under one tool name, say so rather than pick one.
+			if sem := recordInputSemantics(r); tagg.InputSemantics == "" {
+				tagg.InputSemantics = sem
+			} else if tagg.InputSemantics != sem {
+				tagg.InputSemantics = inputSemanticsUnknown
 			}
 		}
 		if r.Output != nil {
 			s.Output += *r.Output
 			agg.Output += *r.Output
+			tagg.Output += *r.Output
 		}
 		if r.CacheCreation != nil {
 			s.CacheCreation += *r.CacheCreation
 			agg.CacheCreation += *r.CacheCreation
+			tagg.CacheCreation += *r.CacheCreation
 		}
 		if r.CacheRead != nil {
 			s.CacheRead += *r.CacheRead
 			agg.CacheRead += *r.CacheRead
+			tagg.CacheRead += *r.CacheRead
 		}
 	}
 
-	sort.Strings(order)
-	for _, run := range order {
-		s.ByRun = append(s.ByRun, *perRun[run])
+	s.Input, s.CriticalInput, s.InputNote = totalInput.resolve()
+
+	sort.Strings(runOrder)
+	for _, run := range runOrder {
+		agg := perRun[run]
+		agg.Input, _, agg.InputNote = perRunInput[run].resolve()
+		s.ByRun = append(s.ByRun, *agg)
 	}
-	s.Runs = len(order)
+	sort.Strings(toolOrder)
+	for _, tool := range toolOrder {
+		s.ByTool = append(s.ByTool, *perTool[tool])
+	}
+	s.Runs = len(runOrder)
 	return s
+}
+
+// formatOptionalTokens prints a token count, or "n/a" where one could not be
+// defined. It never prints 0 for an absent figure — zero is a real measurement
+// in this file, and the two must stay distinguishable in the text output as
+// well as in the JSON.
+func formatOptionalTokens(v *int64) string {
+	if v == nil {
+		return "n/a"
+	}
+	return strconv.FormatInt(*v, 10)
+}
+
+func (s inputSemantics) label() string {
+	if s == "" {
+		return string(inputSemanticsUnknown)
+	}
+	return string(s)
 }
 
 func renderMetricsSummary(s metricsSummary) string {
@@ -432,17 +662,27 @@ func renderMetricsSummary(s metricsSummary) string {
 		return b.String()
 	}
 	fmt.Fprintf(&b, "  %d run(s), %d phase(s), %s wall-clock\n", s.Runs, s.Phases, formatDurationMs(s.WallMs))
-	fmt.Fprintf(&b, "  tokens: %d in / %d out (cache %d created, %d read)\n",
-		s.Input, s.Output, s.CacheCreation, s.CacheRead)
-	fmt.Fprintf(&b, "  critical path: %s wall-clock, %d input tokens\n",
-		formatDurationMs(s.CriticalWall), s.CriticalInput)
+	fmt.Fprintf(&b, "  tokens: %s in / %d out (cache %d created, %d read)\n",
+		formatOptionalTokens(s.Input), s.Output, s.CacheCreation, s.CacheRead)
+	if s.Input == nil && s.InputNote != "" {
+		fmt.Fprintf(&b, "  input %s\n", s.InputNote)
+	}
+	fmt.Fprintf(&b, "  critical path: %s wall-clock, %s input tokens\n",
+		formatDurationMs(s.CriticalWall), formatOptionalTokens(s.CriticalInput))
 	if s.Unreported > 0 {
 		fmt.Fprintf(&b, "  %d phase(s) reported no usage — wall-clock only, never estimated\n", s.Unreported)
 	}
+	if len(s.ByTool) > 1 {
+		b.WriteString("\n  Tool      Input counts          Phases     Input   Output\n")
+		for _, t := range s.ByTool {
+			fmt.Fprintf(&b, "  %-8s  %-20s  %6d  %8d  %7d\n",
+				t.Tool, t.InputSemantics.label(), t.Phases, t.Input, t.Output)
+		}
+	}
 	b.WriteString("\n  Run                       Phases   Wall        Input    Output\n")
 	for _, r := range s.ByRun {
-		fmt.Fprintf(&b, "  %-24s  %6d   %-10s  %7d  %7d\n",
-			r.Run, r.Phases, formatDurationMs(r.WallMs), r.Input, r.Output)
+		fmt.Fprintf(&b, "  %-24s  %6d   %-10s  %7s  %7d\n",
+			r.Run, r.Phases, formatDurationMs(r.WallMs), formatOptionalTokens(r.Input), r.Output)
 	}
 	return b.String()
 }

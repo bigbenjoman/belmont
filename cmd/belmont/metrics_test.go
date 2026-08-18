@@ -304,8 +304,9 @@ func TestMetricsRoundTripAcrossRuns(t *testing.T) {
 	if s.Runs != 2 {
 		t.Errorf("runs: got %d, want 2", s.Runs)
 	}
-	if s.Input != 210 {
-		t.Errorf("input: got %d, want 210", s.Input)
+	// One tool, one definition of input_tokens, so a combined figure is defined.
+	if s.Input == nil || *s.Input != 210 {
+		t.Errorf("input: got %s, want 210", formatOptionalTokens(s.Input))
 	}
 	if s.WallMs != 150000 {
 		t.Errorf("wall: got %d, want 150000", s.WallMs)
@@ -322,7 +323,10 @@ func TestMetricsRoundTripAcrossRuns(t *testing.T) {
 	}
 
 	// The two runs must be comparable — same feature, same phases, different totals.
-	if s.ByRun[0].Input == s.ByRun[1].Input {
+	if s.ByRun[0].Input == nil || s.ByRun[1].Input == nil {
+		t.Fatalf("per-run input should be defined for a single-tool fixture: %+v", s.ByRun)
+	}
+	if *s.ByRun[0].Input == *s.ByRun[1].Input {
 		t.Error("fixture should produce differing per-run totals")
 	}
 }
@@ -491,8 +495,8 @@ func TestWaveOfMilestonesRecordsAsOneRun(t *testing.T) {
 	if s.Runs != 1 {
 		t.Errorf("runs: got %d, want 1 — one wave is one run, not one run per worktree", s.Runs)
 	}
-	if s.Input != 300 {
-		t.Errorf("input: got %d, want 300", s.Input)
+	if s.Input == nil || *s.Input != 300 {
+		t.Errorf("input: got %s, want 300", formatOptionalTokens(s.Input))
 	}
 }
 
@@ -619,4 +623,195 @@ func appendSplitWriteForTest(root string, rec metricsRecord) error {
 	}
 	_, err = f.Write([]byte("\n"))
 	return err
+}
+
+// TestSummariseMetricsRefusesToMixInputSemantics is the regression test for the
+// defect: `Input` was summed across tools whose `input_tokens` count different
+// things, and the result was a number with no definition at all.
+//
+// The fixture makes that concrete. Both phases cost exactly the same — a 1,000
+// token prompt of which 900 came from cache — but they report it differently:
+//
+//	claude: Input 100 (the uncached remainder), CacheRead 900
+//	codex:  Input 1000 (the whole prompt, cache read included), CacheRead 900
+//
+// The old code summed those to 1100, which is neither the uncached total (200)
+// nor the prompt total (2000). It is 5.5x the first and 55% of the second, and
+// it would have been the M1 baseline every later milestone is scored against.
+// Reverting the fix must make this test fail: assert on the encoded JSON, which
+// the old code wrote as "input":1100.
+func TestSummariseMetricsRefusesToMixInputSemantics(t *testing.T) {
+	i := func(v int64) *int64 { return &v }
+	recs := []metricsRecord{
+		{
+			Run: "r1", Feature: "throughput", Milestone: "M1", Phase: "IMPLEMENT_MILESTONE",
+			Tool: "claude", WallMs: 1000, CriticalPath: true,
+			Input: i(100), Output: i(50), CacheCreation: i(0), CacheRead: i(900),
+			InputSemantics: inputExcludesCacheRead,
+		},
+		{
+			Run: "r1", Feature: "throughput", Milestone: "M1", Phase: "VERIFY",
+			Tool: "codex", WallMs: 1000, CriticalPath: true,
+			Input: i(1000), Output: i(50), CacheCreation: i(0), CacheRead: i(900),
+			InputSemantics: inputIncludesCacheRead,
+		},
+	}
+
+	s := summariseMetrics("throughput", recs)
+
+	if s.Input != nil {
+		t.Errorf("combined input: got %d, want null — the two definitions are not addable", *s.Input)
+	}
+	if s.CriticalInput != nil {
+		t.Errorf("critical-path input: got %d, want null for the same reason", *s.CriticalInput)
+	}
+	if !strings.Contains(s.InputNote, string(inputExcludesCacheRead)) ||
+		!strings.Contains(s.InputNote, string(inputIncludesCacheRead)) {
+		t.Errorf("input note must name both definitions, got %q", s.InputNote)
+	}
+	if s.ByRun[0].Input != nil {
+		t.Errorf("per-run input: got %d, want null — the run itself spans both tools", *s.ByRun[0].Input)
+	}
+
+	// Refusing must cost no information: every figure the bad total contained is
+	// still reported, beside the definition it was measured under.
+	if len(s.ByTool) != 2 {
+		t.Fatalf("per-tool breakdown: got %+v, want one row per tool", s.ByTool)
+	}
+	wantTool := map[string]struct {
+		input int64
+		sem   inputSemantics
+	}{
+		"claude": {100, inputExcludesCacheRead},
+		"codex":  {1000, inputIncludesCacheRead},
+	}
+	for _, ta := range s.ByTool {
+		want, ok := wantTool[ta.Tool]
+		if !ok {
+			t.Fatalf("unexpected tool row %q", ta.Tool)
+		}
+		if ta.Input != want.input || ta.InputSemantics != want.sem || ta.CriticalInput != want.input {
+			t.Errorf("%s row: got input=%d critical=%d sem=%s, want input=%d sem=%s",
+				ta.Tool, ta.Input, ta.CriticalInput, ta.InputSemantics, want.input, want.sem)
+		}
+	}
+
+	// Output and the cache figures mean the same thing to both tools, so they
+	// still aggregate — this fix narrows nothing it does not have to.
+	if s.Output != 100 || s.CacheRead != 1800 {
+		t.Errorf("output/cache_read: got %d/%d, want 100/1800", s.Output, s.CacheRead)
+	}
+
+	encoded, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"input":null`) {
+		t.Errorf("JSON must report a null input, got %s", encoded)
+	}
+	if strings.Contains(string(encoded), "1100") {
+		t.Errorf("JSON still carries the meaningless 1100 sum: %s", encoded)
+	}
+	if text := renderMetricsSummary(s); strings.Contains(text, "1100") || !strings.Contains(text, "n/a") {
+		t.Errorf("text output must show n/a rather than a combined figure:\n%s", text)
+	}
+}
+
+// TestUnknownInputSemanticsDoNotMergeAcrossTools covers the fail-closed half.
+// A record with no recorded definition — a tool added later, or a line written
+// before the field existed — must not be assumed to agree with another tool's,
+// while a tool's records still aggregate with their own.
+func TestUnknownInputSemanticsDoNotMergeAcrossTools(t *testing.T) {
+	i := func(v int64) *int64 { return &v }
+	sameTool := []metricsRecord{
+		{Run: "r1", Tool: "futuretool", Input: i(10), Output: i(1)},
+		{Run: "r1", Tool: "futuretool", Input: i(20), Output: i(1)},
+	}
+	s := summariseMetrics("f", sameTool)
+	if s.Input == nil || *s.Input != 30 {
+		t.Errorf("one tool with one (unknown) definition is still self-consistent: got %s",
+			formatOptionalTokens(s.Input))
+	}
+	if s.ByTool[0].InputSemantics != inputSemanticsUnknown {
+		t.Errorf("semantics label: got %q, want unknown", s.ByTool[0].InputSemantics)
+	}
+
+	twoTools := []metricsRecord{
+		{Run: "r1", Tool: "futuretool", Input: i(10), Output: i(1)},
+		{Run: "r1", Tool: "othertool", Input: i(20), Output: i(1)},
+	}
+	if s := summariseMetrics("f", twoTools); s.Input != nil {
+		t.Errorf("two undeclared tools must not be assumed to agree: got %d", *s.Input)
+	}
+
+	// And an undeclared tool must not merge with a declared one either.
+	mixed := []metricsRecord{
+		{Run: "r1", Tool: "claude", Input: i(10), Output: i(1), InputSemantics: inputExcludesCacheRead},
+		{Run: "r1", Tool: "futuretool", Input: i(20), Output: i(1)},
+	}
+	if s := summariseMetrics("f", mixed); s.Input != nil {
+		t.Errorf("unknown must not be folded into a known definition: got %d", *s.Input)
+	}
+}
+
+// TestInputSemanticsRecordedAtIngestAndOnDisk pins the mechanism rather than the
+// outcome: the per-tool meaning is written as data at ingest and survives the
+// JSONL round trip. A comment at the parse site is what failed here, and a
+// comment does not reach a record already on disk.
+func TestInputSemanticsRecordedAtIngestAndOnDisk(t *testing.T) {
+	root := t.TempDir()
+	usage := &toolUsage{Input: 100, Output: 50, CacheCreation: 10, CacheRead: 5}
+
+	for tool, want := range map[string]inputSemantics{
+		"claude":     inputExcludesCacheRead,
+		"codex":      inputIncludesCacheRead,
+		"futuretool": inputSemanticsUnknown,
+	} {
+		rec := buildMetricsRecord("r1", "feat", "M1", "IMPLEMENT_MILESTONE", tool, 10, usage, false)
+		if rec.InputSemantics != want {
+			t.Errorf("%s: ingest recorded %q, want %q", tool, rec.InputSemantics, want)
+		}
+		if err := appendMetricsRecord(root, rec); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+
+	data, err := os.ReadFile(metricsPath(root, "feat"))
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if !strings.Contains(string(data), `"input_semantics":"excludes_cache_read"`) ||
+		!strings.Contains(string(data), `"input_semantics":"includes_cache_read"`) {
+		t.Errorf("the JSONL must carry the definition, not just the tool name:\n%s", data)
+	}
+
+	recs, err := readMetricsRecords(root, "feat")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	for _, rec := range recs {
+		if rec.InputSemantics != inputSemanticsFor(rec.Tool) {
+			t.Errorf("%s: round trip lost the definition (%q)", rec.Tool, rec.InputSemantics)
+		}
+	}
+
+	// A phase with no usage carries no Input, so it declares no definition.
+	if rec := buildMetricsRecord("r1", "feat", "M1", "VERIFY", "copilot", 10, nil, false); rec.InputSemantics != "" {
+		t.Errorf("a record with no input must not claim a definition, got %q", rec.InputSemantics)
+	}
+}
+
+// TestInputSemanticsCoversEveryToolThatReportsUsage — a tool whose count Belmont
+// extracts but whose definition it never recorded is exactly the state that
+// produced this defect. Verified empirically per tool; see inputSemantics.
+func TestInputSemanticsCoversEveryToolThatReportsUsage(t *testing.T) {
+	for _, tool := range []string{"claude", "codex", "gemini", "copilot", "cursor", "pi", "opencode"} {
+		_, declared := toolInputSemantics[tool]
+		if toolReportsUsage(tool) && !declared {
+			t.Errorf("%s: usage is extracted but its input_tokens definition is unrecorded", tool)
+		}
+		if !toolReportsUsage(tool) && declared {
+			t.Errorf("%s: declares an input_tokens definition but reports no usage", tool)
+		}
+	}
 }
