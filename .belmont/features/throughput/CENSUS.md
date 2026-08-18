@@ -142,11 +142,12 @@ line that sits under a heading rather than under a task is never claimed and sta
 which is the term that can pull "detail moved" below the indented total; and
 **(ii)** a blank line *inside* a task's body **is** claimed, and a blank line is not an indented
 line, so it adds its newline to the moved bytes. Where a register has no indentation outside a task
-body, only (ii) is left and moved exceeds indented — which is exactly the case for
-`repo-3/feat-070` below: **141,001 B moved against 140,957 B indented, a difference of
-44 B**. Re-derived from the register on disk rather than inferred: all 533 of its indented lines
-lie inside a task body (term (i) is zero) and its task bodies contain exactly **44 blank lines**,
-one newline each. No total in this document changes.*
+body, only (ii) is left, so moved is **at least** indented, and exceeds it whenever a task body
+contains a blank line — which is exactly the case for `repo-3/feat-070` below:
+**141,001 B moved against 140,957 B indented, a difference of 44 B**. Re-derived from the register
+on disk rather than inferred: all 533 of its indented lines lie inside a task body (term (i) is
+zero) and its task bodies contain exactly **44 blank lines**, one newline each. No total in this
+document changes.*
 
 > **CORRECTED by `P0-M1-FIX-8` (2026-08-18).** The paragraph above previously asserted
 > *"Indentation is the upper bound on what extraction could move; what it does move is smaller"* —
@@ -174,6 +175,17 @@ one newline each. No total in this document changes.*
 > newline in bytes) over every register `census.json` names, which reproduced all 82 of its
 > `total_bytes` and `detail_bytes` figures exactly. The clause is withdrawn and restated; no figure,
 > table or conclusion in this document changes.
+
+> **CORRECTED by `P0-M1-FIX-9` (2026-08-18).** Term **(ii)** above previously read *"only (ii) is
+> left and moved exceeds indented"* — the same over-assertion the reconciliation directly above
+> withdraws, standing one paragraph up and left there by that round. Term (ii) counts in-body blank
+> lines and is frequently zero, so the relation the rule actually supports is *at least*, not
+> *exceeds*; the distribution measured in the blockquote above — canonical, not restated here —
+> makes equality the normal case and "above" the two-register exception. As with the first
+> correction, **both quoted numbers were right and only the claim relating them was wrong**. The
+> 82-register replay was run once more against the registers on disk before this was written and
+> reproduced that distribution and both above-cases exactly. The clause is withdrawn and restated;
+> no figure, table or conclusion in this document changes.
 
 **Two of the five carry zero indented lines — not three.** The remaining two over-threshold
 registers have plenty: `repo-4/feat-075` has **11,832** indented lines
