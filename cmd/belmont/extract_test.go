@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -154,7 +155,7 @@ func TestCensusStatesItsDenominator(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rep, err := runCensus([]string{root}, "")
+	rep, err := runCensus([]string{root}, "", false)
 	if err != nil {
 		t.Fatalf("census: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestCensusIgnoresDotDirectories(t *testing.T) {
 	writeRegister(t, root, "real", "### M1: A\n- [ ] P0-1: one\n")
 	writeRegister(t, root, ".hidden", "### M1: A\n- [ ] P0-1: one\n")
 
-	rep, err := runCensus([]string{root}, "")
+	rep, err := runCensus([]string{root}, "", false)
 	if err != nil {
 		t.Fatalf("census: %v", err)
 	}
@@ -218,7 +219,7 @@ func TestCensusWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runCensus([]string{root}, ""); err != nil {
+	if _, err := runCensus([]string{root}, "", false); err != nil {
 		t.Fatalf("census: %v", err)
 	}
 	after, err := os.ReadDir(filepath.Join(root, ".belmont", "features", "alpha"))
@@ -235,14 +236,132 @@ func TestCensusWritesNothing(t *testing.T) {
 	}
 }
 
-// TestCensusMissingRootIsNotAnError — a root with no .belmont/ is skipped, so a
-// multi-repo census does not fail on one absent directory.
-func TestCensusMissingRootIsNotAnError(t *testing.T) {
-	rep, err := runCensus([]string{filepath.Join(t.TempDir(), "nope")}, "")
-	if err != nil {
-		t.Fatalf("a missing root should be skipped, got: %v", err)
+// TestCensusMissingRootIsAnError pins the fix for P0-M1-FIX-7, and replaces a
+// test that asserted the defect ("a missing root should be skipped"). Skipping
+// it is precisely what let this census walk four of the PRD's five repos and
+// publish the smaller denominator as a finding.
+func TestCensusMissingRootIsAnError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nope")
+
+	rep, err := runCensus([]string{missing}, "", false)
+	if err == nil {
+		t.Fatal("a root that cannot be read must fail the census, not shrink its denominator")
 	}
-	if rep.LiveRegisters != 0 {
-		t.Errorf("expected no registers, got %d", rep.LiveRegisters)
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("the error must name the root it could not read, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "--allow-unreadable-roots") {
+		t.Errorf("the error must name the deliberate way to proceed, got: %v", err)
+	}
+	// The report still carries the coverage facts even on the failing path.
+	if rep.CoverageComplete {
+		t.Error("coverage cannot be complete when a root was never read")
+	}
+	if len(rep.UnreadableRoots) != 1 || rep.UnreadableRoots[0].Root != missing {
+		t.Errorf("the unread root must be recorded in the report, got %+v", rep.UnreadableRoots)
+	}
+}
+
+// TestCensusPartialWalkStatesItsOwnCoverage pins the second half of the rule:
+// the opt-in must not be a quieter version of the silent skip. A reader of the
+// output alone — not of the terminal it scrolled past — must be able to tell
+// which roots were walked and which were missed.
+func TestCensusPartialWalkStatesItsOwnCoverage(t *testing.T) {
+	good := t.TempDir()
+	writeRegister(t, good, "alpha", "### M1: A\n- [ ] P0-1: one\n  body\n")
+	missing := filepath.Join(t.TempDir(), "gone")
+
+	rep, err := runCensus([]string{good, missing}, "", true)
+	if err != nil {
+		t.Fatalf("--allow-unreadable-roots must complete the run: %v", err)
+	}
+
+	// The measurement itself is unchanged — only its honesty about coverage.
+	if rep.LiveRegisters != 1 {
+		t.Errorf("the readable root must still be measured: got %d live registers", rep.LiveRegisters)
+	}
+	if rep.CoverageComplete {
+		t.Error("coverage must be reported incomplete")
+	}
+	if len(rep.Roots) != 2 {
+		t.Errorf("the report must keep the roots that were asked for: %v", rep.Roots)
+	}
+	if len(rep.RootsWalked) != 1 || rep.RootsWalked[0] != good {
+		t.Errorf("roots walked: got %v, want [%s]", rep.RootsWalked, good)
+	}
+	if len(rep.UnreadableRoots) != 1 || rep.UnreadableRoots[0].Root != missing {
+		t.Errorf("unreadable roots: got %+v, want [%s]", rep.UnreadableRoots, missing)
+	}
+
+	out := renderCensus(rep)
+	if !strings.Contains(out, "Coverage: INCOMPLETE") {
+		t.Error("the rendered census must state that its coverage is incomplete")
+	}
+	if !strings.Contains(out, "walked  "+good) {
+		t.Error("the rendered census must name the roots it walked")
+	}
+	if !strings.Contains(out, "MISSED  "+missing) {
+		t.Error("the rendered census must name the root it missed")
+	}
+	if !strings.Contains(out, "COVERAGE INCOMPLETE") {
+		t.Error("the verdict must be repeated below the figures, not only above them")
+	}
+}
+
+// TestCensusCompleteWalkSaysSo — the good case must be as legible as the bad
+// one, or a reader cannot tell a checked census from an unchecked one.
+func TestCensusCompleteWalkSaysSo(t *testing.T) {
+	root := t.TempDir()
+	writeRegister(t, root, "alpha", "### M1: A\n- [ ] P0-1: one\n  body\n")
+
+	rep, err := runCensus([]string{root}, "", false)
+	if err != nil {
+		t.Fatalf("census: %v", err)
+	}
+	if !rep.CoverageComplete {
+		t.Error("every requested root was read; coverage is complete")
+	}
+	out := renderCensus(rep)
+	if !strings.Contains(out, "Coverage: COMPLETE") {
+		t.Error("the rendered census must state that it covered everything it was asked to")
+	}
+	if !strings.Contains(out, "walked  "+root) {
+		t.Error("the rendered census must name the root it walked")
+	}
+	if strings.Contains(out, "COVERAGE INCOMPLETE") {
+		t.Error("a complete walk must not carry the incomplete-coverage footer")
+	}
+}
+
+// TestCensusUnlistableRootIsReportedNotAborted covers the other read failure —
+// a directory that exists but cannot be listed. It lands in the same coverage
+// report as a missing one rather than aborting mid-walk, so the operator sees
+// every unreadable root in one run.
+func TestCensusUnlistableRootIsReportedNotAborted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permissions are not enforced the same way on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permissions")
+	}
+	root := t.TempDir()
+	features := filepath.Join(root, ".belmont", "features")
+	if err := os.MkdirAll(features, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(features, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(features, 0o755) })
+
+	rep, err := runCensus([]string{root}, "", true)
+	if err != nil {
+		t.Fatalf("--allow-unreadable-roots must complete the run: %v", err)
+	}
+	if rep.CoverageComplete || len(rep.UnreadableRoots) != 1 {
+		t.Fatalf("an unlistable root must be reported: complete=%v unreadable=%+v", rep.CoverageComplete, rep.UnreadableRoots)
+	}
+	if rep.UnreadableRoots[0].Reason == "" {
+		t.Error("the report must say why the root could not be read")
 	}
 }

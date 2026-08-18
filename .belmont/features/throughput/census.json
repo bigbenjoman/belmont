@@ -6,6 +6,15 @@
     "/Users/benlavender/repo-2",
     "/Users/benlavender/repo-3"
   ],
+  "roots_walked": [
+    "/Users/benlavender/repo-1",
+    "/Users/benlavender/repo-5",
+    "/Users/benlavender/repo-4",
+    "/Users/benlavender/repo-2",
+    "/Users/benlavender/repo-3"
+  ],
+  "unreadable_roots": [],
+  "coverage_complete": true,
   "feature_dirs": 168,
   "live_registers": 82,
   "archived_dirs": 81,

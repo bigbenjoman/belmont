@@ -194,6 +194,13 @@ belmont extract --dry-run \
 `--dry-run` is required, not optional: this release ships the census only.
 
 Paths are absolute and unabbreviated on purpose — the roots after the first comma are not a
-separate shell word, so `~` in them is never expanded. A root that cannot be read is still skipped
-silently by `runCensus`, which is what allowed the original omission; making it fail loudly is
-`P0-M1-FIX-7` and is not fixed here.
+separate shell word, so `~` in them is never expanded. A root that cannot be read is **no longer
+skipped silently** (`P0-M1-FIX-7`): the census now refuses, naming every root it could not read,
+instead of quietly reporting a smaller denominator — which is what allowed the original omission.
+`--allow-unreadable-roots` is the deliberate override; the report then states which roots it walked
+and which it missed, above the figures and again below them.
+
+**Coverage of the run that produced this document**: all five roots above were walked, none was
+missed. The command says so itself — `Coverage: COMPLETE — all 5 requested roots were read`,
+followed by the five paths, and `census.json` carries the same as `coverage_complete`,
+`roots_walked` and `unreadable_roots`.

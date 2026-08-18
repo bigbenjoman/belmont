@@ -66,6 +66,10 @@
 ### Pattern
 - **Refuse, don't normalise, when vendor semantics diverge.** `summariseMetrics` now aggregates `Input` only across records sharing one `input_semantics`, and reports `null` + a stated reason + a per-tool breakdown otherwise. Normalising to a tool-independent quantity was the alternative and was rejected: it is correct only while every tool's semantics are known *and stay known*, so a new tool or a vendor redefinition silently re-arms the same wrong-but-plausible baseline. Records with no recorded definition are summable only with the same tool's — unknown never merges into a known definition.
 
+### Pattern
+- **Coverage belongs in the artefact, not in the terminal.** The census's silent skip could have been "fixed" with a stderr warning, and that would have reproduced the defect: the numbers get copied into other documents and the caveat does not — which is literally what happened to 138/65. The fix that holds is (a) refuse by default, (b) make the opt-in explicit, and (c) put the coverage facts *inside* the report (`roots_walked`, `unreadable_roots`, `coverage_complete`, plus a banner above **and** below the table) so a reader of the output can tell what was walked without re-running anything.
+- **A signature change makes "revert and watch it fail" prove the wrong thing.** Reverting `P0-M1-FIX-7` wholesale would have broken compilation, so the tests would "fail" as a build error rather than as an assertion. Demonstrate by reverting only the behavioural line — re-inserting `if os.IsNotExist(err) { continue }` while keeping the new signature — and confirm the assertions themselves fail. Two of the four new tests fail that way; the other two cover the complete-walk and unlistable-directory branches and pass either way, which is expected and worth saying out loud rather than presenting four tests as four proofs.
+
 ### Debugging
 - **`git merge-tree --write-tree --name-only <main> <branch>` enumerates a branch's conflicts without touching the working tree, the index, or any ref.** The right probe when a triage task is barred from changing git history — `origin/fix/wave-merge-state-loss` reports four conflicting files (`AGENTS.md`, `cmd/belmont/worktree.go`, and two knowledge docs) with nothing checked out.
 
@@ -99,6 +103,7 @@
 **Issue**: The extraction census walked five roots, but not the five the PRD names — `repo-2` (31 feature dirs, 18 live registers) was never measured, so the denominator is 138/65 instead of 168/82.
 **Root Cause**: The scope was assembled from what was conveniently to hand rather than from the PRD's explicit list, and `runCensus` swallows an unreadable root (`os.IsNotExist → continue`). An incomplete walk is therefore indistinguishable from a complete one at every level — no error, no warning, just a smaller number that looks like a finding.
 **Prevention**: When a spec enumerates its subjects, use that enumeration verbatim as the input list and **fail loudly** on any member that cannot be read. A missing input must never degrade silently into a smaller denominator.
+**Now enforced in code (`P0-M1-FIX-7`)**: `runCensus` collects every root it cannot read and returns an error naming them; `--allow-unreadable-roots` is the only way past it, and the report then carries `roots_walked` / `unreadable_roots` / `coverage_complete` and prints `Coverage: INCOMPLETE` above the figures and again below them. The first half of the rule — taking the PRD's enumeration — remains a human discipline; only the "fail loudly" half is mechanical.
 **Source**: M1 / P0-4
 
 ### [2026-08-18] Pattern: a measurement was used to correct the spec before it was known to be complete

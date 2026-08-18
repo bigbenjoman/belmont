@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -67,20 +68,36 @@ func (f featureCensus) reductionPct() float64 {
 	return 100 * float64(f.DetailBytes) / float64(f.TotalBytes)
 }
 
+// unreadableRoot is a census subject that yielded nothing: the root does not
+// exist, holds no .belmont/features, or could not be listed. It is carried in
+// the report rather than logged, because the report is what gets quoted.
+type unreadableRoot struct {
+	Root   string `json:"root"`
+	Reason string `json:"reason"`
+}
+
 // censusReport is the whole run, with its denominators stated.
+//
+// Roots is what was asked for; RootsWalked is what was actually measured. They
+// are separate fields on purpose — every figure below them is a denominator or
+// derived from one, and a denominator is only checkable if the scope that
+// produced it is written down beside it.
 type censusReport struct {
-	Roots            []string        `json:"roots"`
-	FeatureDirs      int             `json:"feature_dirs"`
-	LiveRegisters    int             `json:"live_registers"`
-	ArchivedDirs     int             `json:"archived_dirs"`
-	NoRegisterDirs   int             `json:"dirs_without_register"`
-	ThresholdBytes   int             `json:"threshold_bytes"`
-	TotalBytes       int             `json:"total_bytes"`
-	TotalIndexBytes  int             `json:"total_index_bytes"`
-	TotalDetailBytes int             `json:"total_detail_bytes"`
-	OverBefore       []string        `json:"over_threshold_before"`
-	OverAfter        []string        `json:"over_threshold_after"`
-	Features         []featureCensus `json:"features"`
+	Roots            []string         `json:"roots"`
+	RootsWalked      []string         `json:"roots_walked"`
+	UnreadableRoots  []unreadableRoot `json:"unreadable_roots"`
+	CoverageComplete bool             `json:"coverage_complete"`
+	FeatureDirs      int              `json:"feature_dirs"`
+	LiveRegisters    int              `json:"live_registers"`
+	ArchivedDirs     int              `json:"archived_dirs"`
+	NoRegisterDirs   int              `json:"dirs_without_register"`
+	ThresholdBytes   int              `json:"threshold_bytes"`
+	TotalBytes       int              `json:"total_bytes"`
+	TotalIndexBytes  int              `json:"total_index_bytes"`
+	TotalDetailBytes int              `json:"total_detail_bytes"`
+	OverBefore       []string         `json:"over_threshold_before"`
+	OverAfter        []string         `json:"over_threshold_after"`
+	Features         []featureCensus  `json:"features"`
 }
 
 // censusFeature measures one register.
@@ -138,18 +155,57 @@ func censusFeature(repo, slug, content string) featureCensus {
 // runCensus walks each root's .belmont/features/ and measures every live
 // register. Roots are walked directly — see the file comment on why globbing is
 // wrong.
-func runCensus(roots []string, only string) (censusReport, error) {
-	rep := censusReport{Roots: roots, ThresholdBytes: extractionThresholdBytes}
+//
+// **A root that cannot be read is a reported failure, never a skip.** This used
+// to be `os.IsNotExist(err) -> continue`, and that one line is how this census
+// published a wrong denominator: it walked four of the PRD's five repos,
+// reported 138 dirs / 65 live instead of 168 / 82, and then used the smaller
+// number to declare the PRD's own figure wrong. Nothing objected, because an
+// incomplete walk and a complete one produced output that looked identical.
+// Two reviewers then hit the same failure from the other direction — the
+// documented command's unexpanded tildes resolved four roots under the CWD, and
+// it answered 43 registers instead of 65, silently.
+//
+// **Error, not warning — chosen deliberately.** A census's entire value is that
+// its coverage is knowable, and a warning printed above a table of plausible
+// numbers is read once and copied never: the numbers travel into other
+// documents and the caveat does not. That is not a hypothetical here, it is the
+// documented history of this exact figure. So the number must not exist at all
+// unless its scope is whole.
+//
+// The cost of that strictness — a five-repo census being useless while one repo
+// sits on an unmounted volume — is paid by allowUnreadableRoots, an opt-in the
+// operator has to type. It is not a quieter version of the same failure: the
+// missed roots stay in the report (RootsWalked, UnreadableRoots,
+// CoverageComplete) and are stated in both the text and JSON output, so a
+// reader of the output can tell what was covered without re-running anything.
+// Dropping the root from the command line instead would lose exactly that.
+func runCensus(roots []string, only string, allowUnreadableRoots bool) (censusReport, error) {
+	// Both slices start empty rather than nil so the JSON always carries the
+	// coverage fields as arrays, and a consumer can read them without a
+	// null check.
+	rep := censusReport{
+		Roots:           roots,
+		RootsWalked:     []string{},
+		UnreadableRoots: []unreadableRoot{},
+		ThresholdBytes:  extractionThresholdBytes,
+	}
 
 	for _, root := range roots {
 		featuresDir := filepath.Join(root, ".belmont", "features")
 		entries, err := os.ReadDir(featuresDir)
 		if err != nil {
+			// Collect every unreadable root before failing, so one run names all
+			// of them rather than making the operator rediscover them one at a
+			// time.
+			reason := err.Error()
 			if os.IsNotExist(err) {
-				continue
+				reason = "no " + filepath.Join(".belmont", "features") + " directory under this root"
 			}
-			return rep, fmt.Errorf("extract: read %s: %w", featuresDir, err)
+			rep.UnreadableRoots = append(rep.UnreadableRoots, unreadableRoot{Root: root, Reason: reason})
+			continue
 		}
+		rep.RootsWalked = append(rep.RootsWalked, root)
 		repoName := filepath.Base(root)
 		for _, e := range entries {
 			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
@@ -189,6 +245,19 @@ func runCensus(roots []string, only string) (censusReport, error) {
 	sort.Slice(rep.Features, func(i, j int) bool {
 		return rep.Features[i].TotalBytes > rep.Features[j].TotalBytes
 	})
+
+	rep.CoverageComplete = len(rep.UnreadableRoots) == 0
+	if !rep.CoverageComplete && !allowUnreadableRoots {
+		var b strings.Builder
+		fmt.Fprintf(&b, "extract: %d of %d roots could not be read, so this census would cover only part of what was asked for:",
+			len(rep.UnreadableRoots), len(roots))
+		for _, u := range rep.UnreadableRoots {
+			fmt.Fprintf(&b, "\n  %s: %s", u.Root, u.Reason)
+		}
+		b.WriteString("\nRefusing rather than reporting a smaller denominator: an incomplete census reads exactly like a complete one once its numbers are quoted elsewhere.")
+		b.WriteString("\nFix the paths (absolute, no ~ — only the first is a shell word), or pass --allow-unreadable-roots to census the readable roots anyway; the report then states which roots it missed.")
+		return rep, errors.New(b.String())
+	}
 	return rep, nil
 }
 
@@ -203,10 +272,47 @@ func percentile(sorted []int, p float64) int {
 	return sorted[i]
 }
 
+// renderCoverage states the scope of the run before any figure derived from it.
+// Which roots were walked, and which were asked for and missed, are the first
+// thing a reader needs and the first thing a copied-out number loses.
+func renderCoverage(b *strings.Builder, rep censusReport) {
+	if rep.CoverageComplete {
+		fmt.Fprintf(b, "Coverage: COMPLETE — all %d requested roots were read.\n", len(rep.Roots))
+	} else {
+		fmt.Fprintf(b, "Coverage: INCOMPLETE — %d of %d requested roots could not be read.\n",
+			len(rep.UnreadableRoots), len(rep.Roots))
+	}
+	for _, r := range rep.RootsWalked {
+		fmt.Fprintf(b, "  walked  %s\n", r)
+	}
+	for _, u := range rep.UnreadableRoots {
+		fmt.Fprintf(b, "  MISSED  %s (%s)\n", u.Root, u.Reason)
+	}
+	if !rep.CoverageComplete {
+		b.WriteString("  Every figure below counts only the walked roots and is a LOWER BOUND on the estate.\n")
+	}
+}
+
+// renderCoverageFooter repeats an incomplete-coverage verdict at the end of the
+// report. A caveat at the top of a long table is the one a reader scrolls past.
+func renderCoverageFooter(b *strings.Builder, rep censusReport) {
+	if rep.CoverageComplete {
+		return
+	}
+	missed := make([]string, 0, len(rep.UnreadableRoots))
+	for _, u := range rep.UnreadableRoots {
+		missed = append(missed, u.Root)
+	}
+	fmt.Fprintf(b, "\n!! COVERAGE INCOMPLETE — %d of %d roots were never read (%s).\n",
+		len(rep.UnreadableRoots), len(rep.Roots), strings.Join(missed, ", "))
+	b.WriteString("!! Do not quote these totals as the estate: they are lower bounds over a partial walk.\n")
+}
+
 func renderCensus(rep censusReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Extraction census (dry run — nothing written)\n")
-	fmt.Fprintf(&b, "Roots: %s\n\n", strings.Join(rep.Roots, ", "))
+	renderCoverage(&b, rep)
+	b.WriteString("\n")
 
 	// State the denominator before any statistic derived from it.
 	fmt.Fprintf(&b, "Denominator: %d feature directories, of which %d carry a live PROGRESS.md.\n",
@@ -216,6 +322,7 @@ func renderCensus(rep censusReport) string {
 	fmt.Fprintf(&b, "  Every figure below is over the %d live registers only.\n\n", rep.LiveRegisters)
 
 	if rep.LiveRegisters == 0 {
+		renderCoverageFooter(&b, rep)
 		return b.String()
 	}
 
@@ -268,6 +375,7 @@ func renderCensus(rep censusReport) string {
 	if len(rep.Features) > len(shown) {
 		fmt.Fprintf(&b, "... and %d more (use --format json for all)\n", len(rep.Features)-len(shown))
 	}
+	renderCoverageFooter(&b, rep)
 	return b.String()
 }
 
@@ -284,6 +392,8 @@ func runExtractCmd(args []string) error {
 	all := fs.Bool("all", false, "census every feature directory (default when --feature is absent)")
 	dryRun := fs.Bool("dry-run", false, "report only; required in this release")
 	extraRoots := fs.String("roots", "", "comma-separated additional project roots to include in the census")
+	allowUnreadable := fs.Bool("allow-unreadable-roots", false,
+		"census the readable roots even if one cannot be read; the report states which roots were missed")
 	format := fs.String("format", "text", "output format: text|json")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -313,7 +423,7 @@ func runExtractCmd(args []string) error {
 		roots = append(roots, a)
 	}
 
-	rep, err := runCensus(roots, strings.TrimSpace(*feature))
+	rep, err := runCensus(roots, strings.TrimSpace(*feature), *allowUnreadable)
 	if err != nil {
 		return err
 	}
