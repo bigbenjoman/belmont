@@ -1,34 +1,34 @@
 {
   "roots": [
-    "/Users/benlavender/repo-3",
-    "/Users/benlavender/repo-4",
-    "/Users/benlavender/repo-5",
     "/Users/benlavender/repo-1",
-    "/Users/benlavender/repos/belmont"
+    "/Users/benlavender/repo-5",
+    "/Users/benlavender/repo-4",
+    "/Users/benlavender/repo-2",
+    "/Users/benlavender/repo-3"
   ],
-  "feature_dirs": 138,
-  "live_registers": 65,
-  "archived_dirs": 68,
-  "dirs_without_register": 73,
+  "feature_dirs": 168,
+  "live_registers": 82,
+  "archived_dirs": 81,
+  "dirs_without_register": 86,
   "threshold_bytes": 100000,
-  "total_bytes": 5005137,
-  "total_index_bytes": 3260906,
-  "total_detail_bytes": 1744231,
+  "total_bytes": 5372973,
+  "total_index_bytes": 3623280,
+  "total_detail_bytes": 1749693,
   "over_threshold_before": [
+    "repo-1/feat-020",
+    "repo-4/feat-031",
+    "repo-4/feat-075",
     "repo-3/feat-010",
     "repo-3/feat-015",
     "repo-3/feat-058",
-    "repo-3/feat-070",
-    "repo-4/feat-031",
-    "repo-4/feat-075",
-    "repo-1/feat-020"
+    "repo-3/feat-070"
   ],
   "over_threshold_after": [
+    "repo-4/feat-031",
+    "repo-4/feat-075",
     "repo-3/feat-015",
     "repo-3/feat-058",
-    "repo-3/feat-070",
-    "repo-4/feat-031",
-    "repo-4/feat-075"
+    "repo-3/feat-070"
   ],
   "features": [
     {
@@ -109,6 +109,17 @@
       "index_over_threshold": false
     },
     {
+      "repo": "repo-2",
+      "slug": "feat-069",
+      "total_bytes": 86380,
+      "index_bytes": 86380,
+      "detail_bytes": 0,
+      "milestones": 15,
+      "tasks": 83,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
       "repo": "repo-3",
       "slug": "feat-007",
       "total_bytes": 71379,
@@ -116,6 +127,17 @@
       "detail_bytes": 0,
       "milestones": 14,
       "tasks": 76,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-003",
+      "total_bytes": 63759,
+      "index_bytes": 63759,
+      "detail_bytes": 0,
+      "milestones": 14,
+      "tasks": 65,
       "tasks_with_detail": 0,
       "index_over_threshold": false
     },
@@ -197,6 +219,28 @@
       "index_over_threshold": false
     },
     {
+      "repo": "repo-2",
+      "slug": "feat-002",
+      "total_bytes": 50737,
+      "index_bytes": 43218,
+      "detail_bytes": 7519,
+      "milestones": 10,
+      "tasks": 57,
+      "tasks_with_detail": 4,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-006",
+      "total_bytes": 48908,
+      "index_bytes": 48908,
+      "detail_bytes": 0,
+      "milestones": 17,
+      "tasks": 58,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
       "repo": "repo-1",
       "slug": "feat-018",
       "total_bytes": 39581,
@@ -215,6 +259,17 @@
       "detail_bytes": 0,
       "milestones": 18,
       "tasks": 77,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-067",
+      "total_bytes": 30217,
+      "index_bytes": 30217,
+      "detail_bytes": 0,
+      "milestones": 14,
+      "tasks": 99,
       "tasks_with_detail": 0,
       "index_over_threshold": false
     },
@@ -340,6 +395,17 @@
       "index_over_threshold": false
     },
     {
+      "repo": "repo-2",
+      "slug": "feat-013",
+      "total_bytes": 20872,
+      "index_bytes": 20872,
+      "detail_bytes": 0,
+      "milestones": 10,
+      "tasks": 14,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
       "repo": "repo-4",
       "slug": "feat-061",
       "total_bytes": 20297,
@@ -362,17 +428,6 @@
       "index_over_threshold": false
     },
     {
-      "repo": "belmont",
-      "slug": "throughput",
-      "total_bytes": 18784,
-      "index_bytes": 16727,
-      "detail_bytes": 2057,
-      "milestones": 11,
-      "tasks": 39,
-      "tasks_with_detail": 2,
-      "index_over_threshold": false
-    },
-    {
       "repo": "repo-3",
       "slug": "feat-047",
       "total_bytes": 18561,
@@ -391,6 +446,17 @@
       "detail_bytes": 0,
       "milestones": 17,
       "tasks": 65,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-035",
+      "total_bytes": 17581,
+      "index_bytes": 17581,
+      "detail_bytes": 0,
+      "milestones": 5,
+      "tasks": 12,
       "tasks_with_detail": 0,
       "index_over_threshold": false
     },
@@ -450,6 +516,17 @@
       "index_over_threshold": false
     },
     {
+      "repo": "repo-2",
+      "slug": "feat-068",
+      "total_bytes": 14020,
+      "index_bytes": 14020,
+      "detail_bytes": 0,
+      "milestones": 8,
+      "tasks": 30,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
       "repo": "repo-4",
       "slug": "feat-071",
       "total_bytes": 13882,
@@ -457,6 +534,17 @@
       "detail_bytes": 0,
       "milestones": 6,
       "tasks": 20,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-027",
+      "total_bytes": 13744,
+      "index_bytes": 13744,
+      "detail_bytes": 0,
+      "milestones": 7,
+      "tasks": 25,
       "tasks_with_detail": 0,
       "index_over_threshold": false
     },
@@ -512,6 +600,17 @@
       "detail_bytes": 0,
       "milestones": 4,
       "tasks": 11,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-028",
+      "total_bytes": 8927,
+      "index_bytes": 8927,
+      "detail_bytes": 0,
+      "milestones": 6,
+      "tasks": 24,
       "tasks_with_detail": 0,
       "index_over_threshold": false
     },
@@ -582,6 +681,17 @@
       "index_over_threshold": false
     },
     {
+      "repo": "repo-2",
+      "slug": "feat-062",
+      "total_bytes": 6952,
+      "index_bytes": 6952,
+      "detail_bytes": 0,
+      "milestones": 3,
+      "tasks": 12,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
       "repo": "repo-4",
       "slug": "feat-029",
       "total_bytes": 6583,
@@ -611,6 +721,17 @@
       "detail_bytes": 0,
       "milestones": 3,
       "tasks": 11,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-034",
+      "total_bytes": 5722,
+      "index_bytes": 5722,
+      "detail_bytes": 0,
+      "milestones": 5,
+      "tasks": 13,
       "tasks_with_detail": 0,
       "index_over_threshold": false
     },
@@ -648,6 +769,17 @@
       "index_over_threshold": false
     },
     {
+      "repo": "repo-2",
+      "slug": "feat-001",
+      "total_bytes": 4304,
+      "index_bytes": 4304,
+      "detail_bytes": 0,
+      "milestones": 4,
+      "tasks": 7,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
       "repo": "repo-5",
       "slug": "feat-026",
       "total_bytes": 4102,
@@ -666,6 +798,28 @@
       "detail_bytes": 0,
       "milestones": 11,
       "tasks": 14,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-042",
+      "total_bytes": 3872,
+      "index_bytes": 3872,
+      "detail_bytes": 0,
+      "milestones": 2,
+      "tasks": 5,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-057",
+      "total_bytes": 3855,
+      "index_bytes": 3855,
+      "detail_bytes": 0,
+      "milestones": 4,
+      "tasks": 17,
       "tasks_with_detail": 0,
       "index_over_threshold": false
     },
@@ -732,6 +886,39 @@
       "detail_bytes": 0,
       "milestones": 6,
       "tasks": 14,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-058",
+      "total_bytes": 2666,
+      "index_bytes": 2666,
+      "detail_bytes": 0,
+      "milestones": 1,
+      "tasks": 2,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-022",
+      "total_bytes": 2385,
+      "index_bytes": 2385,
+      "detail_bytes": 0,
+      "milestones": 2,
+      "tasks": 6,
+      "tasks_with_detail": 0,
+      "index_over_threshold": false
+    },
+    {
+      "repo": "repo-2",
+      "slug": "feat-030",
+      "total_bytes": 1719,
+      "index_bytes": 1719,
+      "detail_bytes": 0,
+      "milestones": 2,
+      "tasks": 4,
       "tasks_with_detail": 0,
       "index_over_threshold": false
     },

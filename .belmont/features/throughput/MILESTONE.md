@@ -2,54 +2,59 @@
 
 ## Status
 - **Milestone**: M1: Toolchain, atomic writes & baseline
-- **Git Baseline**: `9b521752798fd0d3eb46edca6983cf9a4e44866f`
-- **Mode**: Lightweight (next skill — single task, no analysis agents). Batch round 1 of 7.
-- **Created**: 2026-08-18T13:03:03Z
+- **Git Baseline**: `962f0e84e290cde5a5282f7e4cbe72a5942d606d`
+- **Mode**: Lightweight (next skill — single task, no analysis agents). Batch round 2 of 7.
+- **Created**: 2026-08-18T13:30:00Z
 - **Tasks**:
-  - [x] P0-M1-FIX-1: Metrics are written to the worktree root and destroyed with it
+  - [ ] P0-M1-FIX-2: The census never walked `repo-2`, and used the incomplete walk to "correct" the PRD
 
 ## Orchestrator Context
 
 ### Current Task
-`P0-M1-FIX-1` — the only task being implemented in this run. It is the Critical finding from M1's code review.
+`P0-M1-FIX-2` — the only task being implemented in this run. It is the Critical finding from M1's verification pass.
 
 ### Active Task IDs
-`P0-M1-FIX-1`
+`P0-M1-FIX-2`
 
 ### File Paths
 
 **Absolute paths. Use them verbatim.** The session working directory is `/Users/benlavender/belmont` — a *different repository*, the planning workspace, holding a different feature with open tasks. Never resolve `.belmont/` from the working directory and never write anything under `/Users/benlavender/belmont`. The harness resets the working directory after every Bash call, so prefix each shell command with `cd /Users/benlavender/repos/belmont &&`.
 
 - **Repository root**: `/Users/benlavender/repos/belmont`
-- **PRD**: `/Users/benlavender/repos/belmont/.belmont/features/throughput/PRD.md` — see §P0-2 for the parent task's acceptance criteria
-- **TECH_PLAN**: `/Users/benlavender/repos/belmont/.belmont/features/throughput/TECH_PLAN.md` — §Go Implementation Notes (P0-2/P0-3), §File-Format Specifications (Metrics)
-- **Master TECH_PLAN**: `/Users/benlavender/repos/belmont/.belmont/TECH_PLAN.md` — the six self-hosting rules
+- **PRD**: `/Users/benlavender/repos/belmont/.belmont/features/throughput/PRD.md` — §P0-4 holds the parent task's acceptance criteria, and §Success Criteria carries the "139 existing feature registers (82 active + 57 archived)" figure this task must reconcile against
+- **TECH_PLAN**: `/Users/benlavender/repos/belmont/.belmont/features/throughput/TECH_PLAN.md` — §Command Specifications (`belmont extract`)
 - **PROGRESS**: `/Users/benlavender/repos/belmont/.belmont/features/throughput/PROGRESS.md` — the task's full description is on its own task line
 - **Feature Notes**: `/Users/benlavender/repos/belmont/.belmont/features/throughput/NOTES.md`
-- **Prior implementation log**: `MILESTONE-M1.done.md` in the same directory — the full pipeline's Codebase Analysis and Implementation Log for M1, including the enumeration of every state writer and the metrics design as built
-- **Repo conventions**: `AGENTS.md`, `CONTRIBUTING.md`, `knowledge/KNOWLEDGE.md`. **`knowledge/cross-cutting/dual-invocation-paths.md` is the rule this defect broke — read it.**
+- **Prior implementation log**: `MILESTONE-M1.done.md` — Pass 1 holds the full M1 codebase scan and the census as originally built
+- **The artefacts to correct**: `CENSUS.md` and `census.json` in this directory
+- **The code**: `cmd/belmont/extract.go` (`runCensus`)
 
 ### The defect
 
-`recordPhaseMetrics` (`cmd/belmont/auto_loop.go:614-628`) passes `cfg.Root` to `appendMetricsRecord`, which resolves `<root>/.belmont/metrics/`. But `auto_parallel.go:74` and `:474` set `mCfg.Root = wtPath` before calling `runLoop`, so in parallel-wave mode the records land inside the worktree. `.belmont/metrics/` is gitignored, `syncFeatureStateAfterMerge` copies only `PROGRESS.md` back to the main root, and `removeWorktree` (`worktree.go:194-205`) then deletes the tree.
+P0-4's acceptance criterion is *"a dry-run report over every feature directory **in all five repos**"*. The PRD names them: repo-1, repo-5, repo-4, **repo-2**, repo-3.
 
-This is not a corner case. `autocmd.go:284` routes to `runAutoParallel` whenever any milestone declares `(depends: …)`, and this feature's own `PROGRESS.md` declares dependencies on M2 through M11. So the instrumentation the entire feature is judged by would record **nothing** for the execution mode the feature actually runs in, and M11/P3-3 would have no data to compare against the M1 baseline.
+The census walked `repo-3, repo-4, repo-5, repo-1, repos/belmont` — it substituted the Belmont fork for `repo-2`, which was **never measured**. It exists at `/Users/benlavender/repo-2/.belmont/` with roughly 31 feature directories and 18 further live registers.
+
+The second half is worse than the omission. `CENSUS.md` uses the incomplete walk to declare the PRD wrong:
+
+> *"The PRD's phrase 'the other 83' does not match disk. The real split is 138/65/68."*
+
+But the PRD's own figure — 82 active — **reproduces exactly** once `repo-2` is included. The PRD was right; the correction is the error, and it currently sits in a document whose stated purpose is to be the authoritative measurement.
 
 ### Required fix
 
-1. Add `MetricsRoot` to `loopConfig`, defaulting to `Root` so the serial path is unchanged.
-2. Set it to the **originating** (main) root at both `auto_parallel.go:74` and `:474`, alongside the existing `mCfg.Root = wtPath`.
-3. Propagate `cfg.RunID` from the parent into `mCfg` at the same two sites, so one wave is recorded as one run rather than N separate runs.
-4. Have `recordPhaseMetrics` write to `MetricsRoot`.
-5. Add a test that pins the worktree case — `MetricsRoot != Root`, and the record lands under the main root.
-
-Concurrency note worth thinking about before you write it: with several worktrees in a wave now appending to **one** file under the main root, the append path is shared across processes. Check whether `appendMetricsRecord` is safe for that, and say so either way in the implementation log — a fix that trades a lost file for a corrupted one is not a fix.
+1. **Re-run the census over the PRD's exact five repos**, including `/Users/benlavender/repo-2`. Confirm the repo path first — do not assume it. Decide, and state, whether the Belmont fork itself is a sixth root or is excluded; either is defensible, but the PRD's five must all be present.
+2. **Update `CENSUS.md` and `census.json`** with the corrected totals — expected around 168 dirs / 82 live / 32.6% estate reduction against 138 / 65 / 34.8%. **Measure them; do not copy these numbers from this file.**
+3. **Retract the claim that the PRD's denominator does not match disk.** Replace it with the reconciliation: the PRD's 82 active reproduces once all five repos are walked. Say plainly that the earlier claim was wrong and why, rather than quietly deleting it — a census's value is that its corrections are auditable.
+4. **State the denominator and its scope explicitly** in `CENSUS.md`, including whether archived directories are counted.
+5. Re-check whether the **five-over-threshold conclusion changes**. Verification determined it does not — the same five registers exceed the ceiling with or without `repo-2` — but confirm it rather than inherit it, because `[!] P0-4a`'s wave-restructuring escalation rests on that number.
 
 ### Scope Boundaries
-- **In Scope**: only `P0-M1-FIX-1`.
-- **Out of Scope**: everything in `{base}/PRD.md` §Out of Scope. Do **not** touch the other six follow-ups (`P0-M1-FIX-2` … `P0-M1-FIX-7`) — each gets its own run. Do **not** start M2–M11 work.
-- **Do NOT touch** `[!] P0-3a`, `[!] P0-4a`, `[!] P0-13a` — human-gated, awaiting the repository owner.
-- **Do NOT** run `belmont install`. **Do NOT** push, merge, rebase or delete any remote branch.
+- **In Scope**: only `P0-M1-FIX-2`.
+- **Out of Scope**: everything in `{base}/PRD.md` §Out of Scope. Do **not** touch the other follow-ups — `P0-M1-FIX-3` … `P0-M1-FIX-7` each get their own run. In particular **`P0-M1-FIX-7` owns** the broken `§Reproducing this` command and `runCensus`'s silent skip of an unreadable root, and **`P0-M1-FIX-6` owns** the "three of the five contain no indented lines" correction. Leave both alone even though they live in the same file — if your re-run makes one of them trivially fixable, say so in the log and leave the task standing.
+- Do **not** start M2–M11 work. `extract` stays census-only: `--dry-run` remains mandatory and nothing may write a detail tier.
+- **Do NOT touch** `[!] P0-3a`, `[!] P0-4a`, `[!] P0-13a` — human-gated, awaiting the repository owner. `P0-4a`'s body quotes census figures; if the corrected numbers change what it says, report that in your log and leave the task itself untouched.
+- **Do NOT** run `belmont install`. **Do NOT** push, merge, rebase or delete any remote branch. **Do not modify any of the five audited repositories** — this is a read-only measurement over them.
 - **Zero external Go dependencies, no `go.sum`.**
 
 ### Verification before marking `[x]`
@@ -64,16 +69,18 @@ staticcheck ./...
 gofmt -l cmd/          # must print nothing
 belmont validate --root /Users/benlavender/repos/belmont
 ```
+Plus: the corrected census must be reproducible by a command you have actually run, and the five audited repos must be unmodified afterwards (`git status` clean in each, where each is a git repo).
 
 ### Learnings from Previous Sessions
 
 #### Feature Notes
-`NOTES.md` §Root Cause Patterns records this exact defect's root cause: *"a new state write was only ever exercised on one of two execution paths."* Belmont has two execution paths for the same loop — serial `runLoop`, and `runAutoParallel` per worktree — and `knowledge/cross-cutting/dual-invocation-paths.md` documents the rule as prose with nothing mechanical to gate it. The prevention rule recorded there is this task's acceptance bar: **any new write under `.belmont/` must be exercised on both paths, with a test pinning the worktree case.** If a value is a path root, ask which of the two roots it resolves to under `runAutoParallel`.
+Two entries in `NOTES.md` §Root Cause Patterns bear directly on this task:
 
-Also from the same section, and not to be weakened while editing these files: **never estimate a token count.** Token fields are `*int64` precisely so a reported zero stays distinguishable from "not reported", and hosts that cannot report record `null` with a stated reason.
+- ***"a census derived its own scope instead of taking the spec's enumeration"*** — the scope was assembled from what was to hand rather than from the PRD's explicit list, and `runCensus` swallows an unreadable root, so an incomplete walk is indistinguishable from a complete one. **Prevention rule, and this task's bar: when a spec enumerates its subjects, use that enumeration verbatim and fail loudly on any member that cannot be read.**
+- ***"a measurement was used to correct the spec before it was known to be complete"*** — this is the same numeric-drift pattern already recorded in the sibling `framework-evaluation` feature. **State a measured figure once, in one file, and have every other document link to it.** Before contradicting a spec's number, prove your measurement covers the spec's full scope.
 
 ## Codebase Analysis
-[Not populated — lightweight mode skips the codebase agent. The defect and the required fix are specified above; the full M1 codebase scan is in `MILESTONE-M1.done.md`. Explore further as needed.]
+[Not populated — lightweight mode skips the codebase agent. The defect and the required fix are specified above; the census as originally built is in `MILESTONE-M1.done.md` Pass 1. Explore further as needed.]
 
 ## Design Specifications
 [Not populated — no design input: this task has no Figma URL, reference image, or visible UI.]
@@ -87,82 +94,178 @@ Also from the same section, and not to be weakened while editing these files: **
 
 ---
 
-### Task: P0-M1-FIX-1 — Metrics are written to the worktree root and destroyed with it
+### Task: P0-M1-FIX-2 — The census never walked `repo-2`, and used the incomplete walk to "correct" the PRD
 
 **Status**: SUCCESS
 
 **Files Modified**:
 | File | Changes |
-|---|---|
-| `cmd/belmont/types.go` | Added `loopConfig.MetricsRoot`, documenting *why* `Root` is not one root under `runAutoParallel`. Empty means "same as `Root`", so no construction site has to remember it and the serial path is untouched. |
-| `cmd/belmont/metrics.go` | Added `(loopConfig).metricsRoot()` — `MetricsRoot` when set, `Root` otherwise. Documented `appendMetricsRecord`'s concurrency contract now that the file is shared. |
-| `cmd/belmont/auto_loop.go` | `recordPhaseMetrics` writes to `cfg.metricsRoot()` instead of `cfg.Root`. |
-| `cmd/belmont/auto_parallel.go` | New `worktreeLoopConfig(cfg, wtPath)` derives the child config in ONE place; both worktree sites (`runFeatureInWorktree`, `runMilestoneInWorktree`) now call it. `runAutoParallel` mints `RunID` before any worktree exists. |
-| `cmd/belmont/multifeature.go` | `runAutoMultiFeature` mints `RunID` for the same reason. |
-| `knowledge/auto-mode/parallel-wave-orchestration.md` | Amended in place: two new invariants (nothing durable under `Root`; one wave is one run), the corrected `runLoop(mCfg)` line, a failure mode, test pointers, `Revisions` entry. |
-| `knowledge/cross-cutting/state-atomicity.md` | Amended in place: `appendMetricsRecord` recorded alongside the other `O_APPEND` rulings, with the single-write requirement and the measured negative control. `Revisions` entry. |
-| `.belmont/features/throughput/NOTES.md` | Four `### Pattern` learnings (two roots; orchestrator-minted `RunID`; O_APPEND is per-`write()`; a serial-path test passes either way here). |
+|------|---------|
+| `.belmont/features/throughput/CENSUS.md` | Re-measured over the PRD's five repos; new §Correction retracting the withdrawn claim; denominator and counting rules stated explicitly; five-over-threshold invariance stated as measured |
+| `.belmont/features/throughput/census.json` | Regenerated from the five-repo run (82 registers, was 65) |
+| `.belmont/features/throughput/NOTES.md` | §Discovery denominator bullet corrected and pointed at CENSUS.md as the single canonical copy; 34.8% → 32.6% |
+| `.belmont/features/throughput/MILESTONE-M1.done.md` | Two `WITHDRAWN by P0-M1-FIX-2` annotations against the passages that assert 138/65/68 as fact (history annotated, not rewritten) |
+| `.belmont/features/throughput/PROGRESS.md` | `P0-M1-FIX-2` → `[x]` |
 
-**Tests Added** (`cmd/belmont/metrics_test.go`):
-| Test | Coverage |
-|---|---|
-| `TestWorktreeLoopConfigKeepsMetricsOnTheOriginatingRoot` | `Root` moves to the worktree, `MetricsRoot` and `RunID` do not. |
-| `TestRecordPhaseMetricsWritesUnderMainRootNotWorktree` | The required worktree-case pin: `MetricsRoot != Root`, the record lands under the main root, **and the worktree gets no `.belmont/metrics/` at all**. |
-| `TestWaveOfMilestonesRecordsAsOneRun` | Three worktree configs sharing one parent `RunID` summarise as 1 run / 3 phases, not 3 runs. |
-| `TestRecordPhaseMetricsFallsBackToRoot` | The serial path is unchanged with `MetricsRoot` unset. |
-| `TestAppendMetricsRecordIsConcurrencySafe` | 16 goroutines x 400 concurrent appends to one file: 6400 intact lines, 0 unparseable — **with an in-test split-write negative control that must fail**. |
+**No code changed.** The defect is in the measurement's scope and in the document, not in
+`censusFeature`. `runCensus`'s silent skip of an unreadable root is the mechanism that hid the
+omission, but it is `P0-M1-FIX-7`'s to fix and was left alone.
 
-**Verification Results** (every gate in the MILESTONE verification block):
+**Tests Added**: none — no code changed. The measurement is verified by two independent walks
+(the Go census and a `find`-based shell count) agreeing exactly on 168 / 82 / 81 / 5.
+
+#### What was measured
+
+Roots, confirmed on disk before the run, all five present:
+
+| Repo | Root | Feature dirs | Live registers |
+|---|---|---:|---:|
+| repo-1 | `/Users/benlavender/repo-1` | 11 | 10 |
+| repo-5 | `/Users/benlavender/repo-5` | 70 | 11 |
+| repo-4 | `/Users/benlavender/repo-4` | 17 | 14 |
+| repo-2 | `/Users/benlavender/repo-2` | 31 | 18 |
+| repo-3 | `/Users/benlavender/repo-3` | 39 | 29 |
+| **Total** | | **168** | **82** |
+
+**The Belmont fork is excluded, deliberately and stated in `CENSUS.md`.** It is the tool repo, not
+one of the five deployments, and its one feature directory is this feature's own register — the
+census would be measuring the document that records it. Including it gives 169 dirs / 83 live.
+
+Measured totals: **5,372,973 B today → 3,623,280 B after extraction; 1,749,693 B moved = 32.6%**.
+Distribution: median 16,196 → 16,075 B, p90 71,379 B unchanged, max 1,860,979 → 944,773 B.
+
+These figures were derived here, not copied from this MILESTONE file. They agree with the
+reviewer's spot-check (168 / 82 / 32.6%) to the digit; the byte totals the spot-check did not
+quote are new.
+
+Why the reduction rate fell from the withdrawn 34.8% to 32.6%: `repo-2`'s 18 registers add
+386,620 B of which only 7,519 B (1.9%) is indented detail. Estate-wide detail barely moved
+(1,744,231 → 1,749,693 B); the denominator grew.
+
+#### The retraction, and the reconciliation behind it
+
+`CENSUS.md`'s claim — *"The PRD's phrase 'the other 83' does not match disk. The real split is
+138/65/68"* — is quoted verbatim under a **§Correction** heading, marked withdrawn, with the cause
+named (a walk that substituted the Belmont fork for `repo-2`, and a `runCensus` that
+returns no error for a root it cannot read). Nothing was silently deleted.
+
+The reconciliation is stronger than the task anticipated: **both halves of the PRD's figure
+reproduce exactly**, not just the active count.
+
+| PRD Success Criteria | Measured | Where |
+|---|---:|---|
+| 82 active | **82** | live `PROGRESS.md` across the five repos |
+| 57 archived | **57** | registers under `repo-1/.belmont/features/_archived/` |
+| 139 registers | **139** | 82 + 57 |
+
+The 57 were found by inspection, not assumed: `repo-1/.belmont/features/_archived/` holds 93
+subdirectories, exactly 57 of which carry a `PROGRESS.md`, and no other repo has any register
+nested below feature level. That population is **different from** the 81 directories this census
+counts as archived — those had their registers summarised into an `ARCHIVE.md` and deleted by
+`/belmont:cleanup`. Both counts are right about different things; the withdrawn "68 archived" was
+right about neither.
+
+One residual, stated in `CENSUS.md` so it is not later mistaken for a fresh defect: with 82 live
+registers of which two were already measured, §P0-4's *"the other 83"* is strictly "the other 80".
+That is a wording imprecision of three, not the denominator error the census asserted, and it is
+not a reason to touch the PRD — whose Success Criteria figure is exact. **No PRD edit was made.**
+
+#### The five-over-threshold conclusion — confirmed, not inherited
+
+Run three ways rather than reasoned about:
+
+| Walk | Over 100 KB today | Still over after extraction |
+|---|---:|---:|
+| Five repos | 7 | **5** |
+| Four repos (`repo-2` excluded) | 7 | **5** |
+| `repo-2` alone | 0 | **0** |
+
+Both lists are element-for-element identical between the five- and four-repo walks.
+`repo-2`'s largest register is 86,380 B — below the ceiling before extraction, therefore
+below it after. **`[!] P0-4a`'s escalation rests on a number the omission did not touch**, and its
+body quotes nothing that this correction changes ("Five do", the "three of the five" wording which
+belongs to `P0-M1-FIX-6`, and "seven, not four" — the complete walk adds no eighth). `P0-4a` was
+not touched, nor were `[!] P0-3a` or `[!] P0-13a`.
+
+The per-feature numbers for the five are byte-identical to the first run, since all five live in
+repos the first walk did cover.
+
+#### Read-only over the five repos — verified
+
+`git status --porcelain` and `git rev-parse HEAD` were captured for each of the five before the
+census and diffed after. All five byte-identical, including the repos that were already dirty
+(`repo-2` had 85 pre-existing modified files, `repo-5` 3, `repo-1` and `repo-3` 1
+each, `repo-4` clean — unchanged in every case). Nothing was written to any of them.
+
+#### Adjacent tasks left standing
+
+- **`P0-M1-FIX-7`** — §Reproducing this now uses absolute unabbreviated paths, because the command
+  had to be re-written for the five-repo root list and had to be one actually run. That
+  incidentally removes the tilde-expansion half of FIX-7's symptom in this one code block. **The
+  task still stands**: its substantive half — `runCensus` swallowing an unreadable root with
+  `os.IsNotExist → continue`, which is *how* the omission stayed invisible — is untouched, and
+  `CENSUS.md` now says so explicitly in that section rather than implying the doc is fixed.
+- **`P0-M1-FIX-6`** — the "three of the five contain no indented lines at all" sentence was left
+  verbatim in `CENSUS.md` and `NOTES.md` although both were edited around it. Re-measurement did
+  not make it correct, so nothing about it became trivially fixable.
+
+#### Root Cause Patterns acknowledged (Step 0b)
+
+- *"a census derived its own scope instead of taking the spec's enumeration"* — the five roots were
+  taken verbatim from PRD §Rollout, each confirmed to exist and to hold `.belmont/features/`
+  **before** the run, with the presence check printed rather than assumed. The exclusion of the
+  Belmont fork is a stated decision in `CENSUS.md`, not a silent one.
+- *"a measurement was used to correct the spec before it was known to be complete"* — no spec
+  figure is contradicted here. The measurement now matches the PRD, and the figure is stated once:
+  `CENSUS.md` §The denominator, stated is canonical, `NOTES.md` points at it instead of restating
+  it, and the two stale copies in the M1 done-log are annotated as withdrawn with a pointer.
+
+**Verification Results**:
 - `go build ./cmd/belmont`: pass
-- `go test ./cmd/belmont`: pass (21.8s)
-- `go test -race ./cmd/belmont`: pass (25.6s)
-- `go test -tags eval ./cmd/belmont`: pass (23.2s)
-- `go vet ./...`: pass
-- `staticcheck ./...`: pass (clean; binary at `$(go env GOPATH)/bin`, not on bare PATH)
-- `gofmt -l cmd/`: prints nothing
-- `belmont validate --root /Users/benlavender/repos/belmont`: `✓ No milestone-structure violations found.`
-- No new dependencies; no `go.sum`.
+- `go test ./cmd/belmont`: pass
+- `go test -race ./cmd/belmont`: pass
+- `go test -tags eval ./cmd/belmont`: pass
+- `go vet ./...`: pass (no output)
+- `staticcheck ./...`: pass (no output; run from `$(go env GOPATH)/bin/staticcheck`, 2026.1 — not on `PATH`)
+- `gofmt -l cmd/`: pass (no output)
+- `belmont validate --root /Users/benlavender/repos/belmont`: pass — no milestone-structure violations
+- Census reproducible by the exact command in `CENSUS.md` §Reproducing this: yes — it is the command that produced `census.json`
+- Five audited repos unmodified: yes — porcelain + HEAD identical before and after
 
-**Self-Validation**: Acceptance criteria 5/5 (`MetricsRoot` added and defaulting; set at both sites; `RunID` propagated; `recordPhaseMetrics` writes to it; worktree-case test). Visual check: N/A (CLI).
+**Self-Validation**:
+- Acceptance Criteria: 5/5 of the MILESTONE's Required fix items (five-repo re-run; CENSUS.md and
+  census.json updated; claim retracted rather than deleted; denominator and its scope stated;
+  five-over-threshold re-confirmed by direct measurement)
+- P0-4's own criterion — *"a dry-run report over every feature directory in all five repos"* — now
+  met: all five walked, 168 directories, nothing written
+- Visual Check: N/A (no visual output)
 
-**Functional check beyond the unit tests**: a freshly built binary was pointed at a fixture holding three milestone records sharing one `RunID` — `belmont metrics` reports **"1 run(s), 3 phase(s)"**, which is the shape a wave now produces. Before this change it would have reported 3 runs, from a file that no longer existed.
+**Commit**:
+- **Hash**: the single commit on `main` whose subject is the message below (recorded by subject rather than hash — the log lives inside the commit it would name)
+- **Message**: `P0-M1-FIX-2: Re-run the census over all five repos and retract its correction to the PRD`
 
 ---
-
-### Rulings the MILESTONE asked for explicitly
-
-**1. Shared-append safety — safe, and the reason is narrow.**
-
-`appendMetricsRecord` is safe for several worktrees appending to one file, on one condition worth stating because it is easy to undo by accident: **the record and its terminating newline go out in a single `f.Write`.** `O_APPEND` makes seek-to-EOF-and-write indivisible, so two appenders cannot land at the same offset — but that guarantee is per *write call*, not per file handle. Emitting the payload and the `\n` separately lets another appender interleave between them and splice two records into one unparseable line; a `bufio.Writer` does the same on buffer boundaries.
-
-This was measured rather than asserted, because this repository has just been reminded that a concurrency test with no failing control proves nothing. Negative control, macOS/APFS, 16 goroutines x 400 records to one file, three runs each:
-
-| Writer | Lines (want 6400) | Unparseable |
-|---|---|---|
-| single write (`appendMetricsRecord`) | 6400 / 6400 / 6400 | 0 / 0 / 0 |
-| split write (control) | 3391 / 3443 / 3437 | 1856 / 1863 / 1853 |
-
-The control is committed as part of `TestAppendMetricsRecordIsConcurrencySafe` (skipped when `GOMAXPROCS < 2`, where it would pass for the wrong reason), so the test can fail.
-
-Two qualifications, stated rather than left implicit. First, **the failure class here is not the one `writeStateFile` exists to prevent**: the hazard is a garbled *line* in an append-only log that `readMetricsRecords` already skips, not a zero-byte *file* that a reader parses as valid-and-empty. Converting this to a read-modify-rewrite would trade a bounded, self-healing failure for an unbounded one — the ruling `state-atomicity.md` already made for `appendSteeringEntry`. Second, `O_APPEND` is **not** atomic over NFS; Belmont's metrics live beside the checkout so that is out of scope, but the call site is where a lock would go, and that is now written into the doc comment.
-
-No lock was added. A mutex would cover only in-process goroutines and would give a false sense of covering the cross-process case, which the kernel already covers better.
-
-**2. `RunID` propagation — one wave is now one run.**
-
-`mCfg := cfg` already copied `RunID`, so the field was never the problem: the *parent* had no `RunID` to copy. `runLoop` mints one from its own start time when it finds none, which is right for a serial run and wrong for a wave — each worktree's `runLoop` minted its own, so one invocation of five milestones would have appeared in `belmont metrics` as five runs, each holding a fragment of the work. That is wrong in exactly the mode P3-3's comparison against the M1 baseline depends on.
-
-Fixed by minting `RunID` in `runAutoParallel` and `runAutoMultiFeature` before any worktree is created, using the same `RFC3339` format as `runLoop`'s fallback so serial and parallel records sort and compare identically. `runLoop`'s fallback is untouched and still covers the serial path.
-
-**How this satisfies `dual-invocation-paths.md` rather than moving the path.** The convention's demand is that a change be *exercised* on both execution paths, not that it name both. Both are now exercised by tests, and the worktree case has its own — necessary because `TestRecordPhaseMetricsFallsBackToRoot` passes with or without the fix, so the serial path can never detect this defect. The derivation itself was pulled into one function, `worktreeLoopConfig`, so the two worktree sites cannot drift; the original bug existed because two sites did the same thing and only one kind of run was ever checked. Verified by reverting the fix: the three worktree tests fail, the serial test passes.
 
 ### Out-of-Scope Issues Found
 | ID | Found During | Description | Priority |
 |---|---|---|---|
-| — | P0-M1-FIX-1 | `runLoop` computes `cfg.CriticalPath` from `buildStatus(cfg.Root, …)`, so inside a worktree it reads that worktree's copy of `PROGRESS.md`. Correct today (the copy carries every milestone and its deps), but it is a second value derived from the root that moves. Worth pinning if `copyBelmontStateToWorktree` ever narrows what it copies. Not changed — out of scope. | P3 |
-| — | P0-M1-FIX-1 | `RunID` is `RFC3339` at second granularity, so two runs starting within the same second collide into one aggregate. Pre-existing; unchanged here. | P3 |
+| FWLUP-1 | P0-M1-FIX-2 | The census counts `_archived/` container directories as feature directories. `repo-1` and `repo-3` each have one, so 2 of the 168 are not features, and the 57 intact registers inside `repo-1/_archived/` are invisible to every byte figure. Harmless to P0-4's answer (they are held out of the live estate deliberately) but the walker should either skip `_`-prefixed directories or the census should say what it does with them. Documented as a counting rule in `CENSUS.md` for now. | P3 |
+| FWLUP-2 | P0-M1-FIX-2 | `repo-4` has three feature directories with neither `PROGRESS.md` nor `ARCHIVE.md` (`frontend-performance-overhaul`, `provider-services-parity`, `test-agent-booking-controls`) — design/README material only. They inflate the directory denominator without being registers. Worth a `belmont validate` check rather than a census one. | P3 |
 
 ### Notes for Verification
-- The one thing a unit test cannot reach is the real `runMilestoneInWorktree`, which needs git, `belmont install` and a live tool. The derivation it performs is covered by calling the production `worktreeLoopConfig` rather than by restating it in the test — the closest available substitute, and deliberately not a copied assignment.
-- `staticcheck` is not on the bare `PATH` on this machine; it lives at `$(go env GOPATH)/bin/staticcheck`. It ran clean.
-- `MILESTONE.md` shows as heavily modified against `HEAD` because the orchestrator replaced the full M1 file with this single-task one; the original is the untracked `MILESTONE-M1.done.md`. Not an implementation change.
+- The corrected figures are `168 / 82 / 81 archived / 5 with neither` and `32.6%`. They were
+  produced twice by independent means (Go census, `find`-based shell count) and agree exactly.
+  Re-derive rather than trust: the command is in `CENSUS.md` §Reproducing this.
+- The exclusion of the Belmont fork is a judgement call, stated openly in `CENSUS.md` with the
+  alternative's figures (169 / 83). If a reviewer prefers it included, only the directory and
+  register counts change — no conclusion does.
+- **The 57 archived registers under `repo-1/_archived/` are the load-bearing discovery.** They
+  are what makes the PRD's "139 registers" exact rather than approximately right, and they are not
+  reachable by the census walker, which is one level deep by design.
+- `MILESTONE-M1.done.md` was annotated, not rewritten — two `> **WITHDRAWN by P0-M1-FIX-2**`
+  block quotes beneath the passages that state 138/65/68 as fact. If the convention is that done
+  logs are immutable, those two annotations are the only thing to revert; the corrections in
+  `CENSUS.md` and `NOTES.md` stand on their own.
+- `P0-M1-FIX-6` and `P0-M1-FIX-7` were deliberately left open. See §Adjacent tasks left standing
+  for exactly what was and was not touched in the files they own.
+
