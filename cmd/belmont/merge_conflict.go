@@ -427,7 +427,8 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// and disagrees the moment one ends with prose after its tasks, putting a
 	// carried task below the closing note while the copy path put it above.
 	// Issue #60.
-	oursTaskIdxs := make(map[string][]int)
+	oursIDTaskIdxs := make(map[string][]int)
+	oursAnyTaskIdxs := make(map[string][]int)
 	oursHeaderIdx := make(map[string]int)
 	// Where each of ours' task lines landed in `merged`, and which milestone it
 	// sits in. A carried task that was nested under a parent this side already
@@ -436,8 +437,21 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// whatever task happens to sit last is #33's mis-attribution in a new place.
 	oursTaskIdx := make(map[string]int)
 	oursTaskMS := make(map[string]string)
+	oursInFence := false
 	for _, line := range oursLines {
 		oursLineID := ""
+		// A fenced block is a sample, never structure — same rule as the copy
+		// path. The delimiter line itself is still appended below; only its
+		// CONTENTS are exempt from being read as tasks or headers.
+		if isFenceDelimiter(line) {
+			oursInFence = !oursInFence
+			merged = append(merged, line)
+			continue
+		}
+		if oursInFence {
+			merged = append(merged, line)
+			continue
+		}
 		if m := msHeaderRe.FindStringSubmatch(line); m != nil {
 			oursInRegion = true
 			oursMS = "M" + m[1]
@@ -559,12 +573,17 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 			if msHeaderRe.MatchString(line) {
 				oursHeaderIdx[oursMS] = len(merged) - 1
 			}
-			// `anyTaskBullet`, not `mergeTaskLine`: an ID-less bullet still
-			// bounds where this milestone's task list ends, and testing for an
-			// ID here anchored the carry on the milestone HEADER instead,
-			// splicing the carried task above every existing task.
+			// Both maps: `mergeTaskLine` for real tasks, `anyTaskBullet` for
+			// every checkbox bullet. Testing only for an ID anchored the carry on
+			// the milestone HEADER for a milestone of hand-written tasks,
+			// splicing it above everything; recording only `anyTaskBullet`
+			// anchored it on a sample inside a fenced block. The anchor prefers
+			// the first and falls back to the second.
 			if anyTaskBullet(line) {
-				oursTaskIdxs[oursMS] = append(oursTaskIdxs[oursMS], len(merged)-1)
+				oursAnyTaskIdxs[oursMS] = append(oursAnyTaskIdxs[oursMS], len(merged)-1)
+				if _, _, hasID := mergeTaskLine(line); hasID {
+					oursIDTaskIdxs[oursMS] = append(oursIDTaskIdxs[oursMS], len(merged)-1)
+				}
 			}
 		}
 		// Recorded AFTER the append for the same reason the anchor maps are, and
@@ -671,7 +690,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		}
 		pending := make(map[int][]carriedBlock)
 		for _, tt := range carried {
-			anchor, anchorOK := milestoneCarryAnchor(merged, oursTaskIdxs, oursHeaderIdx, tt.milestone)
+			anchor, anchorOK := milestoneCarryAnchor(merged, oursIDTaskIdxs, oursAnyTaskIdxs, oursHeaderIdx, tt.milestone)
 			if !anchorOK {
 				fmt.Fprintf(os.Stderr,
 					"  \033[33m⚠ %s: incoming task %s belongs to %s, which this side does not have — not auto-resolving; escalating to the reconciliation agent\033[0m\n",

@@ -412,6 +412,18 @@ var anyTaskBulletRe = regexp.MustCompile(`^\s*-\s+\[.\]\s`)
 
 func anyTaskBullet(line string) bool { return anyTaskBulletRe.MatchString(line) }
 
+// isFenceDelimiter reports whether the line opens or closes a fenced code block.
+// Markdown allows ``` and ~~~, with an optional info string after the opener.
+//
+// Anything inside a fence is a sample, not structure. PROGRESS.md milestones
+// routinely carry one showing how to write a follow-up — a checkbox bullet that
+// `anyTaskBullet` matches and that no reader should treat as a task. Without
+// this the carry anchored on it and was spliced INSIDE the fence.
+func isFenceDelimiter(line string) bool {
+	t := strings.TrimSpace(line)
+	return strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")
+}
+
 var mergeTaskLineRe = regexp.MustCompile(
 	`^\s*-\s+\[(.)\]\s+(?:(` + taskIDShapeOrdinal + `)|(` + taskIDShapeHandWritten + `):)`)
 

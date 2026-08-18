@@ -500,7 +500,28 @@ func lineIndentWidth(line string) int {
 // fallback exists for the genuinely empty milestone: without it the first task a
 // sibling adds to one has nowhere to land and is dropped from the only copy that
 // exists.
-func milestoneCarryAnchor(lines []string, taskIdxs map[string][]int, lastHeaderIdx map[string]int, ms string) (int, bool) {
+func milestoneCarryAnchor(lines []string, idTaskIdxs, anyTaskIdxs map[string][]int, lastHeaderIdx map[string]int, ms string) (int, bool) {
+	// ID-bearing bullets are preferred, and ID-less ones are only consulted when
+	// the milestone has none. Widening the recording to every checkbox bullet
+	// fixed a real bug — a milestone of hand-written tasks looked empty and the
+	// carry anchored on the header, above everything — but a checkbox bullet is
+	// not always a task. A sample inside a fenced code block, or a reviewer
+	// sign-off checklist written under a milestone's closing prose, is
+	// checkbox-shaped and is not work. Anchoring on those put the carry inside
+	// the fence, and below the closing prose, which is the placement #60 exists
+	// to prevent. Preferring real tasks means the ID-less path is reached only by
+	// a milestone that has no ID-bearing task at all, which is the case it was
+	// added for. (Fenced regions are skipped by the callers before either map is
+	// written, so a fence cannot reach even the fallback.)
+	idxs := idTaskIdxs[ms]
+	if len(idxs) == 0 {
+		idxs = anyTaskIdxs[ms]
+	}
+	return milestoneAnchorFrom(lines, idxs, lastHeaderIdx, ms)
+}
+
+func milestoneAnchorFrom(lines []string, taskIdxsForMS []int, lastHeaderIdx map[string]int, ms string) (int, bool) {
+	taskIdxs := map[string][]int{ms: taskIdxsForMS}
 	// The MAXIMUM `taskBodyEnd` over every task bullet in the milestone, not the
 	// last bullet's. Those differ whenever the milestone's final bullet is a
 	// NESTED child: `taskBodyEnd` bounds a body by the task's own indent, so
@@ -641,7 +662,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	}
 
 	// A duplicated milestone heading gets the same refusal as a duplicated task
-	// ID, for the same reason: msTaskIdxs/lastHeaderIdx are last-writer-wins
+	// ID, for the same reason: the anchor maps are last-writer-wins
 	// per milestone, so a header-shaped session note — `### M1: retro notes`
 	// under `## Session History`, written mid-run after requireUnambiguousMilestones
 	// already passed — would anchor a carried task into the history section, and
@@ -765,14 +786,25 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	// written and reported — never silently reconciled, never silently dropped.
 	wtInRegionID := map[string]bool{}
 	wtOrphanID := map[string]bool{}
-	wtTaskIdx := map[string]int{}     // task ID -> index of its bullet line here
-	wtTaskMS := map[string]string{}   // task ID -> the milestone it sits under here
-	msTaskIdxs := map[string][]int{}  // milestone -> indices of ALL its task bullets
-	lastHeaderIdx := map[string]int{} // milestone -> index of its header line
+	wtTaskIdx := map[string]int{}       // task ID -> index of its bullet line here
+	wtTaskMS := map[string]string{}     // task ID -> the milestone it sits under here
+	msIDTaskIdxs := map[string][]int{}  // milestone -> indices of its ID-bearing task bullets
+	msAnyTaskIdxs := map[string][]int{} // milestone -> indices of every task bullet
+	lastHeaderIdx := map[string]int{}   // milestone -> index of its header line
 	out := strings.Split(worktreeContent, "\n")
 
 	currentMS = ""
+	inFence := false
 	for i, line := range out {
+		// A fenced block is a sample, never structure: nothing inside it is a
+		// task, a milestone header or a section break.
+		if isFenceDelimiter(line) {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
 		if m := msHeaderRe.FindStringSubmatch(line); len(m) >= 2 {
 			currentMS = "M" + m[1]
 			lastHeaderIdx[currentMS] = i
@@ -786,7 +818,10 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		// no parseable ID cannot be reconciled by state, but it still bounds
 		// where this milestone's task list ends.
 		if currentMS != "" && !dupMS[currentMS] && anyTaskBullet(line) {
-			msTaskIdxs[currentMS] = append(msTaskIdxs[currentMS], i)
+			msAnyTaskIdxs[currentMS] = append(msAnyTaskIdxs[currentMS], i)
+			if _, _, hasID := mergeTaskLine(line); hasID {
+				msIDTaskIdxs[currentMS] = append(msIDTaskIdxs[currentMS], i)
+			}
 		}
 		wtLineMarker, wtLineID, wtLineOK := mergeTaskLine(line)
 		if !wtLineOK {
@@ -942,7 +977,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		// after its header when the milestone exists here but holds no tasks
 		// yet: otherwise the first task a sibling adds to an empty milestone
 		// has nowhere to land and is dropped from the only copy that exists.
-		at, ok := milestoneCarryAnchor(out, msTaskIdxs, lastHeaderIdx, mt.milestone)
+		at, ok := milestoneCarryAnchor(out, msIDTaskIdxs, msAnyTaskIdxs, lastHeaderIdx, mt.milestone)
 		if !ok {
 			warnings = append(warnings, fmt.Sprintf(
 				"task %s exists on main under %s, which this worktree's PROGRESS.md does not contain — not merged",
