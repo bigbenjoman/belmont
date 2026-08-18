@@ -22,7 +22,12 @@
   - **Why**: the orchestrating binary is pinned to Homebrew v0.11.0, which carries no instrumentation — P0-2's code exists only in this working tree — and neither `~/repo-3/.belmont/metrics/` nor `~/repo-4/.belmont/metrics/` exists (verified, not assumed). No figure was invented to fill the gap; the PRD is explicit that instrumentation reports nothing rather than guessing, and a baseline is the last place to break that.
   - **Asked of**: Ben Lavender. **The decision**: whether to run at least one milestone to `[v]` in each repo using a build of this tree, which is live agent work costing real tokens against two production repositories.
   - `BASELINE.md` §How to capture it holds the exact commands. Until then M11/P3-3 compares the read-path half and reports the cost half as unevidenced.
-- [ ] P0-4: Extraction census across all feature directories
+- [x] P0-4: Extraction census across all feature directories
+- [!] P0-4a: Wave structure needs revisiting — the census answered the open question YES — BLOCKED, needs tech-planning
+  - The PRD's open question: *"whether the extraction census in M1 finds any feature whose index alone exceeds 25,000 tokens. If one does, the read-path work in M4 stops being an optimisation and becomes a prerequisite for M3, and the wave structure changes."* **Five do** (`CENSUS.md`), against a pre-estimate of three.
+  - The pre-estimate was wrong in mechanism as well as magnitude: it assumed size implies indented narrative. **Three of the five contain no indented lines at all** — `repo-3/feat-015` is 795,799 B of task *head* lines with a single 11,542-character task line — so extraction moves 0–7.6% of them.
+  - **Asked of**: Ben Lavender / a tech-planning session. **The decision**: whether M4 moves ahead of M3 and the wave structure is re-cut. Only the tech-planning stage may create or restructure milestones (PRD §Constraints), so this is recorded rather than applied.
+  - Two knock-ons recorded in `CENSUS.md`: M5/P1-8's 400-char task-line limit is load-bearing rather than defensive (it is the only mechanism that would have prevented `feat-015`), and P3-1's migration list is seven features, not four.
 
 ### M2: The verify read (depends: M1)
 *Highest-scoring item in the backlog. Stop reading the same archives three times and stop recommending the largest read path.*

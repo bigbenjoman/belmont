@@ -315,6 +315,8 @@ func main() {
 		must(runBlockersCmd(os.Args[2:]))
 	case "metrics":
 		must(runMetricsCmd(os.Args[2:]))
+	case "extract":
+		must(runExtractCmd(os.Args[2:]))
 	case "sync":
 		must(runSyncCmd(os.Args[2:]))
 	case "version", "--version", "-v":
@@ -342,6 +344,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  belmont repair [--feature SLUG] [--dry-run] [--mechanical-only] [--apply-proposal FILE] [--yes] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont blockers [--feature SLUG] [--summary] [--root PATH] [--format text|json] [--color auto|always|never]")
 	fmt.Fprintln(w, "  belmont metrics --feature SLUG [--root PATH] [--format text|json]")
+	fmt.Fprintln(w, "  belmont extract --dry-run [--feature SLUG] [--root PATH] [--roots PATH,PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont sync [--root PATH]")
 	fmt.Fprintln(w, "  belmont recover [--list] [--merge SLUG] [--clean SLUG] [--clean-all] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
 	fmt.Fprintln(w, "  belmont steer [--feature SLUG] [--milestone M5] [--message \"text\" | --file PATH | -] [--root PATH]")
