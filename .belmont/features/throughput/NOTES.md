@@ -65,6 +65,12 @@
 ### Pattern
 - **Refuse, don't normalise, when vendor semantics diverge.** `summariseMetrics` now aggregates `Input` only across records sharing one `input_semantics`, and reports `null` + a stated reason + a per-tool breakdown otherwise. Normalising to a tool-independent quantity was the alternative and was rejected: it is correct only while every tool's semantics are known *and stay known*, so a new tool or a vendor redefinition silently re-arms the same wrong-but-plausible baseline. Records with no recorded definition are summable only with the same tool's — unknown never merges into a known definition.
 
+### Debugging
+- **`git merge-tree --write-tree --name-only <main> <branch>` enumerates a branch's conflicts without touching the working tree, the index, or any ref.** The right probe when a triage task is barred from changing git history — `origin/fix/wave-merge-state-loss` reports four conflicting files (`AGENTS.md`, `cmd/belmont/worktree.go`, and two knowledge docs) with nothing checked out.
+
+### Discovery
+- **`syncFeatureStateAfterMerge`'s wipe is still last-writer-wins for every file except `PROGRESS.md`.** `os.RemoveAll(dstFeature)` + `copyDir` (`cmd/belmont/worktree.go:397-398`) destroys anything an earlier sibling merge wrote into the feature dir that the merging worktree's fork-time copy does not contain. Only `PROGRESS.md` is rescued, by the read-before-wipe at `:395` and `mergeProgressState` at `:504` (called `:410`). The abandoned `origin/fix/wave-merge-state-loss` skipped the `RemoveAll` entirely in milestone mode and pinned it with `TestWaveMergeDoesNotDeleteSiblingFiles`; `main` has no equivalent test and no equivalent behaviour. Found while re-verdicting the branch — **an abandoned branch is still the best available inventory of a gap `main` has not closed**, so read what it fixed before deleting it, and record the residual rather than letting the deletion take the knowledge with it.
+
 ## Polish
 
 ### From verification [2026-08-18]
