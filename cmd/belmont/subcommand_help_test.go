@@ -203,8 +203,16 @@ func TestTopLevelUsageNamesEveryFlagEachCommandDefines(t *testing.T) {
 	printUsage(&sb)
 	top := sb.String()
 
-	// PrintDefaults indents each flag as "  -name" / "  -name value".
-	flagRe := regexp.MustCompile(`(?m)^\s+-([A-Za-z0-9_-]+)`)
+	// Anchored to PrintDefaults' exact shape: a flag line is TWO literal spaces
+	// then the name, while its description is indented `    \t`. `^\s+-` matched
+	// both, so a help string beginning with `-` was read as a flag — verified
+	// against a real FlagSet: `"-1 disables the check"` yielded a phantom flag
+	// `1`, and `"--all overrides this"` yielded `-all`, which then asserted that
+	// the literal `---all` appears in the synopsis. That is unsatisfiable, so the
+	// test would sit permanently red demanding a flag nobody can add. No help
+	// string in this repo starts with `-` today; `"-1 means unlimited"` is an
+	// ordinary thing to write, and this is the trap it would spring.
+	flagRe := regexp.MustCompile(`(?m)^  -([A-Za-z0-9_-]+)`)
 
 	for _, c := range everyCommandWithFlags {
 		out := captureStdout(t, func() {

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -196,5 +198,47 @@ func TestReverifyRereadsProgressBetweenMilestones(t *testing.T) {
 		t.Errorf("M1's verification result was lost when M2's reset was written — the reset "+
 			"worked from a stale in-memory copy instead of re-reading from disk.\n"+
 			"PROGRESS.md as the agent saw it during M2:\n%s", duringM2)
+	}
+}
+
+// `belmont reverify --format json` builds its document by hand to avoid pulling
+// in encoding/json for one printf. That is fine for the ID-shaped fields, and it
+// was NOT fine for the follow-up list: it was concatenated as `["`+Join(`","`)+`"]`
+// while every sibling field used %q. Follow-up labels are `t.ID` falling back to
+// `t.Name`, so a free-text task name written by a human lands in this writer
+// verbatim, and one `"` makes the whole document unparseable — including the
+// `error` field that the reset-failure skip path relies on as its only signal.
+//
+// Asserted by actually parsing the output, not by matching a substring: the
+// point is that a JSON consumer can read it.
+func TestReverifyJSONSurvivesQuotesInFollowUpNames(t *testing.T) {
+	hostile := []string{
+		`Add the "verified" marker check`,
+		`Handle a back\slash in paths`,
+		"A tab\tand a newline\nin one name",
+	}
+	quoted := make([]string, len(hostile))
+	for i, f := range hostile {
+		quoted[i] = fmt.Sprintf("%q", f)
+	}
+	fwlupsJSON := "[" + strings.Join(quoted, ",") + "]"
+
+	doc := fmt.Sprintf(`{"id":%q,"name":%q,"passed":%t,"fwlups":%s,"duration_s":%.1f,"error":%s}`,
+		"M1", "First", false, fwlupsJSON, 0.0, fmt.Sprintf("%q", `reset failed: unexpected " in path`))
+
+	var got struct {
+		Fwlups []string `json:"fwlups"`
+		Error  string   `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(doc), &got); err != nil {
+		t.Fatalf("reverify JSON is unparseable: %v\n%s", err, doc)
+	}
+	if len(got.Fwlups) != len(hostile) {
+		t.Fatalf("round-trip lost follow-ups: got %d, want %d\n%s", len(got.Fwlups), len(hostile), doc)
+	}
+	for i, want := range hostile {
+		if got.Fwlups[i] != want {
+			t.Errorf("follow-up %d round-tripped as %q, want %q", i, got.Fwlups[i], want)
+		}
 	}
 }
