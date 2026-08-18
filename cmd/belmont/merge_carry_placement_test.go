@@ -385,3 +385,114 @@ func TestBothMergePathsPlaceACarriedTaskTheSameWay(t *testing.T) {
 		}
 	}
 }
+
+// namesTask reports whether any warning mentions the task ID.
+func namesTask(warnings []string, id string) bool {
+	for _, w := range warnings {
+		if strings.Contains(w, id) {
+			return true
+		}
+	}
+	return false
+}
+
+// When a carry fails because the milestone is absent from this worktree's copy,
+// EVERY task lost with it has to be named. The children used to be swallowed by
+// the "travels inside its parent's block" skip, which ran before the anchor
+// lookup and so `continue`d past the warning: main named all three, this
+// function named one. The tasks are lost either way — that is the milestone
+// being absent — but `.belmont/` is `--assume-unchanged` inside a worktree, so
+// they exist in no commit and the warning is the only surviving record.
+func TestFailedCarryNamesEveryTaskItLoses(t *testing.T) {
+	master := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+
+### M2: Emitting
+- [ ] P0-M2-1: Parent
+  - [ ] P0-M2-2: Child
+    - [ ] P0-M2-3: Grandchild
+`
+	worktree := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+`
+	_, warnings := mergeProgressState(master, worktree)
+	for _, id := range []string{"P0-M2-1", "P0-M2-2", "P0-M2-3"} {
+		if !namesTask(warnings, id) {
+			t.Errorf("%s was dropped without any warning naming it — it is in no commit, so nothing else records it.\nwarnings: %v", id, warnings)
+		}
+	}
+}
+
+// A block written nested on main, landing on the MILESTONE anchor because its
+// parent could not be resolved here, must be flattened to top level. Carried
+// with main's indentation intact it becomes a child of whichever task sits last
+// in that milestone — the re-parenting #53 is about, reached from the other
+// side. Two inputs get here; both are covered.
+func TestFallbackToMilestoneAnchorFlattensTheBlock(t *testing.T) {
+	// (a) The parent is filed under a different milestone on each side.
+	t.Run("parent under a different milestone here", func(t *testing.T) {
+		master := `### M1: Parsing
+- [x] P0-M1-1: Parent
+  **Evidence**: p
+  - [ ] P0-M1-1a: NewChild
+`
+		worktree := `### M1: Parsing
+- [x] P0-M1-7: Something else
+  **Evidence**: s
+
+### M2: Emitting
+- [x] P0-M1-1: Parent
+  **Evidence**: p
+`
+		out, warnings := mergeProgressState(master, worktree)
+		assertCarriedAtTopLevel(t, out, "P0-M1-1a", "P0-M1-7")
+		if !namesTask(warnings, "P0-M1-1a") {
+			t.Errorf("the fallback was silent about placement: %v", warnings)
+		}
+	})
+
+	// (b) The parent's ID is duplicated on main, so it never enters masterOrder:
+	// neither missingHere nor wtInRegionID is true of it, and the only warning
+	// raised is the unrelated ambiguous-ID one.
+	t.Run("parent ID duplicated on main", func(t *testing.T) {
+		master := `### M1: Parsing
+- [x] P0-M1-1: Parent
+  - [ ] P0-M1-1a: NewChild
+- [x] P0-M1-1: Parent again
+`
+		worktree := `### M1: Parsing
+- [x] P0-M1-7: Something else
+  **Evidence**: s
+`
+		out, warnings := mergeProgressState(master, worktree)
+		assertCarriedAtTopLevel(t, out, "P0-M1-1a", "P0-M1-7")
+		if !namesTask(warnings, "P0-M1-1a") {
+			t.Errorf("the carried task was re-placed with no warning naming it: %v", warnings)
+		}
+	})
+}
+
+// assertCarriedAtTopLevel checks that `carried` was emitted at the same indent
+// as `sibling` — i.e. as its peer, not as its child.
+func assertCarriedAtTopLevel(t *testing.T, doc, carried, sibling string) {
+	t.Helper()
+	lines := strings.Split(doc, "\n")
+	ci, si := -1, -1
+	for i, l := range lines {
+		if strings.Contains(l, carried) {
+			ci = i
+		}
+		if strings.Contains(l, sibling) && si == -1 {
+			si = i
+		}
+	}
+	if ci == -1 {
+		t.Fatalf("%s was not carried at all:\n%s", carried, doc)
+	}
+	if si == -1 {
+		t.Fatalf("%s is missing from the output:\n%s", sibling, doc)
+	}
+	if lineIndentWidth(lines[ci]) > lineIndentWidth(lines[si]) {
+		t.Errorf("%s landed nested under %s, a task it has nothing to do with:\n%s", carried, sibling, doc)
+	}
+}

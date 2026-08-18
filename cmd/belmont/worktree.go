@@ -476,6 +476,29 @@ func lineIndentWidth(line string) int {
 	return len(line) - len(strings.TrimLeft(line, " \t"))
 }
 
+// dedentBlock shifts every line in a carried block left by `by` characters,
+// preserving the block's INTERNAL structure: a line indented deeper than the
+// block's own bullet stays deeper by the same amount, so a carried parent keeps
+// its own children.
+//
+// Never removes more whitespace than a line actually has. A blank line, or a
+// loose-list separator, has none to give, and clamping is what keeps it blank
+// rather than turning it into a stray fragment of the next line's text.
+func dedentBlock(block []string, by int) []string {
+	if by <= 0 {
+		return block
+	}
+	out := make([]string, len(block))
+	for i, l := range block {
+		cut := lineIndentWidth(l)
+		if cut > by {
+			cut = by
+		}
+		out[i] = l[cut:]
+	}
+	return out
+}
+
 // mergeProgressState reconciles master's PROGRESS.md with a worktree's copy,
 // keeping the most-advanced state for every task and every task line either
 // side has. Returns the merged content plus any warnings worth printing.
@@ -862,9 +885,6 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			continue // reconciled in place by the walk above
 		}
 		mt := masterTasks[id]
-		if missingHere[mt.parent] {
-			continue // travels inside its parent's block
-		}
 		// Anchor after the milestone's last task line — past its indented body,
 		// so the carry cannot land between a task and its own continuation — or
 		// after its header when the milestone exists here but holds no tasks
@@ -882,6 +902,23 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 				id, nonEmpty(mt.milestone, "an unknown milestone")))
 			continue
 		}
+		// A child travels inside its parent's block, so it is not carried in its
+		// own right — but this skip has to run AFTER the anchor lookup, not
+		// before it. Ordered first, it swallowed every descendant of a carry that
+		// then failed: master's M2 nesting P0-M2-1 > P0-M2-2 > P0-M2-3 against a
+		// worktree with no `### M2:` heading warned about P0-M2-1 alone, where
+		// this function warns about each of the three. The tasks are lost either
+		// way — that is the milestone being absent, not this skip — but
+		// `.belmont/` is `--assume-unchanged` in a worktree, so those tasks are
+		// in no commit and the warning is the only record that they existed.
+		// "Skipped with a warning, never silently dropped" is the guarantee, and
+		// it is about the naming, not the count. A child's milestone is its
+		// parent's (it is parsed from inside the parent's block), so whenever the
+		// parent's anchor lookup failed the child's has too, and it reaches the
+		// warning above rather than this line.
+		if missingHere[mt.parent] {
+			continue
+		}
 		depth := -1
 		if mt.parent != "" && wtInRegionID[mt.parent] {
 			if wtTaskMS[mt.parent] != mt.milestone {
@@ -891,7 +928,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 				// severityError. Fall back to the milestone anchor and say so,
 				// rather than relocating work across milestones on a guess.
 				warnings = append(warnings, fmt.Sprintf(
-					"task %s is nested under %s on main, which this worktree files under %s rather than %s — carried to the end of %s instead of under its parent",
+					"task %s is nested under %s on main, which this worktree files under %s rather than %s — carried to the end of %s at top level instead of under its parent",
 					id, mt.parent, nonEmpty(wtTaskMS[mt.parent], "no milestone"), mt.milestone, mt.milestone))
 			} else {
 				// Land it inside the parent's body, past the parent's own
@@ -914,6 +951,29 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			warnings = append(warnings, fmt.Sprintf(
 				"task %s on main nests %s, which already exists here in its own right — %s was carried without it, and the copy here was left as written",
 				id, d, id))
+		}
+		// A block that was written nested on main but is landing on the MILESTONE
+		// anchor (depth -1) must be flattened to top level first. Splicing it with
+		// main's indentation intact makes it a child of whichever task happens to
+		// sit last in that milestone — the exact re-parenting the parent anchor
+		// above exists to prevent, arrived at from the other direction. Two inputs
+		// reach here: a parent filed under a different milestone on each side
+		// (warned above, and the warning says "at top level" because of this), and
+		// a parent whose ID is duplicated on main, which never enters `masterOrder`
+		// so neither `missingHere` nor `wtInRegionID` is true of it.
+		if depth == -1 {
+			if by := lineIndentWidth(block[0]); by > 0 {
+				block = dedentBlock(block, by)
+				if !(mt.parent != "" && wtInRegionID[mt.parent]) {
+					// The other input, which had no warning of its own: main nests
+					// it under a task this side cannot resolve, so there is no
+					// parent to land under and no ambiguity report that mentions
+					// placement. Say where it actually went.
+					warnings = append(warnings, fmt.Sprintf(
+						"task %s is nested under %s on main, which this worktree cannot place — %s was carried to the end of %s at top level",
+						id, nonEmpty(mt.parent, "another task"), id, nonEmpty(mt.milestone, "its milestone")))
+				}
+			}
 		}
 		pending[at] = append(pending[at], carriedBlock{depth: depth, lines: block})
 		carried++

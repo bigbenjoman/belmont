@@ -121,9 +121,20 @@ func TestAutoUsageNamesTheMultiFeatureFlags(t *testing.T) {
 	if autoLine == "" {
 		t.Fatalf("no `belmont auto` line in the usage output:\n%s", usage)
 	}
-	for _, want := range []string{"--features", "--all"} {
+	// Asserted as the whole mode group, not as two bare flag names. `--all` on
+	// its own is a substring of `[--allow-dirty]`, which sits on this same line —
+	// so the loop passed with `| --all` deleted from the synopsis, and the half of
+	// issue #50 about `--all` had no working regression test at all. Same flaw,
+	// and the same fix, as the switch from flag names to descriptions in
+	// TestSubcommandHelpListsItsOwnFlags.
+	const modeGroup = "(--feature SLUG | --features a,b,c | --all)"
+	if !strings.Contains(autoLine, modeGroup) {
+		t.Errorf("the auto usage line does not name the three modes as %s:\n  %s", modeGroup, autoLine)
+	}
+	// Belt and braces: each mode in a form `--allow-dirty` cannot satisfy.
+	for _, want := range []string{"--feature SLUG", "| --features", "| --all)"} {
 		if !strings.Contains(autoLine, want) {
-			t.Errorf("the auto usage line omits %s, which is a real mode:\n  %s", want, autoLine)
+			t.Errorf("the auto usage line omits %q, which is a real mode:\n  %s", want, autoLine)
 		}
 	}
 }
