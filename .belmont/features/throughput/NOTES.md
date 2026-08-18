@@ -124,3 +124,25 @@
 **Root Cause**: Two schemas share a field name but not a definition. The per-tool parsers are individually correct (and the field names are *not* transposed — that trap was avoided and pinned by tests), but the divergence was recorded only in a comment at the parse site, not carried to the aggregation boundary where it actually bites.
 **Prevention**: When ingesting the same-named field from different vendors, record the semantic **at ingest** as data, not as a comment, and refuse to aggregate across sources whose semantics differ. A summary that silently mixes definitions produces a plausible wrong number — the exact failure mode the "never estimate" rule exists to prevent, arriving by a different door.
 **Source**: M1 / P0-2
+
+## Loop decisions
+
+### M1 — /belmont:loop session, 2026-08-18
+- **Fix rounds run: 2.** Round 1 = `P0-M1-FIX-1` … `FIX-7` (seven agents, sequential, one per task). Round 2 = `P0-M1-FIX-8`. **The circuit breaker fired at the end of round 2** and M1 was settled rather than entering a third round.
+- **Tasks left at `[x]`: none.** `P0-M1-FIX-8` was moved to `[!]` per the settle rule — delivered, all five acceptance criteria passed, but verification declined to promote it over one substantiated Warning. The objection and the one-sentence fix are on the task line.
+- **`P0-3` was deliberately not promoted.** Its read-path half verified and reproduces the PRD's figures exactly; the tokens/wall-clock half is recorded NOT CAPTURED. A task reading `[v]` while its stated Solution is undelivered is the exact failure the `[x]`/`[v]` split exists to prevent.
+- **Verification passes: 3.** Full (both agents), focused after round 1 (both agents), focused after round 2 (verification only — `git diff -- cmd/` was empty, so there was no code to review; the deviation was recorded in the brief rather than hidden, and the agent was told that finding any Go change would itself be Critical).
+
+## Root Cause Patterns
+
+### [2026-08-18] Pattern: a self-pacing loop that trusts its own prompt acts on stale state
+**Issue**: A `/loop` firing carried a state snapshot four rounds out of date — it described a completed task as just-dispatched and five verified tasks as still `[x]`. Acting on it would have re-dispatched finished work, re-run a verification that had already passed, and raced a live agent mid-write on `PROGRESS.md`.
+**Root Cause**: The loop recipe embeds a state *copy* in the prompt it re-fires. The copy is correct when written and wrong the moment work advances, and nothing in the mechanism invalidates it. Only step 0's instruction to confirm against `belmont status` rather than trust the named milestone prevented the damage.
+**Prevention**: A recurring prompt must carry **pointers to state, never copies of it** — the file to read and the command to run, not the values. Where a snapshot genuinely helps a reader, label it as one and put the re-read instruction above it, not below. This is the same class as M9's hand-appended master narrative drifting from computed state, which is why M9 generates that file rather than maintaining it.
+**Source**: M1 / `/belmont:loop` session
+
+### [2026-08-18] Pattern: the batch documented a pattern and then reproduced it three times
+**Issue**: Round 1 wrote the rule "state a measured figure once, in one canonical file, and have every other document link to it" into `NOTES.md`, where every subsequent agent read it. Round 1 then left a retracted branch verdict live in two files, a caveat falsified by its own sibling task, and a canonical document contradicting its own numbers. Round 2 fixed all three — and introduced a fourth over-asserted claim in the very sentence it corrected.
+**Root Cause**: Writing a prevention rule into a file an agent reads does not make the agent apply it at the moment of writing. The rule is retrospective knowledge; the failure is a live editing habit. Nothing mechanical connects them — no gate, no check, no test.
+**Prevention**: Treat "a claim about a relation between measurements" as requiring the same evidence bar as the measurements themselves. Before writing *usually*, *normally*, *always* or *the upper bound*, measure the distribution over the full population, not over the handful of cases in front of you — the estate-wide answer here (75 of 82 exactly equal) was nothing like the five-register sample suggested. Where that is disproportionate, state the sample size in the sentence.
+**Source**: M1 / `P0-M1-FIX-8`
