@@ -98,6 +98,11 @@
 - Round-3 self-validation says "20 lines added, 3 removed" in CENSUS.md; `git show --numstat` says 18/2 — a restated figure inside the self-validation of a task about restated figures — `MILESTONE-M1.done.md` round-3 §Self-Validation criterion 4
 - `CENSUS.md:162` opens `**RECONCILED by …**` where the two sibling annotations use `**CORRECTED by …**` — deliberate (withdrawal-and-restatement, not a wrong number) but it breaks the visual grep; settle the annotation vocabulary before the next one is written
 
+### From verification [2026-08-18] (P0-M1-FIX-9/FIX-10 round 4)
+- `CENSUS.md:181-182` — "term (ii) … is frequently zero" is hedged correctly but its supporting figure (term (ii) > 0 in 5 of 82 registers) lives only on the PROGRESS task line; the canonical file should carry it — folded into `P0-M1-FIX-11` as an optional append
+- `NOTES.md:54` — FIX-10's correction parenthetical lands directly after the pre-existing `(measured 2026-08-18, P0-M1-FIX-8)` attribution, two adjacent parentheticals; momentarily reads as if the attribution was what got corrected — merge or move to end of bullet if the line is next touched
+- `MILESTONE-M1.done.md` FIX-10 log — FWLUP-1 as filed had two halves (wrong relation + figure restated beside a canonical pointer); FIX-10 fixed the first and deliberately retained the example per its brief, but the log's "Out of scope: None" doesn't say so — noted here so a future sweep doesn't re-raise the retained example as an oversight
+
 ## Root Cause Patterns
 
 ### [2026-08-18] Pattern: a new state write was only ever exercised on one of two execution paths
@@ -164,3 +169,4 @@
 **Root Cause**: Each fix round edits precisely the clause the objection quotes; sibling claims in the same section are never re-read against the new evidence, so the section converges one sentence per round instead of once.
 **Prevention**: When a fix withdraws an over-assertion, re-read the whole enclosing section against the same measurement before committing — every claim of the same shape (*usually*, *normally*, *exceeds*, *below*) either re-derives from the data or receives the same annotation in the same round.
 **Source**: M1 / P0-M1-FIX-8 round 3 (code review) → P0-M1-FIX-9
+**Addendum (2026-08-18, round 4)**: fifth instance, and this time in the correcting text itself — FIX-9's own `CORRECTED by` blockquote dropped the "class of" qualifier its PROGRESS/NOTES siblings carry and misplaced the clause "one paragraph up" (it is three blocks up) → `P0-M1-FIX-11`. Corollary to the prevention rule: a sentence *describing* a correction is itself a claim about the document and gets the same read-it-against-the-page check as a claim about the data.
