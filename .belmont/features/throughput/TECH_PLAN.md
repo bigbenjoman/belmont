@@ -486,17 +486,34 @@ Open upstream PRs opportunistically. Never block a milestone on one.
 
 ```bash
 cd ~/repos/belmont
-go build ./...
+go build ./cmd/belmont               # NB: plain build does not embed skills/agents
 go test ./cmd/belmont
 go test -race ./cmd/belmont          # required for P0-1
-go test -tags eval ./cmd/belmont     # Tier 1, offline, free
+go test -tags eval ./cmd/belmont     # Tier 1, offline, free, in CI
 go vet ./...
+staticcheck ./...                    # runs in CI and is currently clean — keep it so
 gofmt -l cmd/                        # must print nothing
-bash scripts/generate-skills.sh      # must succeed; diff the output
+bash scripts/generate-skills.sh --check
 belmont validate --root ~/repos/belmont
 ```
 
-Tier 2 (`BELMONT_EVAL_LIVE=1`) drives a real tool and costs tokens. Run it for M4, M6 and M8; not on every milestone.
+**Tier 2 is mandatory on every prose milestone, not just the expensive ones.** `AGENTS.md:59` is explicit: *"Tier 1 **cannot** license a prose change — nothing in it reads a `SKILL.md`."* Tier 1 does not even compile under plain `go test`, and it never reads skill prose at all.
+
+| Milestone | What it changes | Tier 2 |
+|---|---|---|
+| M2 | `_src/verify.md`, both review agent files — **pure prose** | **required** |
+| M4 | `slice.go` plus four `_src/*.md` and a partial — spans both | required |
+| M6 | `auto_decide.go`, `auto_loop.go`, `guards.go` — behavioural | required |
+| M7 | the per-host skill build — **prose payload** | **required** |
+| M8 | agent frontmatter + dispatch partial (P1-13) | required |
+
+M2 and M7 were previously Tier-1-only; corrected 2026-08-18 during `/belmont:review-plans`. They are the two milestones whose entire deliverable is prose, so they are exactly the ones Tier 1 cannot speak to.
+
+```bash
+BELMONT_EVAL_LIVE=1 go test -tags eval -timeout 0 -run TestEvalLive ./cmd/belmont
+```
+
+`-timeout 0` is **required**, not optional — without it Go's 10-minute default orphans the live tool child (`AGENTS.md:59`). Tier 2 drives a real tool and costs tokens; record that spend against P0-2's instrumentation rather than letting it sit outside the measurement.
 
 ---
 
