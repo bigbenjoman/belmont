@@ -496,3 +496,77 @@ func assertCarriedAtTopLevel(t *testing.T, doc, carried, sibling string) {
 		t.Errorf("%s landed nested under %s, a task it has nothing to do with:\n%s", carried, sibling, doc)
 	}
 }
+
+// Issue #60. `TestBothMergePathsPlaceACarriedTaskTheSameWay` compares `id@indent`
+// per task, so it is blind to WHERE a carried task sits relative to the non-task
+// lines around it — and that is exactly where the two paths used to disagree.
+// The copy path anchored on `taskBodyEnd` of the last task; the conflict path
+// anchored on the last non-blank line of the milestone's block. Identical for
+// every milestone that ends on its last task's body, and different the moment
+// one ends with prose: the carried task landed above the closing note on one
+// path and below it on the other, decided only by whether git registered a
+// conflict.
+//
+// Both now call `milestoneCarryAnchor`.
+func TestBothMergePathsAnchorPastAMilestonesClosingProse(t *testing.T) {
+	base := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+
+Closing note for M1, at column zero.
+`
+	ours := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+  **Evidence**: commit aaa111
+
+Closing note for M1, at column zero.
+`
+	theirs := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+  **Evidence**: commit aaa111
+- [ ] P0-M1-9: Emit a summary
+
+Closing note for M1, at column zero.
+`
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		t.Fatal("the conflict resolver declined a file of legal markers")
+	}
+	conflictOut := readFile(t, filepath.Join(root, rel))
+	syncOut, _ := mergeProgressState(theirs, ours)
+
+	// Placement is measured against the closing note, not against the other
+	// tasks — comparing task IDs alone is what let this through.
+	place := func(doc string) string {
+		lines := strings.Split(doc, "\n")
+		task, note := -1, -1
+		for i, l := range lines {
+			if strings.Contains(l, "P0-M1-9") {
+				task = i
+			}
+			if strings.HasPrefix(l, "Closing note") && note == -1 {
+				note = i
+			}
+		}
+		switch {
+		case task == -1:
+			return "the carried task is absent"
+		case note == -1:
+			return "the closing note is absent"
+		case task < note:
+			return "carried task above the closing note"
+		default:
+			return "carried task below the closing note"
+		}
+	}
+	got, want := place(syncOut), place(conflictOut)
+	if got != want {
+		t.Errorf("the two merge paths disagree about placement, and only git decides which one runs.\n"+
+			"mergeProgressState:      %s\nresolveProgressConflict: %s\n\ncopy path:\n%s\nconflict path:\n%s",
+			got, want, syncOut, conflictOut)
+	}
+	// And both must keep it with the tasks rather than stranding it below the
+	// prose — agreeing on the wrong answer would satisfy the comparison above.
+	if got != "carried task above the closing note" {
+		t.Errorf("both paths stranded the carried task below the milestone's closing prose: %s", got)
+	}
+}
