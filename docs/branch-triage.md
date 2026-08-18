@@ -102,11 +102,23 @@ section is now held to — and the bar an `abandon` verdict has to clear, being 
 recommendation to destroy — is that an *"already on `main`"* claim names the
 commit **and** shows its content on `main` (grep the heading, cite the lines),
 and a *"superseded"* claim names the mechanism on `main` and cites the lines
-implementing it. `origin/fix/worktree-git-excludes` was re-checked to that bar
-and holds (`writeWorktreeGitExcludes` is absent from `cmd/`, with the three
-removal comments at `worktree.go:286`, `worktree_state_test.go:60`,
+implementing it. **Two of the rows below `feat/maintenance-ci` have since been
+re-audited to that bar.** `origin/fix/worktree-git-excludes` was re-checked by
+`P0-M1-FIX-3` and holds (`writeWorktreeGitExcludes` is absent from `cmd/`, with
+the three removal comments at `worktree.go:286`, `worktree_state_test.go:60`,
 `steer_test.go:148`, and `main`'s `worktree-state-isolation.md` is a superset of
-the branch's version). The rows below it were not re-audited to that bar.
+the branch's version). `origin/fix/wave-merge-state-loss` was re-checked by
+`P0-M1-FIX-5`: the abandon verdict holds, but its stated reason was wrong and is
+replaced in the row itself. **The two rows that remain — the pre-rebase backup
+branches `origin/backup/loop-efficiency-pre-rebase` and
+`origin/backup/state-readers-pre-rebase` — have not been re-audited to this
+bar.**
+
+*Sentence corrected 2026-08-18 (`P0-M1-FIX-8`).* This paragraph previously closed
+*"The rows below it were not re-audited to that bar"*, which stopped being true
+the moment `P0-M1-FIX-5` re-audited the immediately following row. No verdict was
+re-opened in making the correction, and the rows in this document's other
+sections remain a known, deliberately deferred gap.
 
 | Branch | Last commit | Reason |
 |---|---|---|
@@ -235,3 +247,17 @@ third is a consequence of correcting one of them:
   cherry-picked as `23e71008`. The other, `7a9b7b56`, is superseded and named as
   such. Abandon still stands, now on evidence rather than on a commit count.
   Headline bullet and the section preamble corrected to match.
+- 2026-08-18 — `origin/fix/wave-merge-state-loss` re-verdicted (`throughput`
+  P0-M1-FIX-5). **Abandon still stands, but by a different mechanism.** `main`
+  does not scope the sync per milestone, as the old reason claimed; it reads
+  master's `PROGRESS.md` before the wipe and union-merges it back via
+  `mergeProgressState`. The branch's 251-line test file and its entire
+  alternative implementation are named, as is the residual gap `main` still has
+  — `syncFeatureStateAfterMerge` wipes every file in the feature dir except
+  `PROGRESS.md`. Row reason replaced. *(This entry was omitted at the time and is
+  added retrospectively by `P0-M1-FIX-8`, 2026-08-18.)*
+- 2026-08-18 — §*Abandon — content verified on `main`* preamble corrected
+  (`throughput` P0-M1-FIX-8). Its closing caveat still said the rows below
+  `worktree-git-excludes` were unaudited, which `P0-M1-FIX-5` had already made
+  false. The two rows re-audited to the stated bar are now named, and so are the
+  two that still are not. No verdict was re-opened.

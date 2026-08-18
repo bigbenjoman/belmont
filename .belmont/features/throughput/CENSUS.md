@@ -135,10 +135,29 @@ to every file. It does not hold. **Three of the five gain essentially nothing fr
 | `repo-3/feat-015` | 167 / 84,593 B | 77,976 B of 1,022,749 (7.6%) |
 
 *An indented line is a non-blank line beginning with a space or tab, and every byte figure here
-counts each line plus its newline, as `censusFeature` does. Indentation is the upper bound on what
-extraction could move; what it does move is smaller, because only a task's own body is detail —
-`censusFeature` claims lines via `taskBodyEnd`, so an indented line that sits under a heading
-rather than under a task stays in the index.*
+counts each line plus its newline, as `censusFeature` does. Indentation is **approximately** the
+movable content, not a strict upper bound on it, and the two quantities differ in both directions.
+`censusFeature` claims every line index from a task line to `taskBodyEnd`, so: **(i)** an indented
+line that sits under a heading rather than under a task is never claimed and stays in the index —
+usually the larger term, and why "detail moved" normally comes in below the indented total; and
+**(ii)** a blank line *inside* a task's body **is** claimed, and a blank line is not an indented
+line, so it adds its newline to the moved bytes. Where a register has no indentation outside a task
+body, only (ii) is left and moved exceeds indented — which is exactly the case for
+`repo-3/feat-070` below: **141,001 B moved against 140,957 B indented, a difference of
+44 B**. Re-derived from the register on disk rather than inferred: all 533 of its indented lines
+lie inside a task body (term (i) is zero) and its task bodies contain exactly **44 blank lines**,
+one newline each. No total in this document changes.*
+
+> **CORRECTED by `P0-M1-FIX-8` (2026-08-18).** The paragraph above previously asserted
+> *"Indentation is the upper bound on what extraction could move; what it does move is smaller"* —
+> which this document's own figures contradict for `repo-3/feat-070` (141,001 B moved,
+> 140,957 B indented). The sentence is withdrawn and restated; **both numbers were right, only the
+> claim relating them was wrong**, and no figure, table or conclusion in this document changes. The
+> cause is `censusFeature` (`cmd/belmont/extract.go`) claiming blank lines inside a task body,
+> which are not indented lines — described here, deliberately not fixed in code: the extraction
+> write path is M3/P1-1, and 44 B is 0.03% of 141,001, so nothing downstream of this document
+> moves. Both sides of the discrepancy were re-derived from `census.json` and the register on disk
+> before this correction was written, rather than taken from the report of them.
 
 **Two of the five carry zero indented lines — not three.** The remaining two over-threshold
 registers have plenty: `repo-4/feat-075` has **11,832** indented lines
