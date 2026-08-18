@@ -16,6 +16,7 @@ belmont auto --help                     # Synopsis + every flag auto really acce
 
 ```bash
 belmont install                         # Install skills/agents into current project
+belmont install --no-prompt             # Non-interactive: accept detected tools, no questions (for CI/scripts)
 belmont update                          # Update to latest release (auto-commits Belmont-managed files)
 belmont update --check                  # Check for updates without installing
 belmont update --no-commit              # Update without auto-committing
@@ -24,6 +25,7 @@ belmont status --format json            # Machine-readable status
 belmont status --feature auth           # Feature-specific status
 belmont status --color always           # Force ANSI-coloured markers (auto|always|never; auto honors NO_COLOR + TTY)
 belmont status --show-archived          # Include archived features in the listing (default: collapsed to a footer count)
+belmont status --max-task-name 80       # Widen the task-name column before it is truncated
 belmont auto --feature auth              # Run feature auto (auto-detect tool)
 belmont auto --feature auth --tool codex # Use specific tool
 belmont auto --feature auth --tool pi    # Run with Pi (local LLM via ~/.belmont/local-llms.json)
@@ -34,6 +36,8 @@ belmont auto --all                       # Run all pending features in parallel
 belmont auto --all --max-parallel 2      # Cap concurrent features (parallel within wave, merges batched post-wave)
 belmont auto --all --max-parallel 1      # Strict serial: each feature merges before the next starts
 belmont auto --feature auth --allow-dirty # Skip clean-working-tree preflight (not recommended)
+belmont auto --feature auth --dry-run     # Show the execution plan without running it
+belmont auto --feature auth --max-failures 2 # Stop after N CONSECUTIVE failed phases (default 3)
 belmont reverify --feature my-feature     # Re-verify all completed milestones
 belmont reverify --feature my-feature --from M3 --to M10  # Re-verify specific range
 belmont reverify --feature my-feature --tool codex  # Use specific tool

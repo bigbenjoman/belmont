@@ -346,21 +346,21 @@ var commandSynopsis = []struct {
 	Args string
 	Note string
 }{
-	{Name: "install", Args: "[--source PATH] [--project PATH] [--tools all|none|claude,codex,...]"},
+	{Name: "install", Args: "[--source PATH] [--project PATH] [--tools all|none|claude,codex,...] [--no-prompt]"},
 	{Name: "update", Args: "[--check] [--force] [--no-commit]"},
-	{Name: "status", Args: "[--root PATH] [--feature SLUG] [--format text|json] [--color auto|always|never]"},
+	{Name: "status", Args: "[--root PATH] [--feature SLUG] [--format text|json] [--color auto|always|never] [--max-task-name N] [--show-archived]"},
 	{
 		Name: "auto",
-		Args: "(--feature SLUG | --features a,b,c | --all) [--from M1] [--to M5] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--policy autonomous|milestone|every_action] [--max-iterations N] [--max-parallel N] [--allow-dirty] [--root PATH]",
+		Args: "(--feature SLUG | --features a,b,c | --all) [--from M1] [--to M5] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--policy autonomous|milestone|every_action] [--max-iterations N] [--max-parallel N] [--max-failures N] [--allow-dirty] [--dry-run] [--root PATH]",
 		Note: "(alias: belmont loop)",
 	},
-	{Name: "reverify", Args: "[--feature SLUG] [--from M1] [--to M5] [--root PATH] [--format text|json]"},
+	{Name: "reverify", Args: "[--feature SLUG] [--from M1] [--to M5] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]"},
 	{Name: "repair", Args: "[--feature SLUG] [--dry-run] [--mechanical-only] [--apply-proposal FILE] [--yes] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]"},
 	{Name: "blockers", Args: "[--feature SLUG] [--summary] [--root PATH] [--format text|json] [--color auto|always|never]"},
 	{Name: "sync", Args: "[--root PATH]"},
 	{Name: "recover", Args: "[--list] [--merge SLUG] [--clean SLUG] [--clean-all] [--force] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]"},
 	{Name: "steer", Args: "[--feature SLUG] [--milestone M5] [--message \"text\" | --file PATH | -] [--root PATH]"},
-	{Name: "validate", Args: "[--feature SLUG] [--root PATH] [--format text|json]"},
+	{Name: "validate", Args: "[--feature SLUG] [--strict] [--root PATH] [--format text|json]"},
 	{Name: "version"},
 }
 
@@ -423,8 +423,20 @@ func parseCommandFlags(set *flag.FlagSet, args []string, name string) (handled b
 // defaults.
 //
 // The synopsis comes from commandSynopsis so it cannot drift from `belmont
-// --help`; the flags come from the FlagSet itself, so a flag can never again be
-// real, documented in its own help string, and absent from every usage text.
+// --help`; the flags come from the FlagSet itself.
+//
+// Note precisely what each half buys, because the pair used to be stated as one
+// guarantee and the combined claim was false. Rendering both texts from
+// commandSynopsis makes them AGREE — it does nothing to make either COMPLETE,
+// and `TestCommandHelpAndTopLevelUsageAgree` cannot tell the difference: gut an
+// entry to `{Name: "recover"}` and eight real flags leave every usage text with
+// the agreement still perfect. Printing the FlagSet here is what makes `belmont
+// <cmd> --help` complete, and it is local to this function: `belmont --help`
+// renders from the table alone and was missing seven real flags when this was
+// written. Completeness of the top-level text is enforced by
+// `TestTopLevelUsageNamesEveryFlagEachCommandDefines`, which reads each
+// FlagSet's own output and fails on any flag the table omits — not by anything
+// in this file.
 func printCommandHelp(w io.Writer, set *flag.FlagSet, name string) {
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  "+usageLine(name))
