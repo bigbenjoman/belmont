@@ -113,7 +113,7 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 			// Appended, not assigned. Nothing can reach both this and the
 			// unreadable-worktree gap above today — `parallelLive` keeps
 			// `featurePath` at master, which is the branch that gap needs — but
-			// that is two conditions seventy lines apart holding a data-loss bug
+			// that is two conditions thirty-odd lines apart holding a data-loss bug
 			// shut, and the gap it would discard is the only record that a
 			// feature's counts are not live.
 			var gaps []liveOverlayGap
