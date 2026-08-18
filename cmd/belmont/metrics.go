@@ -39,6 +39,30 @@ import (
 // summariseMetrics reports a combined Input only when every contributing record
 // shares one definition. Where they differ it reports null with a stated reason
 // and the per-tool figures, exactly as it does for a host that cannot report.
+//
+// A third case sits between "reported" and "not reported": a phase that dies
+// before the tool does any model work still reports usage, all of it zero. The
+// three session-limit exits on 2026-08-18 produced exactly that — 3-4 s of
+// wall-clock each and {input:0, output:0, cache_creation:0, cache_read:0} from
+// claude's error `result` event. **Such records are counted, not excluded, and
+// they are flagged**: they stay in Phases, in WallMs and in the token totals
+// (where they add zero), and metricsSummary.ZeroUsage says how many there were,
+// per summary, per run and per tool.
+//
+// Excluding them was the alternative and is wrong on this file's own rules. A
+// record's wall-clock is a real measurement whatever the tokens say — the run
+// really did spend those seconds — so dropping the record would delete a figure
+// that was reported, which is the same class of act as inventing one. Zero is
+// also a real measurement here (it is why the token fields are pointers), and
+// nothing in a record proves *why* it is zero; "a failed phase" is an
+// interpretation, and a summariser is the wrong place to make it. What a reader
+// computing tokens-per-phase actually needs is the count of phases that recorded
+// no model work, so the denominator can be corrected knowingly. That is what the
+// flag gives them; an exclusion would have hidden it.
+//
+// Note ZeroUsage and Unreported are disjoint and answer different questions:
+// Unreported is "the host told us nothing" (null fields), ZeroUsage is "the host
+// told us nothing happened" (all-zero fields).
 
 // toolUsage is a token count a tool reported about itself. Every field came out
 // of the tool's own JSON; none is derived.
@@ -244,6 +268,13 @@ func buildMetricsRecord(runID, feature, milestone, phase, tool string, wallMs in
 // which ensureStateFiles gitignores: bookkeeping already accounts for 41-46% of
 // commit volume in these repos, and a metrics file per run would worsen that for
 // no analytical gain.
+// metricsIgnoreEntry is the .gitignore rule that keeps metrics out of git. It is
+// a constant because two call sites must agree on it byte-for-byte — install
+// (ensureStateFiles) and auto (ensureMetricsIgnored) — and ensureGitignoreEntry
+// tests for presence by substring, so a near-miss between the two would silently
+// write the rule twice and never report a thing.
+const metricsIgnoreEntry = ".belmont/metrics/"
+
 func metricsPath(root, feature string) string {
 	slug := feature
 	if slug == "" {
@@ -452,8 +483,31 @@ type metricsSummary struct {
 	CriticalWall  int64     `json:"critical_path_wall_ms"`
 	CriticalInput *int64    `json:"critical_path_input"`
 	Unreported    int       `json:"phases_without_usage"`
+	ZeroUsage     int       `json:"phases_with_zero_usage"`
 	ByTool        []toolAgg `json:"tools_detail"`
 	ByRun         []runAgg  `json:"runs_detail"`
+}
+
+// zeroUsageRecord reports whether a record carries a usage block in which every
+// reported figure is zero — the shape a phase produces when it dies before the
+// tool does any model work.
+//
+// A record with no usage at all is NOT one of these: that is Unreported, and the
+// two must stay apart or the summary would claim a host reported something it
+// never did. Any figure being non-zero disqualifies the record, cache included —
+// a phase that read cache and produced no output did work.
+func zeroUsageRecord(rec metricsRecord) bool {
+	reported := false
+	for _, v := range []*int64{rec.Input, rec.Output, rec.CacheCreation, rec.CacheRead} {
+		if v == nil {
+			continue
+		}
+		reported = true
+		if *v != 0 {
+			return false
+		}
+	}
+	return reported
 }
 
 // toolAgg is the per-tool breakdown. It exists so that refusing to combine Input
@@ -470,6 +524,7 @@ type toolAgg struct {
 	CacheCreation  int64          `json:"cache_creation"`
 	CacheRead      int64          `json:"cache_read"`
 	Unreported     int            `json:"phases_without_usage"`
+	ZeroUsage      int            `json:"phases_with_zero_usage"`
 }
 
 type runAgg struct {
@@ -482,6 +537,7 @@ type runAgg struct {
 	CacheCreation int64  `json:"cache_creation"`
 	CacheRead     int64  `json:"cache_read"`
 	Unreported    int    `json:"phases_without_usage"`
+	ZeroUsage     int    `json:"phases_with_zero_usage"`
 }
 
 // inputAggKey decides whether two records' Input may be added together.
@@ -587,6 +643,14 @@ func summariseMetrics(feature string, recs []metricsRecord) metricsSummary {
 			tagg.Unreported++
 			continue
 		}
+		// Counted, never skipped — see the ZeroUsage paragraph in this file's
+		// header for why a phase that recorded no model work still belongs in
+		// every total it contributes zero to.
+		if zeroUsageRecord(r) {
+			s.ZeroUsage++
+			agg.ZeroUsage++
+			tagg.ZeroUsage++
+		}
 		if r.Input != nil {
 			key := inputAggKey(r)
 			totalInput.add(key, *r.Input, r.CriticalPath)
@@ -671,6 +735,11 @@ func renderMetricsSummary(s metricsSummary) string {
 		formatDurationMs(s.CriticalWall), formatOptionalTokens(s.CriticalInput))
 	if s.Unreported > 0 {
 		fmt.Fprintf(&b, "  %d phase(s) reported no usage — wall-clock only, never estimated\n", s.Unreported)
+	}
+	if s.ZeroUsage > 0 {
+		fmt.Fprintf(&b, "  %d phase(s) reported zero tokens — counted, not excluded; subtract from the\n"+
+			"    denominator before quoting a per-phase figure (a phase that exits before the\n"+
+			"    tool does any model work still spent the wall-clock above)\n", s.ZeroUsage)
 	}
 	if len(s.ByTool) > 1 {
 		b.WriteString("\n  Tool      Input counts          Phases     Input   Output\n")

@@ -5,8 +5,9 @@
 ## Invariant
 
 - `belmont auto` refuses to start when `git status --porcelain --untracked-files=normal` reports anything.
+- **A run's own artefacts must never be able to trip that check.** Anything `auto` writes outside a worktree is either committed as part of the run or ignored by git before the first write. The preflight and this guarantee are one function (`runAutoPreflight`), in that order.
 - `belmont update` auto-commits Belmont-managed files (only those) after a successful self-update + skill reinstall.
-- The two together close the loop: `update` no longer leaves uncommitted state behind, and `auto` no longer trusts that the user committed before running.
+- The three together close the loop: `update` no longer leaves uncommitted state behind, `auto` no longer trusts that the user committed before running, and `auto` no longer dirties the tree it just insisted was clean.
 
 ## How it's enforced
 
@@ -15,7 +16,12 @@ In `cmd/belmont/autocmd.go`:
 - `requireCleanWorkingTree(root)` (near `validateRepoState`) runs `git status --porcelain --untracked-files=normal`. Non-empty output → error. Returns nil silently when the path isn't a git repo (rare but possible — `auto` will fail downstream anyway with a clearer message).
   - Path classification via `pathIsBelmontManaged` against `belmontManagedPaths` (`.agents/belmont`, `.agents/skills/belmont`, `.claude/agents/belmont`, `.claude/commands/belmont`, `.codex/belmont`, `.cursor/rules/belmont`, `.windsurf/rules/belmont`, `.gemini/rules/belmont`, `.copilot/belmont`, `AGENTS.md`). When any porcelain entry matches, the error message names the `belmont update` situation explicitly; otherwise it's a generic dirty-tree warning.
   - Note: `strings.TrimSpace` on the porcelain output corrupts the first line — porcelain entries start with a status code that may include a leading space (e.g. ` M path`). Use `strings.TrimRight(out, "\n")` instead.
-- `runAutoCmd` calls `requireCleanWorkingTree(absRoot)` once after tool resolution, before dispatching to `runLoop` / `runAutoMultiFeature` / `runAutoParallel`. One check covers every dispatch path. Bypassed by `--allow-dirty` (explicit opt-out) and `--dry-run` (no merges happen).
+- `runAutoCmd` calls `runAutoPreflight(absRoot, allowDirty, dryRun)` once after tool resolution, before dispatching to `runLoop` / `runAutoMultiFeature` / `runAutoParallel`. One call covers every dispatch path. It does two things:
+  1. `requireCleanWorkingTree(root)` unless `--allow-dirty` (explicit opt-out) or `--dry-run` (no merges happen).
+  2. `ensureMetricsIgnored(root)` — `ensureGitignoreEntry(root, metricsIgnoreEntry)`, and when that had to *write* the entry, `git add -- .gitignore` + `git commit -m "belmont: gitignore .belmont/metrics/" -- .gitignore`. Skipped entirely on `--dry-run`, which records no metrics and must not mutate the repo.
+- **The order between them is the design, not an accident.** `ensureStateFiles` writes the metrics ignore rule at *install* time only, so every project installed before the metrics feature existed has no rule; the first instrumented run then leaves `?? .belmont/metrics/` and the *next* run is refused (observed 2026-08-18 against a v0.11.0 install — `P0-M1-FIX-12`). The rule therefore has to be guaranteed on the auto path too. But `.gitignore` is a tracked file, so writing it dirties the tree: doing it *before* the check would turn a command that worked yesterday into one that refuses to start, and not committing it at all would just move the dirt onto `.gitignore` and refuse the next run anyway. Second-and-committed is the only ordering where a failure is survivable — the current run still gets its rule, and the worst residue is one modified file with the exact `git commit` printed.
+- Only the originating root needs the rule: records are written to `loopConfig.metricsRoot()`, which stays on the root that started the run even under `runAutoParallel` (`P0-M1-FIX-1`), so no metrics file is ever created inside a worktree — and worktrees forked later inherit the committed rule anyway.
+- `metricsIgnoreEntry` (`metrics.go`) is a constant because `ensureGitignoreEntry` tests presence by **substring**: two call sites disagreeing by a byte would write the rule twice and report nothing.
 - `commitBelmontUpdate(root, version)` (in `runUpdate`) runs after the auto-install shell-out succeeds:
   1. Skip silently if `git rev-parse --is-inside-work-tree` doesn't return `"true"`.
   2. Filter `belmontManagedPaths` to paths that exist on disk via `os.Lstat` (claude-only installs don't have `.codex/belmont/` etc.; `git add` errors on missing pathspecs and aborts the whole call if any are absent).
@@ -42,14 +48,20 @@ Test coverage in `cmd/belmont/commit_update_test.go` exercises the happy path, n
 - **Auto-commit unrelated user changes too.** "Helpfully" sweeping the working tree into a Belmont commit is the opposite of what `--allow-dirty` users want, and would silently mix Belmont's update with the user's in-progress feature work. The pathspec on `git commit` is non-negotiable.
 - **Move the auto-commit to `belmont install`.** `install` runs in many contexts (initial setup, partial reinstalls, scripted bootstraps, CI). A surprise commit from any of those is intrusive. Keep the commit in `update` only — that's the path with a clear "I just rewrote your tooling" semantics.
 - **Always commit `--no-verify`.** Pre-commit hooks aren't optional in the repos that have them. Let them run; if they fail, leave the staged files in place and tell the user how to retry. (Confirmed user choice.)
+- **Guarantee the metrics ignore rule inside `appendMetricsRecord`.** It runs once per phase; re-reading and rewriting `.gitignore` there buys nothing over doing it once at startup and puts a file rewrite on the record-writing path. Same reason it is not in `recordPhaseMetrics`.
+- **Fix the untracked `.belmont/metrics/` by hand with `.git/info/exclude`.** That is the workaround the defect was first survived with, and it fixes one machine's checkout while every other clone, and the next project, hits it again. The tool has to write the rule.
+- **Read the "auto-commit unrelated user changes" rule as forbidding this commit.** It forbids sweeping the *user's* work in. `ensureMetricsIgnored` commits exactly one path it wrote itself, at most once per repository, with the same pathspec discipline `commitBelmontUpdate` uses — and it is the only thing that stops the fix from moving the dirt rather than removing it.
+
 - **Compute the `belmontManagedPaths` allow-list dynamically by scanning the `setupTool` switch.** Tempting because it'd auto-track new tools, but the allow-list is the explicit contract of "what `belmont update` is allowed to commit on the user's behalf." Reviewers should be able to grep one slice and know the answer. Keep it static; update it when adding a tool.
 
 ## Evidence
 
 - Reproduced and traced from a real Phase 2 / scrum-master M5 failure (April 2026) where `git merge` aborted on 14 paths under `.agents/belmont/` and `.agents/skills/belmont/` after a clean-looking auto run.
-- Unit coverage: `cmd/belmont/commit_update_test.go` → `TestCommitBelmontUpdate_*`, `TestRequireCleanWorkingTree_*`.
+- Unit coverage: `cmd/belmont/commit_update_test.go` → `TestCommitBelmontUpdate_*`, `TestRequireCleanWorkingTree_*`; `cmd/belmont/metrics_test.go` → `TestAutoPreflight*`, with `TestMetricsWriteDirtiesAnUnprotectedTree` as the negative control (same fixture, no preflight, tree goes dirty — an assertion that cannot fail proves nothing).
+- 2026-08-18, `~/repo-3` (installed under v0.11.0): an instrumented run wrote `.belmont/metrics/feat-004.jsonl`, `git status` reported `?? .belmont/metrics/`, and the documented `BASELINE.md` capture procedure — which has no install step — could not be run twice in a row.
 
 ## Revisions
 
 - 2026-04-30 — initial (clean-tree preflight in `runAutoCmd` + `update` auto-commit + `--allow-dirty` / `--no-commit` opt-outs).
 - 2026-08-07 — `cmd/belmont/main.go` split into 22 files in the same package; file paths in this entry repointed to their new homes. Symbol names are unchanged and remain the durable identifier.
+- 2026-08-18 — preflight became a pair: `runAutoPreflight` = refuse a dirty tree, then guarantee `.belmont/metrics/` is ignored (and commit that one line when it wrote it). Records the ordering rationale and three new rejected alternatives (`P0-M1-FIX-12`).

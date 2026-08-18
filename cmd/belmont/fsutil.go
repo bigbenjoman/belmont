@@ -173,8 +173,11 @@ func ensureStateFiles(projectRoot string) error {
 	ensureGitignoreEntry(projectRoot, ".belmont/worktrees/")
 	// Metrics are local-only by decision (P0-2): bookkeeping already accounts
 	// for 41-46% of commit volume in these repos, and a metrics file per run
-	// would worsen that for no analytical gain.
-	ensureGitignoreEntry(projectRoot, ".belmont/metrics/")
+	// would worsen that for no analytical gain. `belmont auto` guarantees the
+	// same rule for itself (ensureMetricsIgnored) — this one only covers
+	// projects that get installed, and every project installed before the
+	// metrics feature existed never runs this line again.
+	ensureGitignoreEntry(projectRoot, metricsIgnoreEntry)
 
 	// Create features directory
 	featuresDir := filepath.Join(stateDir, "features")

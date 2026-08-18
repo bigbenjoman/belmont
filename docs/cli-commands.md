@@ -228,6 +228,8 @@ The most common trigger is `belmont update` having rewritten files under `.agent
 
 Resolve via `git stash -u`, `git commit -am "..."`, or, as a last resort, bypass with `belmont auto --allow-dirty`. The `--dry-run` mode skips the check (no merges happen).
 
+Immediately **after** the check passes, `auto` guarantees its own artefacts cannot trip it next time: if `.gitignore` does not already ignore `.belmont/metrics/`, the rule is appended and committed on its own (pathspec-scoped, so nothing else is swept in). Without it, a project installed by a Belmont older than the metrics feature has no rule — the first instrumented run leaves `?? .belmont/metrics/` and the next run is refused. This happens at most once per project; a repo that already has the rule sees no edit and no commit, and `--dry-run` writes nothing at all.
+
 ## Update auto-commit
 
 `belmont update` follows a successful self-update + skill reinstall by staging and committing only Belmont-managed paths:

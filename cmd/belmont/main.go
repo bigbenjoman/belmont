@@ -1436,19 +1436,27 @@ func commitWorktreeFeatureState(wtPath, slug string) {
 }
 
 // ensureGitignoreEntry adds an entry to .gitignore if not already present.
-func ensureGitignoreEntry(root, entry string) {
+//
+// It reports whether it had to write the entry. Callers on the install path
+// ignore that (a freshly-installed project's .gitignore is the user's to commit
+// alongside everything else install wrote); ensureMetricsIgnored on the auto
+// path does not — .gitignore is a tracked file, so writing it dirties the very
+// working tree requireCleanWorkingTree refuses to start on, and only a caller
+// that knows an entry was *newly* written can settle that without committing on
+// every invocation.
+func ensureGitignoreEntry(root, entry string) bool {
 	gitignorePath := filepath.Join(root, ".gitignore")
 
 	content, err := os.ReadFile(gitignorePath)
 	if err == nil {
 		if strings.Contains(string(content), entry) {
-			return // already present
+			return false // already present
 		}
 	}
 
 	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return
+		return false
 	}
 	defer f.Close()
 
@@ -1457,6 +1465,7 @@ func ensureGitignoreEntry(root, entry string) {
 		f.WriteString("\n")
 	}
 	f.WriteString(entry + "\n")
+	return true
 }
 
 // commitBelmontState commits any uncommitted .belmont/ state files in the main repo.

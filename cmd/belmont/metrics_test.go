@@ -815,3 +815,260 @@ func TestInputSemanticsCoversEveryToolThatReportsUsage(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// P0-M1-FIX-12 — the instrumentation must not dirty the tree it is measuring
+// ---------------------------------------------------------------------------
+//
+// The defect: ensureGitignoreEntry(".belmont/metrics/") ran only from
+// ensureStateFiles, i.e. only on the install path. Any project installed before
+// the metrics feature existed therefore had no rule, so the first instrumented
+// run wrote .belmont/metrics/<feature>.jsonl, `git status` reported
+// `?? .belmont/metrics/`, and requireCleanWorkingTree refused the NEXT run.
+// Observed 2026-08-18 against a v0.11.0 install while running BASELINE.md
+// §How to capture it, whose procedure has no install step.
+//
+// The assertion that matters is therefore not "the entry is in .gitignore" but
+// "a metrics write leaves requireCleanWorkingTree passing", because that is the
+// thing that was broken. TestMetricsWriteDirtiesAnUnprotectedTree is its
+// negative control: same fixture, no preflight, and the tree goes dirty — an
+// assertion that cannot fail proves nothing.
+
+// gitignoreFixture is a git repo whose .gitignore does not mention Belmont's
+// metrics — a project installed by a Belmont older than the metrics feature.
+func gitignoreFixture(t *testing.T) string {
+	t.Helper()
+	dir := setupRepo(t)
+	mustWrite(t, filepath.Join(dir, ".gitignore"), "node_modules/\n.belmont/auto.json\n")
+	runGit(t, dir, "add", ".gitignore")
+	runGit(t, dir, "commit", "-q", "-m", "gitignore")
+	if err := requireCleanWorkingTree(dir); err != nil {
+		t.Fatalf("fixture must start clean: %v", err)
+	}
+	return dir
+}
+
+func writeOneMetricsRecord(t *testing.T, root string) {
+	t.Helper()
+	rec := buildMetricsRecord("r1", "feat", "M1", "IMPLEMENT_MILESTONE", "claude", 10,
+		&toolUsage{Input: 100, Output: 50}, true)
+	if err := appendMetricsRecord(root, rec); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+}
+
+func TestMetricsWriteDirtiesAnUnprotectedTree(t *testing.T) {
+	dir := gitignoreFixture(t)
+	writeOneMetricsRecord(t, dir)
+	if err := requireCleanWorkingTree(dir); err == nil {
+		t.Fatal("negative control failed: a metrics write must dirty a tree with no ignore rule, " +
+			"otherwise the positive test below cannot fail")
+	}
+}
+
+func TestAutoPreflightLetsMetricsBeWrittenWithoutDirtyingTheTree(t *testing.T) {
+	dir := gitignoreFixture(t)
+
+	if err := runAutoPreflight(dir, false, false); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	if !strings.Contains(string(data), metricsIgnoreEntry) {
+		t.Errorf(".gitignore missing %q:\n%s", metricsIgnoreEntry, data)
+	}
+	if strings.Contains(string(data), "node_modules/") == false {
+		t.Errorf("pre-existing rules must survive:\n%s", data)
+	}
+
+	writeOneMetricsRecord(t, dir)
+
+	// The whole point: the run after the instrumented one still starts.
+	if err := requireCleanWorkingTree(dir); err != nil {
+		t.Fatalf("a metrics write must not dirty the tree after the preflight:\n%v", err)
+	}
+}
+
+// TestAutoPreflightCommitsOnlyTheGitignoreItWrote — the .gitignore edit has to be
+// committed or the fix just moves the dirt onto a different file, and the commit
+// must not sweep in work the user had staged (possible under --allow-dirty).
+func TestAutoPreflightCommitsOnlyTheGitignoreItWrote(t *testing.T) {
+	dir := gitignoreFixture(t)
+	mustWrite(t, filepath.Join(dir, "src/app.py"), "user code\n")
+	runGit(t, dir, "add", "src/app.py")
+	before := runGit(t, dir, "rev-parse", "HEAD")
+
+	if err := runAutoPreflight(dir, true, false); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+
+	// Assert a NEW commit, not merely that HEAD~1..HEAD looks right: the
+	// fixture's own last commit also touches .gitignore, so without this the
+	// test passes with the whole fix reverted.
+	if after := runGit(t, dir, "rev-parse", "HEAD"); after == before {
+		t.Fatal("no commit was created — an uncommitted .gitignore trips the same preflight next run")
+	}
+	files := runGit(t, dir, "diff", "--name-only", "HEAD~1", "HEAD")
+	if files != ".gitignore" {
+		t.Errorf("commit touched %q, want only .gitignore", files)
+	}
+	if status := runGit(t, dir, "status", "--porcelain"); !strings.Contains(status, "A  src/app.py") {
+		t.Errorf("user's staged work must survive untouched, got:\n%s", status)
+	}
+}
+
+// TestAutoPreflightIsIdempotent — it runs once per invocation, and a project that
+// already has the rule must see no edit and no commit. A run per phase or a
+// commit per run would be its own kind of bookkeeping noise.
+func TestAutoPreflightIsIdempotent(t *testing.T) {
+	dir := gitignoreFixture(t)
+	if err := runAutoPreflight(dir, false, false); err != nil {
+		t.Fatalf("preflight 1: %v", err)
+	}
+	before := runGit(t, dir, "rev-list", "--count", "HEAD")
+	firstIgnore, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+
+	if err := runAutoPreflight(dir, false, false); err != nil {
+		t.Fatalf("preflight 2: %v", err)
+	}
+	if after := runGit(t, dir, "rev-list", "--count", "HEAD"); after != before {
+		t.Errorf("second preflight committed again: %s -> %s", before, after)
+	}
+	secondIgnore, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if string(firstIgnore) != string(secondIgnore) {
+		t.Errorf(".gitignore rewritten on the second run:\n%s\n---\n%s", firstIgnore, secondIgnore)
+	}
+}
+
+// TestAutoPreflightDryRunTouchesNothing — a dry run schedules nothing and records
+// no metrics, so it has nothing to protect and no business writing to the repo.
+func TestAutoPreflightDryRunTouchesNothing(t *testing.T) {
+	dir := gitignoreFixture(t)
+	before := runGit(t, dir, "rev-list", "--count", "HEAD")
+
+	if err := runAutoPreflight(dir, false, true); err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if strings.Contains(string(data), metricsIgnoreEntry) {
+		t.Errorf("dry run wrote to .gitignore:\n%s", data)
+	}
+	if after := runGit(t, dir, "rev-list", "--count", "HEAD"); after != before {
+		t.Errorf("dry run committed: %s -> %s", before, after)
+	}
+}
+
+// TestAutoPreflightStillRefusesADirtyTree — the ignore guarantee is added to the
+// preflight, not in place of it, and it runs second: a dirty tree is refused
+// before anything writes to .gitignore.
+func TestAutoPreflightStillRefusesADirtyTree(t *testing.T) {
+	dir := gitignoreFixture(t)
+	mustWrite(t, filepath.Join(dir, "src/app.py"), "user code\n")
+
+	err := runAutoPreflight(dir, false, false)
+	if err == nil {
+		t.Fatal("expected the clean-tree preflight to refuse")
+	}
+	if !strings.Contains(err.Error(), "working tree is not clean") {
+		t.Errorf("unexpected error: %v", err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if strings.Contains(string(data), metricsIgnoreEntry) {
+		t.Errorf("refused run must not have edited .gitignore:\n%s", data)
+	}
+}
+
+// TestEnsureMetricsIgnoredOutsideGit — best-effort: no git, no commit, no panic,
+// and the rule is still written.
+func TestEnsureMetricsIgnoredOutsideGit(t *testing.T) {
+	dir := t.TempDir()
+	ensureMetricsIgnored(dir)
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	if !strings.Contains(string(data), metricsIgnoreEntry) {
+		t.Errorf("missing %q:\n%s", metricsIgnoreEntry, data)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// P0-M1-FIX-12 — a phase that did no model work is flagged, never dropped
+// ---------------------------------------------------------------------------
+
+func TestZeroUsageRecordSeparatesAbsentFromZero(t *testing.T) {
+	i := func(v int64) *int64 { return &v }
+	cases := []struct {
+		name string
+		rec  metricsRecord
+		want bool
+	}{
+		{"all zero", metricsRecord{Input: i(0), Output: i(0), CacheCreation: i(0), CacheRead: i(0)}, true},
+		{"nothing reported", metricsRecord{}, false},
+		{"real spend", metricsRecord{Input: i(10), Output: i(5)}, false},
+		{"cache read only", metricsRecord{Input: i(0), Output: i(0), CacheCreation: i(0), CacheRead: i(7)}, false},
+		{"output only", metricsRecord{Input: i(0), Output: i(3)}, false},
+	}
+	for _, c := range cases {
+		if got := zeroUsageRecord(c.rec); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// TestSummariseFlagsZeroUsagePhasesWithoutExcludingThem pins the decision
+// recorded in metrics.go's header: a phase that exits before the tool does any
+// model work (three session-limit exits did exactly this on 2026-08-18, 3-4s
+// each) is counted in every total it contributes zero to, and reported
+// separately so a per-phase figure can be quoted knowingly.
+func TestSummariseFlagsZeroUsagePhasesWithoutExcludingThem(t *testing.T) {
+	i := func(v int64) *int64 { return &v }
+	recs := []metricsRecord{
+		{Run: "r1", Tool: "claude", WallMs: 2273353, Input: i(72), Output: i(19702),
+			CacheCreation: i(128496), CacheRead: i(4079831), InputSemantics: inputExcludesCacheRead},
+		{Run: "r1", Tool: "claude", WallMs: 4339, Input: i(0), Output: i(0),
+			CacheCreation: i(0), CacheRead: i(0), InputSemantics: inputExcludesCacheRead},
+		{Run: "r1", Tool: "claude", WallMs: 500},
+	}
+	s := summariseMetrics("feat", recs)
+
+	if s.Phases != 3 {
+		t.Errorf("phases: got %d, want 3 — a zero-usage record is still a phase", s.Phases)
+	}
+	if s.ZeroUsage != 1 {
+		t.Errorf("zero-usage: got %d, want 1", s.ZeroUsage)
+	}
+	if s.Unreported != 1 {
+		t.Errorf("unreported: got %d, want 1 — null usage and zero usage are different facts", s.Unreported)
+	}
+	if want := int64(2273353 + 4339 + 500); s.WallMs != want {
+		t.Errorf("wall_ms: got %d, want %d — a failed phase still spent its seconds", s.WallMs, want)
+	}
+	if s.Input == nil || *s.Input != 72 {
+		t.Errorf("input: got %s, want 72 — the zero record adds zero, it does not void the total",
+			formatOptionalTokens(s.Input))
+	}
+	if len(s.ByRun) != 1 || s.ByRun[0].ZeroUsage != 1 {
+		t.Errorf("per-run breakdown must carry the flag: %+v", s.ByRun)
+	}
+	if len(s.ByTool) != 1 || s.ByTool[0].ZeroUsage != 1 {
+		t.Errorf("per-tool breakdown must carry the flag: %+v", s.ByTool)
+	}
+
+	out := renderMetricsSummary(s)
+	if !strings.Contains(out, "zero tokens") {
+		t.Errorf("text output must surface the flag, not only the JSON:\n%s", out)
+	}
+
+	blob, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(blob), `"phases_with_zero_usage":1`) {
+		t.Errorf("baseline.json is built from this JSON; it must carry the flag:\n%s", blob)
+	}
+}

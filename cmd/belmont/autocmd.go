@@ -125,13 +125,8 @@ func runAutoCmd(args []string) error {
 		}
 	}
 
-	// Refuse to start against a dirty working tree — uncommitted changes risk
-	// blocking later worktree merges. Skipped on --dry-run (no merges happen)
-	// and --allow-dirty (explicit opt-out).
-	if !allowDirty && !cfg.DryRun {
-		if err := requireCleanWorkingTree(absRoot); err != nil {
-			return err
-		}
+	if err := runAutoPreflight(absRoot, allowDirty, cfg.DryRun); err != nil {
+		return err
 	}
 
 	// Multi-feature mode: --features or --all
@@ -288,6 +283,90 @@ func runAutoCmd(args []string) error {
 	}
 
 	return runLoop(cfg)
+}
+
+// runAutoPreflight is everything `belmont auto` does to the repository before it
+// schedules any work, on every path — single-feature, parallel-milestone and
+// multi-feature alike, since all three route through runAutoCmd.
+//
+// Two halves, and the order between them is load-bearing:
+//
+//  1. Refuse a dirty working tree, because uncommitted changes block the
+//     worktree merges at the end of the run. Skipped on --dry-run (nothing
+//     merges) and --allow-dirty (explicit opt-out).
+//  2. Guarantee that this run's own artefacts cannot dirty it.
+//
+// (2) runs *after* (1) deliberately. It may write one line to .gitignore, which
+// is a tracked file; doing that first would mean a failed auto-commit turned a
+// command that worked yesterday into one that refuses to start. Second, the
+// current run still gets its ignore rule, and the worst residue is a modified
+// .gitignore the user commits in one command.
+func runAutoPreflight(root string, allowDirty, dryRun bool) error {
+	if !allowDirty && !dryRun {
+		if err := requireCleanWorkingTree(root); err != nil {
+			return err
+		}
+	}
+	// A dry run schedules nothing and records no metrics, so it has no artefact
+	// to ignore and no business writing to the repository.
+	if dryRun {
+		return nil
+	}
+	ensureMetricsIgnored(root)
+	return nil
+}
+
+// ensureMetricsIgnored guarantees the .belmont/metrics/ ignore rule on the auto
+// path, where the metrics are actually written.
+//
+// ensureStateFiles writes the same rule, but only at install time — so every
+// project installed before the metrics feature existed has no rule and never
+// runs that line again. The result is specific and bad: the first instrumented
+// run writes .belmont/metrics/<feature>.jsonl, `git status` reports
+// `?? .belmont/metrics/`, and requireCleanWorkingTree refuses the *next* run.
+// The instrumentation dirties the tree it is measuring, and BASELINE.md's
+// capture procedure — which has no install step — cannot be run twice in a row.
+// Observed 2026-08-18 against a v0.11.0 install (P0-M1-FIX-12).
+//
+// Only the originating root matters. Records go to loopConfig.metricsRoot(),
+// which stays on the root that started the run even under runAutoParallel
+// (P0-M1-FIX-1), so no metrics file is ever created inside a worktree; and
+// worktrees forked later in the run inherit the rule from the commit below.
+//
+// Once per invocation, never per record: appendMetricsRecord runs once per phase
+// and re-reading and rewriting .gitignore there would put a file rewrite on that
+// path for no gain. Idempotent — a second run finds the entry and does nothing.
+//
+// The one-line edit is committed when this had to write it, because otherwise
+// the fix only moves the dirt: an uncommitted .gitignore trips the same preflight
+// on the next run. The commit carries an explicit pathspec, so unrelated work
+// (possible under --allow-dirty) is never swept in. Best-effort throughout —
+// a repository that cannot commit still gets the ignore rule, which is the half
+// that stops a metrics write from dirtying anything.
+func ensureMetricsIgnored(root string) {
+	if !ensureGitignoreEntry(root, metricsIgnoreEntry) {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s+ .gitignore: %s (metrics are local-only)%s\n", ansiDim, metricsIgnoreEntry, ansiReset)
+	if !isGitWorkTree(root) {
+		return
+	}
+	msg := "belmont: gitignore " + metricsIgnoreEntry
+	warn := func() {
+		fmt.Fprintf(os.Stderr, "%s⚠ could not commit .gitignore — commit it yourself or the next `belmont auto` will refuse to start:%s\n  git commit -m %q -- .gitignore\n",
+			ansiYellow, ansiReset, msg)
+	}
+	add := exec.Command("git", "add", "--", ".gitignore")
+	add.Dir = root
+	if err := add.Run(); err != nil {
+		warn()
+		return
+	}
+	commit := exec.Command("git", "commit", "-m", msg, "--", ".gitignore")
+	commit.Dir = root
+	if err := commit.Run(); err != nil {
+		warn()
+	}
 }
 
 // requireCleanWorkingTree returns an error if `git status --porcelain` reports
