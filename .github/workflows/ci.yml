@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.26'
 
       - name: Build
         run: go build ./cmd/belmont
@@ -72,7 +72,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.26'
 
       - name: Skills are generated from _src/ and _partials/
         run: ./scripts/generate-skills.sh --check
@@ -122,7 +122,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.26'
 
       # release.yml verifies host-only, and only on tag push — by which point
       # the commit is already tagged. This runs the same five targets per PR.

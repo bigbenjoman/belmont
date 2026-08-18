@@ -11,7 +11,7 @@ git clone git@github.com:your-username/belmont.git
 cd belmont
 ```
 
-2. Make sure you have **Go 1.21+** installed.
+2. Make sure you have **Go 1.26+** installed.
 
 3. Verify you can build:
 

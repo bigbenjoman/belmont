@@ -466,7 +466,7 @@ See [Feature Auto](docs/feature-auto.md) for full documentation.
 - No Docker required
 - No Python required
 
-**For contributors**: Go 1.21+ is needed to build from source. See [Developer Setup](#developer-setup-contributors).
+**For contributors**: Go 1.26+ is needed to build from source. See [Developer Setup](#developer-setup-contributors).
 
 ---
 

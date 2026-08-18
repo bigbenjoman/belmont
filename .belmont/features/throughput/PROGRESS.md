@@ -7,7 +7,7 @@
 
 ### M1: Toolchain, atomic writes & baseline
 *Bump the toolchain and clear the branch backlog, fix the non-atomic state write, then stand up the measurement the whole feature is judged against. Everything else depends on this. Six tasks, deliberately at the soft ceiling — see TECH_PLAN §Implementation Order for why the two prerequisites live here rather than in a milestone of their own.*
-- [ ] P0-12: Bring the toolchain onto a supported version
+- [x] P0-12: Bring the toolchain onto a supported version
 - [ ] P0-13: Triage the unmerged branch backlog
 - [ ] P0-1: Atomic state writes
 - [ ] P0-2: Token and wall-clock instrumentation
