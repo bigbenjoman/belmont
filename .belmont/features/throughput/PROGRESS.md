@@ -8,7 +8,12 @@
 ### M1: Toolchain, atomic writes & baseline
 *Bump the toolchain and clear the branch backlog, fix the non-atomic state write, then stand up the measurement the whole feature is judged against. Everything else depends on this. Six tasks, deliberately at the soft ceiling — see TECH_PLAN §Implementation Order for why the two prerequisites live here rather than in a milestone of their own.*
 - [x] P0-12: Bring the toolchain onto a supported version
-- [ ] P0-13: Triage the unmerged branch backlog
+- [x] P0-13: Triage the unmerged branch backlog
+- [!] P0-13a: Bring the default branch up to date — BLOCKED, awaiting the repository owner
+  - P0-13's acceptance clause "the default branch matches the working state" is deferred, not done. `origin/main` is 157 commits behind local `main`, so satisfying it means publishing 157 commits to a public GitHub fork (`bigbenjoman/belmont`).
+  - **Asked of**: Ben Lavender, as the repository owner. **The decision**: whether to push local `main` to `origin`, and whether that happens before or after the fork is re-synced with `upstream` (`blake-simpson/belmont`).
+  - Not an implementation-agent decision: publication is irreversible and public. No push, remote-branch deletion, merge, rebase or PR was performed by P0-13 — every verdict in `docs/branch-triage.md` is a recommendation.
+  - Unblocks nothing in M1. It does not gate M2: `docs/branch-triage.md` records both the merge verdict for `origin/docs/pr-proposals` and the `git show` command that reads proposal 0004 rev 5 off the remote branch without it.
 - [ ] P0-1: Atomic state writes
 - [ ] P0-2: Token and wall-clock instrumentation
 - [ ] P0-3: Capture the pre-change baseline

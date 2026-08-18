@@ -1,0 +1,211 @@
+# Branch triage — the unmerged backlog
+
+*Produced by `throughput` P0-13 on 2026-08-18, against local `main` at `dc6ba7e9`.
+Every verdict below is measured, not recalled. Re-run the commands in
+§How this was measured before trusting a row that looks stale.*
+
+## Why this file is here and not in `docs/proposals/NEXT-SESSION.md`
+
+The feature TECH_PLAN nominated `docs/proposals/NEXT-SESSION.md` as the home for
+this triage. That is the wrong file: `NEXT-SESSION.md` exists **only** on
+`origin/docs/pr-proposals`, and this triage's headline verdict is that that
+branch should be merged. Writing the triage into a file the merge also carries
+would manufacture a conflict in the one branch we most want to land cleanly.
+`docs/branch-triage.md` is on the mainline, collides with nothing, and is where
+the next session will look.
+
+## Headline
+
+**35 unmerged remote branches. 30 are already dead, 2 should merge, 3 need a rebase.**
+
+The backlog is far less dangerous than the plan assumed, and dangerous in a
+different place than the plan predicted.
+
+- **The two branches the milestone analysis flagged as most hazardous are
+  phantoms.** `origin/fix/unrecognised-task-markers` (24 commits, 64 files,
+  described as "the widest collision in the backlog") and
+  `origin/feat/maintenance-ci` (the only branch said to collide with P0-12,
+  P0-1 *and* P0-2 at once) are both **fully landed on `main` already**. They
+  appear in `git branch -r --no-merged` only because they were rebased before
+  landing, so their SHAs differ from the commits that carry their patches.
+  `git cherry main <branch>` reports 0 outstanding patches for the first and,
+  for the second, 2 apparent outstanding commits whose content was then verified
+  present on `main` by hand (the `worktree-state-isolation` row in
+  `knowledge/KNOWLEDGE.md`, and the `main.go` → `autocmd.go` repointing in
+  `knowledge/auto-mode/clean-tree-preflight.md`).
+- **Four of the five collisions named in the TECH_PLAN are also already on
+  `main`**: `feat/loop-efficiency`, `fix/wave-merge-state-loss`,
+  `fix/state-readers-and-live-views` and `fix/unrecognised-task-markers`. Only
+  `feat/verify-dedup` is genuinely outstanding, and it is unmergeable for an
+  unrelated reason (see below). **M3, M4 and M6 are not standing on contested
+  ground.**
+- **The real hazard the plan did not name is `origin/fix/post-51-triage`** —
+  the newest branch in the backlog (2026-08-17), 15 genuinely unlanded commits,
+  six new regression test files, and it merges into `main` with **zero
+  conflicts** today. It touches `reconcile.go` and `worktree.go`, which P0-1
+  rewrites. Merge it before P0-1 or pay for it afterwards.
+
+## Verdicts — all 35 branches
+
+Legend: **merge** = land as-is; **rebase** = content is wanted but the branch
+cannot apply where it sits; **abandon** = nothing left to recover, delete the
+remote branch.
+
+### Merge (2)
+
+| Branch | Last commit | Verdict | Reason |
+|---|---|---|---|
+| `origin/docs/pr-proposals` | 2026-08-08 | **merge** | 15 files under `docs/proposals/` exist nowhere on `main`, including `0004-context-budget-with-evidence.md` rev 5 — **M2's specification**. `git merge-tree` yields exactly one conflict, in `.gitignore`. Highest-value, lowest-risk merge in the backlog. |
+| `origin/fix/post-51-triage` | 2026-08-17 | **merge** | 15 unlanded commits and 6 new regression tests (`merge_carry_placement`, `recover_active_run`, `reverify_reset`, `wave_integration`, `listing_unreadable_worktree`, `subcommand_help`). Merges with **zero conflicts**. Touches `reconcile.go`/`worktree.go` — **merge before P0-1**. |
+
+### Rebase (3)
+
+| Branch | Last commit | Verdict | Reason |
+|---|---|---|---|
+| `origin/feat/design-contract` | 2026-08-13 | **rebase** | 34 unlanded commits and 18 new files — a whole `ux-design` phase (skill, three knowledge entries, `design_guard_test.go`, a `ui-no-figma` eval fixture). Real work, but 85 files across `toolexec.go`, `guards.go`, `auto_loop.go`, `worktree.go`, `steer.go`; it cannot merge and it collides with M1 and M6. Rebase deliberately, after M6. |
+| `origin/proposal/0001-quick-mode` | 2026-05-23 | **rebase** | Content absent from `main` and merges cleanly, but lands at root `proposals/` — the wrong path under the convention settled below. Rebase to relocate into `docs/proposals/`. Carries `framework-evaluation`'s P6-1 spec; it is prior art, not stray work. |
+| `origin/proposal/0002-prd-hygiene` | 2026-05-23 | **rebase** | Same: absent from `main`, merges cleanly, wrong path. Carries `framework-evaluation`'s P6-2 spec. |
+
+### Abandon — content already on `main` (15)
+
+Verified by `git cherry main <branch>` reporting **zero** outstanding patches.
+Each was rebased or squashed before landing, so only the SHAs differ.
+
+| Branch | Last commit | Reason |
+|---|---|---|
+| `origin/fix/unrecognised-task-markers` | 2026-08-11 | 24/24 patches on `main`. The plan's "widest collision" is fully landed. |
+| `origin/fix/dropped-state-and-dispatch` | 2026-08-16 | 11/11 on `main`; its tip is `main`'s own `17897aa2`. |
+| `origin/fix/state-readers-and-live-views` | 2026-08-14 | 7/7 on `main`. Named as an M4 collision; is not one. |
+| `origin/feat/eval-harness` | 2026-08-08 | 7/7 on `main`; `eval_harness_test.go` and all fixtures present. |
+| `origin/backup/state-readers-pre-main-rebase` | 2026-08-14 | 7/7 on `main`. Explicit pre-rebase backup, purpose served. |
+| `origin/fix/repair-move-and-guidance` | 2026-08-13 | 3/3 on `main`. |
+| `origin/codex-model-tier-overrides` | 2026-06-04 | 3/3 on `main`. |
+| `origin/feat/loop-efficiency` | 2026-08-13 | 2/2 on `main`. Named as an M6 collision; is not one. |
+| `origin/codex-plan-apply-handoff` | 2026-06-09 | 2/2 on `main`. |
+| `origin/feat/declsum` | 2026-08-07 | 1/1 on `main`; `scripts/declsum/main.go` is present. |
+| `origin/feat/claude-loop-skill` | 2026-06-08 | 1/1 on `main`. |
+| `origin/codex-skill-display-names` | 2026-06-03 | 1/1 on `main`. |
+| `origin/fix/plugin-generator-empty-agents` | 2026-08-06 | 1/1 on `main`. |
+| `origin/opencode-support` | 2026-06-03 | 1/1 on `main`. |
+| `origin/opencode-slash-commands` | 2026-06-03 | 1/1 on `main`. |
+
+### Abandon — content verified on `main` despite an apparent outstanding commit (5)
+
+`git cherry` compares patch-ids, which context drift defeats. Each of these was
+checked by hand against the working tree.
+
+| Branch | Last commit | Reason |
+|---|---|---|
+| `origin/feat/maintenance-ci` | 2026-08-07 | 29/31 landed; the 2 apparent leftovers are both present — the `worktree-state-isolation` row in `knowledge/KNOWLEDGE.md` and the `main.go` → `autocmd.go` repointing in `clean-tree-preflight.md`. **This is the branch the milestone flagged as colliding with P0-12, P0-1 and P0-2 simultaneously. It does not.** |
+| `origin/fix/worktree-git-excludes` | 2026-08-07 | `writeWorktreeGitExcludes` is already removed from `main` (three source comments record the removal), and `knowledge/auto-mode/worktree-state-isolation.md` exists. |
+| `origin/fix/wave-merge-state-loss` | 2026-08-07 | `main`'s `worktree.go` already scopes the sync per milestone and refuses duplicate headings; `syncFeatureStateAfterMerge` is covered by three test files (`worktree_sync_test.go`, `worktree_state_test.go`, `merge_symmetry_test.go`). Only the branch's own test filename is absent. |
+| `origin/backup/loop-efficiency-pre-rebase` | 2026-08-13 | Pre-rebase backup of `feat/loop-efficiency`, which is itself fully landed. |
+| `origin/backup/state-readers-pre-rebase` | 2026-08-14 | Pre-rebase backup of `fix/state-readers-and-live-views`, which is fully landed. |
+
+### Abandon — unmergeable against the current layout (7)
+
+These edit `skills/belmont/<skill>.md`, the **pre-`_src/` layout**. Those paths
+are now **gitignored generated output** — `scripts/generate-skills.sh` builds
+them from `_src/` and `_partials/`. A merge would either conflict or write into
+an ignored file. None of these can be rebased mechanically; the content has to
+be re-authored into `_src/` if it is still wanted.
+
+| Branch | Last commit | Reason |
+|---|---|---|
+| `origin/feat/verify-dedup` | 2026-04-12 | Edits `skills/belmont/verify.md` (generated). The only genuine survivor of the TECH_PLAN's five named collisions — but it is a **re-author, not a merge**. Its subject matter is M2/P0-5; fold the idea in there rather than resurrecting the branch. |
+| `origin/feature/agent-dedup-fix` | 2026-04-12 | Same file, same defect, near-duplicate of the above. |
+| `origin/milestone-dereference-prd` | 2026-04-21 | Edits `skills/belmont/implement.md` (generated). Intent already on `main`: the implementation agent dereferences PRD/TECH_PLAN from the MILESTONE rather than inlining them. |
+| `origin/skill-progressive-disclosure` | 2026-04-21 | Introduces a `references/` convention that `main` already has as `skills/belmont/_src/references/`. |
+| `origin/skill-progressive-disclosure-rest` | 2026-04-21 | Same convention applied more widely; same reason. 21 of its 50 files do not exist on `main`. |
+| `origin/trim-dispatch-strategy` | 2026-04-21 | Pre-`_src/` edits to the dispatch-strategy partial. That partial is **M8/P1-11's** deliverable; do it there. |
+| `origin/status-colors` | 2026-04-23 | Edits `skills/belmont/status.md` (generated). Its single patch is also already on `main`, so there is nothing to recover either way. |
+
+### Abandon — superseded by a later architectural decision (2)
+
+| Branch | Last commit | Reason |
+|---|---|---|
+| `origin/fix-gemini-ask-user` | 2026-05-04 | Its multi-framework work writes `AGENTS.md` / `GEMINI.md` routing sections, which `main` **deliberately stopped writing** (`cmd/belmont/install.go:118`, "Phase 2: ... are no longer written"). The `ask_user` support never landed and is not recoverable from this branch's shape — refile as a fresh task if still wanted. |
+| `origin/framework-awareness` | 2026-05-04 | A strict subset of the branch above (both its commits are in it); same superseding decision. |
+
+### Abandon — stale against current policy (1)
+
+| Branch | Last commit | Reason |
+|---|---|---|
+| `origin/opus-default-model-selection` | 2026-06-04 | Wants all agents defaulted to the high tier. That intent is now policy, but it is expressed per-feature in `<feature>/models.yaml` under the barbell rule (high or low, never medium), and the tier→model map in `toolexec.go` has changed underneath the branch. Re-apply as a fresh change if the *repo* default should move. |
+
+## The proposals-path convention — settled
+
+Two conventions were in flight:
+
+- root `proposals/` — `origin/proposal/0001-quick-mode`, `origin/proposal/0002-prd-hygiene` (2026-05-23)
+- `docs/proposals/` — `origin/docs/pr-proposals`, holding 0003–0006 (2026-08-08)
+
+**`docs/proposals/` is canonical.** It carries the larger and far more heavily
+reviewed set (36 commits, 15 files, including the rev5/rev6 adversarial review
+artefacts), it is the path named by the master TECH_PLAN's rule 5, and it is
+where this feature's owed proposals `0007-detail-tier`, `0008-size-ceilings` and
+`0009-master-and-journal` will be written. 0001 and 0002 relocate into it on
+rebase; their numbers are free and do not collide.
+
+## Where M2 reads its specification
+
+**`origin/docs/pr-proposals` → merge.** Once merged,
+`docs/proposals/0004-context-budget-with-evidence.md` is on the mainline and
+every worktree cut from `main` can read it. This is the answer M2 is blocked on.
+
+Until that merge happens, M2 must read the file directly off the remote branch
+rather than from a worktree checkout:
+
+```bash
+git show origin/docs/pr-proposals:docs/proposals/0004-context-budget-with-evidence.md
+```
+
+Both readings are recorded because the merge is not this task's to perform —
+see below.
+
+## Not done here: bringing the default branch up to date
+
+`origin/main` is **157 commits behind** local `main`. The task's acceptance
+clause "the default branch matches the working state" is **deliberately not
+satisfied by this task**, and is tracked as a blocked task in
+`.belmont/features/throughput/PROGRESS.md` under M1.
+
+Satisfying it means pushing 157 commits to a public GitHub fork. That is a
+publication decision belonging to the repository owner, not to an implementation
+agent, and it has been escalated to them. Nothing in this triage was pushed, no
+remote branch was deleted, merged or rebased, and no PR was opened. Every
+`abandon` verdict above is a **recommendation to delete**, not a deletion.
+
+## How this was measured
+
+```bash
+# the 35
+git branch -r --no-merged main | grep -v upstream/ | grep -v HEAD
+
+# supersession — the load-bearing one. '-' = patch already upstream, '+' = outstanding
+git cherry -v main <branch>
+
+# content genuinely absent from main (git rev-parse needs --verify --quiet;
+# without it, it echoes unresolvable args back and every file looks present)
+git rev-parse --verify --quiet "main:$f"
+
+# mergeability without touching the working tree
+git merge-tree --write-tree main <branch>
+```
+
+Two traps worth recording, because both produced a wrong answer first:
+
+1. **`git branch --no-merged` over-reports badly in a rebase-heavy repo.** It
+   compares commit ancestry, so a rebased-and-landed branch still lists as
+   unmerged. 21 of these 35 branches are fully or effectively landed. Use
+   `git cherry`, and hand-check the residue — patch-ids are defeated by context
+   drift, which is what produced the false positives on `feat/maintenance-ci`
+   and `fix/worktree-git-excludes`.
+2. **Two-dot `git diff main..<branch>` is meaningless here.** With `main` 157
+   commits ahead it reports main's own additions as the branch's deletions —
+   every branch looked like a 30,000-line deletion. Use three-dot
+   (`main...<branch>`) for a branch's own changes.
+
+## Revisions
+
+- 2026-08-18 — initial triage, all 35 branches, `throughput` P0-13.
