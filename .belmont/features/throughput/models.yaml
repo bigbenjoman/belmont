@@ -1,0 +1,16 @@
+# Generated during /belmont:tech-plan on 2026-08-18. Safe to hand-edit.
+# Profile: Go CLI work (concurrency, atomic writes, merge precedence, wave
+#   scheduling) plus skill prose. No design input on any milestone.
+# Barbell per the master tech plan: high or low, never medium.
+# Reconciliation applies at merge-time, not per-milestone. Planning is always
+#   high regardless of what this file says (the Go CLI hardcodes it).
+
+profile: framework-go-and-prose
+planning: high
+tiers:
+  codebase: high         # must find all 16 state writers and all 17 parse sites; a miss is a torn file
+  design: low            # skipped on every milestone — recorded to document the intent
+  implementation: high   # atomicity, merge precedence, scheduling; errors here are silent data loss
+  verification: high     # criteria are invariants: byte-identical status, round-trip proof, absent-means-today
+  code-review: high      # reviewing concurrency and merge semantics, not style
+  reconciliation: high   # always high — and this feature changes merge semantics while merging
