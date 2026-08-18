@@ -125,18 +125,41 @@ are over the ceiling today and the same five remain over it after extraction, wi
 ### Why the estimate was wrong — the finding that matters
 
 The pre-estimate assumed size implies narrative, and applied the worst file's 62% detail ratio
-to every file. It does not hold. **Three of the five contain no indented lines at all**:
+to every file. It does not hold. **Three of the five gain essentially nothing from extraction —
+0%, 0% and 7.6%**:
 
-| Feature | Detail available to move |
-|---|---:|
-| `repo-4/feat-031` | **0 B** |
-| `repo-3/feat-058` | **0 B** |
-| `repo-3/feat-015` | 77,976 B of 1,022,749 (7.6%) |
+| Feature | Indented lines | Detail available to move |
+|---|---:|---:|
+| `repo-4/feat-031` | **0** / 0 B | **0 B** of 129,354 (0.0%) |
+| `repo-3/feat-058` | **0** / 0 B | **0 B** of 114,941 (0.0%) |
+| `repo-3/feat-015` | 167 / 84,593 B | 77,976 B of 1,022,749 (7.6%) |
 
-`repo-3/feat-015` is the clearest case: of its 1,022,749 bytes, **795,799 are task head
-lines** and only 83,500 are indented. Its longest single task line is **11,542 characters**. The
-register is not a document with narrative beneath its tasks — it is a document whose tasks *are*
-the narrative, written on one line each.
+*An indented line is a non-blank line beginning with a space or tab, and every byte figure here
+counts each line plus its newline, as `censusFeature` does. Indentation is the upper bound on what
+extraction could move; what it does move is smaller, because only a task's own body is detail —
+`censusFeature` claims lines via `taskBodyEnd`, so an indented line that sits under a heading
+rather than under a task stays in the index.*
+
+**Two of the five carry zero indented lines — not three.** The remaining two over-threshold
+registers have plenty: `repo-4/feat-075` has **11,832** indented lines
+(1,209,680 B; 62.9% moved) and `repo-3/feat-070` **533** (140,957 B; 57.0% moved).
+What the three above share is not an absence of indentation but an absence of *yield*.
+
+> **CORRECTED by `P0-M1-FIX-6` (2026-08-18).** This paragraph previously read *"Three of the five
+> contain no indented lines at all"* and then contradicted itself a sentence later by quoting an
+> indented-byte figure for one of the three. Only two are at zero. The load-bearing claim — three
+> of the five gain essentially nothing from extraction — is what the evidence supports and is
+> restated above; no total in this document changes. All five indented-line counts were
+> **re-derived from the registers on disk**, not restated. Two byte figures withdrawn with the
+> sentence: `repo-3/feat-015`'s 335 task head lines measure **805,397 B**, not 795,799,
+> and its indented lines **84,593 B**, not 83,500. Neither of the withdrawn pair reproduces from
+> any definition of the terms; the pair above reproduces from the counting rule stated here.
+
+`repo-3/feat-015` is still the clearest case: of its 1,022,749 bytes, **805,397 are task
+head lines** and only 84,593 are indented — and extraction moves less again (77,976 B), because
+only 32 of its 335 tasks have a body at all. Its longest single task line is **11,542
+characters**. The register is not a document with narrative beneath its tasks — it is a document
+whose tasks *are* the narrative, written on one line each.
 
 Extraction is still the right change: it removes 32.6% of all register bytes across the estate,
 and 62.9% of the worst single file (`repo-4/feat-075`, 1,860,979 → 691,323 B),
