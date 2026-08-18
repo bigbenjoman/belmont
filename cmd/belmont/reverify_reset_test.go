@@ -253,3 +253,41 @@ func TestReverifyJSONEncodesHostileFollowUpNames(t *testing.T) {
 		t.Fatalf("the assembled reverify document is unparseable: %v\n%s", err, doc)
 	}
 }
+
+// `belmont repair` moving a task into a milestone whose final bullet is a NESTED
+// child used to strand that child's parent's `**Evidence**` — the moved task was
+// spliced above it and the evidence re-attached. Same defect the two merge paths
+// were fixed for, in the third writer, while three comments asserted repair
+// anchored identically to them.
+func TestRepairMoveLandsBelowAParentsEvidence(t *testing.T) {
+	lines := strings.Split(`### M1: First
+- [ ] P0-M1-1: Wrong place
+
+### M2: Second
+- [x] P0-M2-1: Parent
+  - [x] P0-M2-2: Child
+  **Evidence**: commit aaa111 proves P0-M2-1
+`, "\n")
+
+	out, _, _ := moveTaskLines(lines, map[int]string{1: "M2"})
+	doc := strings.Join(out, "\n")
+
+	moved, evidence := -1, -1
+	for i, l := range out {
+		if strings.Contains(l, "P0-M1-1") {
+			moved = i
+		}
+		if strings.Contains(l, "**Evidence**") {
+			evidence = i
+		}
+	}
+	if moved == -1 {
+		t.Fatalf("the task was not moved at all:\n%s", doc)
+	}
+	if evidence == -1 {
+		t.Fatalf("the evidence line vanished:\n%s", doc)
+	}
+	if moved < evidence {
+		t.Errorf("moved task spliced ABOVE P0-M2-1's own **Evidence**, which now reads as the moved task's:\n%s", doc)
+	}
+}

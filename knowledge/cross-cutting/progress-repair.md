@@ -138,9 +138,13 @@ The rest follows from that:
   `repairRejection` (with a reason) for anything it refuses — refusals are always
   printed.
 - `applyRepairPlans` / `moveTaskLines` / `appendDecisionLogEntry` are the only
-  writers, and they are pure string functions. `moveTaskLines` anchors exactly as
-  `mergeProgressState` does: after the destination's last task line (past that
-  task's own body), or after its header when it holds no tasks yet. It resolves
+  writers, and they are pure string functions. `moveTaskLines` anchors on the same
+  definition `mergeProgressState` uses: the **furthest `taskBodyEnd`** over the
+  destination's tasks, or its header when it holds none. Not the last task line —
+  that strands a parent's `**Evidence**` when the destination's final bullet is a
+  nested child, and repair committed exactly that for as long as this sentence
+  claimed otherwise (#60's round). It does not call `milestoneCarryAnchor`
+  itself, because it must skip tasks that are themselves being moved out. It resolves
   block extents **before** anchors, because an anchor landing anywhere inside a
   departing block is a line that will not be emitted where it currently sits.
 - The skill (`skills/belmont/_src/repair.md`) carries the same rules for the

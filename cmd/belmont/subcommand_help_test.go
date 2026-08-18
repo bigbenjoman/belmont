@@ -231,7 +231,19 @@ func TestTopLevelUsageNamesEveryFlagEachCommandDefines(t *testing.T) {
 			t.Errorf("`belmont --help` has no line for %s at all", c.name)
 			continue
 		}
-		for _, m := range flagRe.FindAllStringSubmatch(out, -1) {
+		matches := flagRe.FindAllStringSubmatch(out, -1)
+		// The test degrades to a silent no-op if the regex stops matching: the
+		// loop below simply does not execute, every assertion is skipped, and it
+		// reports success while covering nothing. `flagRe` is pinned to the two
+		// literal spaces `flag.PrintDefaults` emits — stdlib formatting Belmont
+		// does not control — so "matched nothing" is a real failure mode, not a
+		// hypothetical. Every command in this table defines at least one flag by
+		// construction.
+		if len(matches) == 0 {
+			t.Errorf("%s --help matched no flags at all — the flag regex has stopped tracking PrintDefaults' format, so this test is covering nothing:\n%s", c.name, out)
+			continue
+		}
+		for _, m := range matches {
 			// Matched as a DELIMITED token, never as a bare substring. A plain
 			// `Contains(topLine, "--"+name)` is satisfied by any longer flag on
 			// the same line, and five real flags are shadowed that way:

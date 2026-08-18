@@ -691,22 +691,115 @@ func TestCarryGoesBelowIDLessTasksRatherThanAboveThem(t *testing.T) {
 - [x] Parse the body
 - [ ] P0-M1-9: Emit a summary
 `
-	out, _ := mergeProgressState(theirs, ours)
-	lines := strings.Split(out, "\n")
-	carried, lastExisting := -1, -1
-	for i, l := range lines {
-		if strings.Contains(l, "P0-M1-9") {
-			carried = i
+	// BOTH paths. The bullet index is recorded at two sites — `worktree.go` and
+	// `merge_conflict.go` — and testing only `mergeProgressState` left the
+	// conflict-path half revertible with the whole suite green. Its sibling fix
+	// in the same commit (`dedentBlock`) got a both-paths test; this one did not,
+	// which is the one-sided-coverage version of the one-sided-fix bug.
+	assertBelowExisting := func(t *testing.T, name, doc string) {
+		t.Helper()
+		lines := strings.Split(doc, "\n")
+		carried, lastExisting := -1, -1
+		for i, l := range lines {
+			if strings.Contains(l, "P0-M1-9") {
+				carried = i
+			}
+			if strings.Contains(l, "Parse the body") {
+				lastExisting = i
+			}
 		}
-		if strings.Contains(l, "Parse the body") {
-			lastExisting = i
+		if carried == -1 {
+			t.Fatalf("%s: the carried task is missing:\n%s", name, doc)
+		}
+		if carried < lastExisting {
+			t.Errorf("%s: carried task landed above the milestone's existing tasks — the anchor fell through to the header:\n%s", name, doc)
 		}
 	}
-	if carried == -1 {
-		t.Fatalf("the carried task is missing:\n%s", out)
+
+	syncOut, _ := mergeProgressState(theirs, ours)
+	assertBelowExisting(t, "mergeProgressState", syncOut)
+
+	base := "### M1: Parsing\n- [ ] Parse the header\n- [ ] Parse the body\n"
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		t.Fatal("the conflict resolver declined a file of legal markers")
 	}
-	if carried < lastExisting {
-		t.Errorf("carried task landed above the milestone's existing tasks — the anchor fell through to the header:\n%s", out)
+	assertBelowExisting(t, "resolveProgressConflict", readFile(t, filepath.Join(root, rel)))
+}
+
+// `anyTaskBullet` is what makes an ID-less task count toward the anchor, so its
+// specificity is load-bearing: loosened to `^\s*-\s+\[` it matches an ordinary
+// prose bullet like `- [see the note below]`, which would then move the anchor.
+// Nothing objected to that loosening, so the regex is pinned directly.
+func TestAnyTaskBulletMatchesCheckboxesAndNothingElse(t *testing.T) {
+	for _, yes := range []string{
+		"- [ ] todo",
+		"- [x] done",
+		"  - [v] nested and verified",
+		"-  [!] extra space after the dash",
+		"- [?] unknown marker is still a bullet",
+		"- [x]\ttab after the box",
+	} {
+		if !anyTaskBullet(yes) {
+			t.Errorf("anyTaskBullet(%q) = false, want true", yes)
+		}
+	}
+	for _, no := range []string{
+		"- [see the note below] a prose bullet",
+		"- [](https://example.com) a link",
+		"- [] empty box",
+		"-[x] no space after the dash",
+		"- [x]no space after the box",
+		"* [ ] asterisk bullet",
+		"+ [ ] plus bullet",
+		"> - [ ] quoted",
+		"| - [ ] x |",
+		"**Evidence**: commit aaa111",
+		"### M1: Parsing",
+	} {
+		if anyTaskBullet(no) {
+			t.Errorf("anyTaskBullet(%q) = true, want false", no)
+		}
+	}
+}
+
+// `namesTask` matches a delimited token rather than a substring. Nothing could
+// spring the prefix hole it closes — no fixture warned about a child while
+// asserting on its parent — so a hardening nobody can falsify was one careless
+// edit from being reverted silently. This is the witness.
+func TestNamesTaskDoesNotMatchALongerID(t *testing.T) {
+	warnings := []string{
+		"task P0-M1-1a exists on main under M1, which this worktree's PROGRESS.md does not contain — not merged",
+		"task P0-M1-10 exists on main under M1, which this worktree's PROGRESS.md does not contain — not merged",
+	}
+	if namesTask(warnings, "P0-M1-1") {
+		t.Error("namesTask matched P0-M1-1 against warnings that only name P0-M1-1a and P0-M1-10 — a prefix match makes every assertion built on it unfalsifiable")
+	}
+	if !namesTask(warnings, "P0-M1-1a") {
+		t.Error("namesTask failed to match an ID that IS named")
+	}
+	if !namesTask([]string{"task P0-M1-1: something happened"}, "P0-M1-1") {
+		t.Error("namesTask failed to match an ID followed by a colon")
+	}
+}
+
+// `enclosingMilestone` returns "" for a line outside every milestone, which is
+// what makes `assertCarriedAtTopLevel`'s report honest when a carry escapes the
+// milestones region. No carry fixture produces that, so the branch is pinned
+// directly rather than left as decoration.
+func TestEnclosingMilestoneStopsAtASectionBreak(t *testing.T) {
+	doc := []string{
+		"### M1: Parsing",       // 0
+		"- [x] P0-M1-1: Header", // 1
+		"",                      // 2
+		"## Session History",    // 3
+		"- [ ] a stray bullet",  // 4
+	}
+	if got := enclosingMilestone(doc, 1); got != "M1" {
+		t.Errorf("a task under M1 reported %q, want M1", got)
+	}
+	if got := enclosingMilestone(doc, 4); got != "" {
+		t.Errorf("a line under `## Session History` reported %q, want \"\" — the section break ends the milestones region", got)
 	}
 }
 
