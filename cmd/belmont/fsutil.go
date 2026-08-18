@@ -171,6 +171,10 @@ func ensureStateFiles(projectRoot string) error {
 	// Ensure auto-mode artifacts are gitignored
 	ensureGitignoreEntry(projectRoot, ".belmont/auto.json")
 	ensureGitignoreEntry(projectRoot, ".belmont/worktrees/")
+	// Metrics are local-only by decision (P0-2): bookkeeping already accounts
+	// for 41-46% of commit volume in these repos, and a metrics file per run
+	// would worsen that for no analytical gain.
+	ensureGitignoreEntry(projectRoot, ".belmont/metrics/")
 
 	// Create features directory
 	featuresDir := filepath.Join(stateDir, "features")

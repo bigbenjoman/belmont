@@ -227,17 +227,106 @@ func (tw *tailWriter) String() string {
 	return string(tw.buf)
 }
 
+// usageCapture tees a tool's stdout to an inner writer while retaining the one
+// line that carries its token count.
+//
+// It exists because of a specific defect. Non-Claude tools write straight into a
+// tailWriter, which keeps only the last 1500 bytes — so executionResult.Output
+// is the *tail* of the stream, not the stream. Whether a tool's usage event
+// happens to fall inside that tail is luck, not a contract: codex emits
+// turn.completed last but the item.completed events before it grow with the
+// agent's output, so the usage line drifts out of a fixed-size window on exactly
+// the long runs whose cost matters most.
+//
+// Raising the tail size would not fix it — a bigger window is still a window,
+// and it would also change the error-reporting tail, which is unrelated to this
+// task. Retaining one line by *content* is position-independent and costs a
+// single line of memory.
+//
+// Claude does not use this path: claudeStreamWriter already parses every line,
+// so it captures usage directly.
+type usageCapture struct {
+	inner   io.Writer
+	partial []byte
+	match   func(line []byte) *toolUsage
+	usage   *toolUsage
+}
+
+// maxUsageLineBytes caps the partial-line accumulator. A tool that emits a
+// single enormous JSON document with no newline would otherwise grow this
+// without bound; past the cap we stop accumulating rather than buffer a run's
+// entire output to look for a token count.
+const maxUsageLineBytes = 1 << 20
+
+func newUsageCapture(inner io.Writer, match func([]byte) *toolUsage) *usageCapture {
+	return &usageCapture{inner: inner, match: match}
+}
+
+func (u *usageCapture) Write(p []byte) (int, error) {
+	if u.match != nil {
+		u.partial = append(u.partial, p...)
+		for {
+			idx := bytes.IndexByte(u.partial, '\n')
+			if idx < 0 {
+				break
+			}
+			line := u.partial[:idx]
+			u.partial = u.partial[idx+1:]
+			// Cheap pre-filter: skip the JSON parse on the overwhelming
+			// majority of lines, which carry no usage block at all.
+			if bytes.Contains(line, []byte(`"usage"`)) {
+				if usage := u.match(line); usage != nil {
+					u.usage = usage
+				}
+			}
+		}
+		if len(u.partial) > maxUsageLineBytes {
+			u.partial = nil
+		}
+	}
+	return u.inner.Write(p)
+}
+
+// Usage returns the last token count seen, or nil if the tool never reported one.
+func (u *usageCapture) Usage() *toolUsage {
+	if u == nil {
+		return nil
+	}
+	return u.usage
+}
+
 // claudeStreamWriter wraps a tailWriter and parses Claude stream-json NDJSON,
 // extracting only human-readable content (assistant text + tool use indicators).
 type claudeStreamWriter struct {
 	tw      *tailWriter
 	partial []byte
 	prefix  string // e.g. "\033[36m[slug]\033[0m: "
+	usage   *toolUsage
 }
+
+// Usage returns the token count Claude reported on its `result` event, or nil
+// if the stream ended without one (an aborted or failed run). Never estimated.
+func (c *claudeStreamWriter) Usage() *toolUsage { return c.usage }
 
 type streamLine struct {
 	Type    string        `json:"type"`
+	Subtype string        `json:"subtype"`
 	Message streamMessage `json:"message"`
+	// Usage arrives on the terminal `result` event, not on any assistant event.
+	// Before P0-2 every non-assistant line was discarded here, which is exactly
+	// where the only token count Claude emits was being thrown away.
+	Usage *claudeUsage `json:"usage"`
+}
+
+// claudeUsage is the `usage` block of Claude's stream-json `result` event.
+// Verified against claude 2.1.234 on 2026-08-18; the event also carries
+// modelUsage, total_cost_usd and duration_ms, none of which Belmont records —
+// cost is a derived figure that changes under us, tokens are not.
+type claudeUsage struct {
+	InputTokens              int64 `json:"input_tokens"`
+	OutputTokens             int64 `json:"output_tokens"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 }
 
 type streamMessage struct {
@@ -266,6 +355,14 @@ func (c *claudeStreamWriter) Write(p []byte) (int, error) {
 		var sl streamLine
 		if err := json.Unmarshal(line, &sl); err != nil {
 			continue
+		}
+		if sl.Type == "result" && sl.Usage != nil {
+			c.usage = &toolUsage{
+				Input:         sl.Usage.InputTokens,
+				Output:        sl.Usage.OutputTokens,
+				CacheCreation: sl.Usage.CacheCreationInputTokens,
+				CacheRead:     sl.Usage.CacheReadInputTokens,
+			}
 		}
 		if sl.Type != "assistant" {
 			continue

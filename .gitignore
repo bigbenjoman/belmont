@@ -25,6 +25,7 @@ skills/belmont/*/
 _research/
 .belmont/auto.json
 .belmont/worktrees/
+.belmont/metrics/
 
 # Self-hosting: `belmont install --source .` in this repo copies agents/ and the
 # generated skills/ onto the .agents/ surface. Byte-identical to in-repo source,

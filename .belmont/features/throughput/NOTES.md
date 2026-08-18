@@ -26,3 +26,15 @@
 
 ### Discovery
 - `os.RemoveAll(dstFeature)` before `copyDir` in `copyBelmontStateToWorktree` (worktree.go) is a **directory**-level tear that no per-file write helper closes. Left open deliberately in P0-1 and recorded in `knowledge/cross-cutting/state-atomicity.md` so nobody reads "atomic writes: done" and assumes otherwise.
+
+### Discovery
+- **Tool usage schemas, verified empirically 2026-08-18** (not from docs — both were probed with a live trivial prompt):
+  - **claude 2.1.234**: the `result` event carries `usage.{input_tokens,output_tokens,cache_creation_input_tokens,cache_read_input_tokens}`, plus `modelUsage`, `total_cost_usd`, `duration_ms`. Belmont records tokens only — cost is derived and changes under us.
+  - **codex**: the `turn.completed` event carries `usage.{input_tokens,cached_input_tokens,cache_write_input_tokens,output_tokens,reasoning_output_tokens}`. **The field names differ from Claude's** — `cached_input_tokens` is the read, `cache_write_input_tokens` the creation. Swapping them yields a plausible wrong number.
+  - **gemini could NOT be verified**: `IneligibleTierError — This client is no longer supported for Gemini Code Assist for individuals` (gemini-cli 0.46.0). cursor/copilot/opencode are not installed on this machine.
+- **Deviation from the feature TECH_PLAN's usage table**, recorded here because the plan file is spec, not deliverable: the table lists gemini and cursor as "Yes". They now record `null` with the note "usage schema not yet verified against a live run — not estimated". Shipping a parser against a guessed schema fails *silently* (always-zero or always-nil) and would contaminate the M1 baseline. Follow-up: verify both against a live run and turn them on.
+- Probe commands need trust flags outside a trusted dir: `codex exec --skip-git-repo-check`, `GEMINI_CLI_TRUST_WORKSPACE=true gemini`. macOS has no GNU `timeout`.
+
+### Pattern
+- **`tailWriter` keeps only the last 1500 bytes**, so `executionResult.Output` is the tail of a stream, not the stream. Any future "parse something out of tool output" work must not read `Output` — it will work in testing and fail on long runs. `usageCapture` (render.go) retains a line by *content* rather than position; reuse it rather than raising the tail size, which changes error-reporting semantics and is still only a bigger window.
+- **Wave index is not the critical path.** `computeWaves` is Kahn levelling; a milestone sits in wave 2 if any dependency is in wave 1, whether or not it lies on a longest chain. `criticalPathMilestones` (metrics.go) is the longest-chain pass. Pinned by `TestCriticalPathIsNotTheWaveIndex`, which also asserts the fixture still demonstrates the confusion.

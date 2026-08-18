@@ -263,6 +263,15 @@ type loopConfig struct {
 	Workspaces       []workspaceInfo   // monorepo workspaces (nil for single-package projects)
 	PrimaryWorkspace string            // primary workspace ID (empty for single-package)
 	MonorepoType     monorepoType      // detected/declared monorepo type (empty for single-package)
+
+	// RunID identifies one invocation of the loop, so that two runs of the same
+	// feature can be compared in .belmont/metrics/<feature>.jsonl (P0-2). Set
+	// once at loop start; empty disables metrics recording, which is what keeps
+	// unit tests and dry runs from writing records.
+	RunID string
+	// CriticalPath marks the milestones lying on a longest chain through the
+	// dependency DAG. NOT the wave index — see criticalPathMilestones.
+	CriticalPath map[string]bool
 }
 
 type aiDecision struct {

@@ -14,6 +14,20 @@ func runLoop(cfg loopConfig) error {
 	var history []historyEntry
 	var lastOutput string
 
+	// Identify this run so two runs of the same feature can be compared in
+	// .belmont/metrics/<feature>.jsonl (P0-2). Set here rather than by the
+	// caller so every entry point — auto, loop, parallel waves — is measured on
+	// the same basis; a comparison whose halves were gathered differently proves
+	// nothing, which is the same reason P0-12 was sequenced ahead of the baseline.
+	if cfg.RunID == "" {
+		cfg.RunID = startTime.UTC().Format(time.RFC3339)
+	}
+	if cfg.CriticalPath == nil {
+		if report, err := buildStatus(cfg.Root, 55, cfg.Feature); err == nil {
+			cfg.CriticalPath = criticalPathMilestones(report.Milestones)
+		}
+	}
+
 	// Write auto.json for status visibility when running standalone (not from parallel mode).
 	// In parallel mode, the worktreeTracker manages auto.json separately.
 	var autoCleanup func()
@@ -286,13 +300,10 @@ func executeLoopAction(action loopAction, cfg loopConfig) executionResult {
 	var tw *tailWriter
 	if cfg.Tool == "claude" {
 		tw = newTailWriter(os.Stderr, 1500, "")
-		cmd.Stdout = &claudeStreamWriter{tw: tw, prefix: prefix}
-		cmd.Stderr = tw
 	} else {
 		tw = newTailWriter(os.Stderr, 1500, prefix)
-		cmd.Stdout = tw
-		cmd.Stderr = tw
 	}
+	usageOf := attachUsageCapture(cmd, cfg.Tool, tw, prefix)
 
 	var stopTimer chan struct{}
 	if cfg.Tool != "claude" {
@@ -342,6 +353,12 @@ func executeLoopAction(action loopAction, cfg loopConfig) executionResult {
 	}
 
 	durationMs := time.Since(start).Milliseconds()
+
+	// Record the phase whether it succeeded or failed. A failed milestone's
+	// tokens count against the same denominator — "[x] -> [v] is the unit", and
+	// work that had to be redone is exactly the spend this feature is trying to
+	// remove.
+	recordPhaseMetrics(cfg, action.MilestoneID, string(action.Type), durationMs, usageOf())
 
 	if err != nil {
 		runScopeGuard(cfg, action, preSnap)
@@ -421,13 +438,10 @@ Output JSON: {"decision":"defer_and_proceed|fix_and_proceed|fix_and_reverify","b
 	var tw *tailWriter
 	if cfg.Tool == "claude" {
 		tw = newTailWriter(os.Stderr, 1500, "")
-		cmd.Stdout = &claudeStreamWriter{tw: tw, prefix: triagePrefix}
-		cmd.Stderr = tw
 	} else {
 		tw = newTailWriter(os.Stderr, 1500, triagePrefix)
-		cmd.Stdout = tw
-		cmd.Stderr = tw
 	}
+	usageOf := attachUsageCapture(cmd, cfg.Tool, tw, triagePrefix)
 
 	var stopTimer chan struct{}
 	if cfg.Tool != "claude" {
@@ -475,6 +489,11 @@ Output JSON: {"decision":"defer_and_proceed|fix_and_proceed|fix_and_reverify","b
 	}
 
 	durationMs := time.Since(start).Milliseconds()
+
+	// Triage carries no milestone of its own — it decides what to do about one.
+	// Recorded against the feature with an empty milestone so its spend is
+	// counted but never attributed to a milestone it did not run.
+	recordPhaseMetrics(cfg, "", string(actionTriage), durationMs, usageOf())
 
 	if err != nil {
 		return executionResult{
@@ -563,4 +582,48 @@ func shouldLoopCheckpoint(action loopAction, policy checkpointPolicy, last loopA
 		return true
 	}
 	return false
+}
+
+// attachUsageCapture wires the writers for a tool invocation and returns a
+// closure yielding whatever token count the tool reported about itself.
+//
+// Claude is handled by claudeStreamWriter, which already parses every NDJSON
+// line and now keeps the `result` event's usage block. Every other tool writes
+// into a tailWriter that keeps only the last 1500 bytes, so its usage event is
+// recoverable only by luck; usageCapture retains the usage-bearing line by
+// content instead of by position. Tools Belmont cannot read a verified schema
+// for get no capture at all and record null with a stated reason — never a guess.
+func attachUsageCapture(cmd *exec.Cmd, tool string, tw *tailWriter, prefix string) func() *toolUsage {
+	if tool == "claude" {
+		csw := &claudeStreamWriter{tw: tw, prefix: prefix}
+		cmd.Stdout = csw
+		cmd.Stderr = tw
+		return csw.Usage
+	}
+	if tool == "codex" {
+		uc := newUsageCapture(tw, codexUsageFromLine)
+		cmd.Stdout = uc
+		cmd.Stderr = tw
+		return uc.Usage
+	}
+	cmd.Stdout = tw
+	cmd.Stderr = tw
+	return func() *toolUsage { return nil }
+}
+
+// recordPhaseMetrics appends one metrics record for a completed phase.
+//
+// Best-effort by design: a metrics write must never fail a run that otherwise
+// succeeded, and it must never be the reason a milestone is retried. An empty
+// RunID disables recording, which is what keeps unit tests and dry runs from
+// leaving records behind.
+func recordPhaseMetrics(cfg loopConfig, milestoneID, phase string, durationMs int64, usage *toolUsage) {
+	if cfg.RunID == "" {
+		return
+	}
+	rec := buildMetricsRecord(cfg.RunID, cfg.Feature, milestoneID, phase, cfg.Tool,
+		durationMs, usage, cfg.CriticalPath[milestoneID])
+	if err := appendMetricsRecord(cfg.Root, rec); err != nil {
+		fmt.Fprintf(os.Stderr, "\033[33m⚠ metrics write failed: %s\033[0m\n", err)
+	}
 }

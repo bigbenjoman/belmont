@@ -15,7 +15,7 @@
   - Not an implementation-agent decision: publication is irreversible and public. No push, remote-branch deletion, merge, rebase or PR was performed by P0-13 — every verdict in `docs/branch-triage.md` is a recommendation.
   - Unblocks nothing in M1. It does not gate M2: `docs/branch-triage.md` records both the merge verdict for `origin/docs/pr-proposals` and the `git show` command that reads proposal 0004 rev 5 off the remote branch without it.
 - [x] P0-1: Atomic state writes
-- [ ] P0-2: Token and wall-clock instrumentation
+- [x] P0-2: Token and wall-clock instrumentation
 - [ ] P0-3: Capture the pre-change baseline
 - [ ] P0-4: Extraction census across all feature directories
 
