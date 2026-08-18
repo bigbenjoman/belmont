@@ -570,3 +570,140 @@ Closing note for M1, at column zero.
 		t.Errorf("both paths stranded the carried task below the milestone's closing prose: %s", got)
 	}
 }
+
+// Found by red-teaming the #60 fix. `milestoneCarryAnchor` first took
+// `taskBodyEnd` of the milestone's LAST task bullet. When that bullet is a
+// nested child, `taskBodyEnd` bounds the body by the child's own indent and so
+// returns the child's line — the splice lands INSIDE the parent's body, above
+// the parent's `**Evidence**`, which then reads as the carried task's evidence.
+// That is #33's stranding produced by the function written to prevent it.
+//
+// The anchor is the furthest `taskBodyEnd` over every bullet in the milestone,
+// so the enclosing parent's body end wins.
+func TestCarryLandsBelowAParentsEvidenceWhenTheLastBulletIsNested(t *testing.T) {
+	ours := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+  - [x] P0-M1-2: Handle the BOM
+  **Evidence**: commit aaa111 proves P0-M1-1
+`
+	theirs := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+  - [x] P0-M1-2: Handle the BOM
+  **Evidence**: commit aaa111 proves P0-M1-1
+- [ ] P0-M1-9: Emit a summary
+`
+	base := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+`
+	assertEvidenceStaysWithItsParent := func(t *testing.T, name, doc string) {
+		t.Helper()
+		lines := strings.Split(doc, "\n")
+		carried, evidence := -1, -1
+		for i, l := range lines {
+			if strings.Contains(l, "P0-M1-9") {
+				carried = i
+			}
+			if strings.Contains(l, "**Evidence**") && evidence == -1 {
+				evidence = i
+			}
+		}
+		if carried == -1 {
+			t.Fatalf("%s: the carried task is missing:\n%s", name, doc)
+		}
+		if evidence == -1 {
+			t.Fatalf("%s: the evidence line is missing:\n%s", name, doc)
+		}
+		if carried < evidence {
+			t.Errorf("%s: carried task spliced ABOVE P0-M1-1's own **Evidence**, which now reads as the carried task's:\n%s", name, doc)
+		}
+	}
+
+	syncOut, _ := mergeProgressState(theirs, ours)
+	assertEvidenceStaysWithItsParent(t, "mergeProgressState", syncOut)
+
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		t.Fatal("the conflict resolver declined a file of legal markers")
+	}
+	assertEvidenceStaysWithItsParent(t, "resolveProgressConflict", readFile(t, filepath.Join(root, rel)))
+}
+
+// Also from that round. The anchor recorded bullets via `mergeTaskLine`, which
+// demands a parseable ID — so a milestone whose tasks are all hand-written and
+// ID-less recorded none, fell through to the header fallback, and the carried
+// task was spliced ABOVE every task already there. `anyTaskBullet` records the
+// bullet regardless of whether anything can name it: an ID-less task still
+// bounds where the milestone's task list ends.
+func TestCarryGoesBelowIDLessTasksRatherThanAboveThem(t *testing.T) {
+	ours := `### M1: Parsing
+- [x] Parse the header
+- [x] Parse the body
+`
+	theirs := `### M1: Parsing
+- [x] Parse the header
+- [x] Parse the body
+- [ ] P0-M1-9: Emit a summary
+`
+	out, _ := mergeProgressState(theirs, ours)
+	lines := strings.Split(out, "\n")
+	carried, lastExisting := -1, -1
+	for i, l := range lines {
+		if strings.Contains(l, "P0-M1-9") {
+			carried = i
+		}
+		if strings.Contains(l, "Parse the body") {
+			lastExisting = i
+		}
+	}
+	if carried == -1 {
+		t.Fatalf("the carried task is missing:\n%s", out)
+	}
+	if carried < lastExisting {
+		t.Errorf("carried task landed above the milestone's existing tasks — the anchor fell through to the header:\n%s", out)
+	}
+}
+
+// The dedent has to happen on BOTH paths. A bullet nested under a NON-task list
+// item has `parent == ""` everywhere, so it reaches the milestone anchor on both
+// — and flattening it on the copy path alone left the conflict path re-parenting
+// it under whichever task sat last. Which function runs depends only on whether
+// git registered a conflict, so a one-sided fix to a two-path invariant is just
+// a new instance of the bug.
+func TestBothPathsFlattenABulletNestedUnderANonTaskItem(t *testing.T) {
+	base := `### M1: Parsing
+- [ ] P0-M1-1: Parse the header
+`
+	ours := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+  **Evidence**: commit aaa111
+`
+	theirs := `### M1: Parsing
+- [ ] P0-M1-1: Parse the header
+- Follow-ups raised in review:
+  - [ ] P0-M1-9: Emit a summary
+`
+	syncOut, _ := mergeProgressState(theirs, ours)
+	root, rel := conflictFixture(t, base, ours, theirs)
+	if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+		t.Fatal("the conflict resolver declined a file of legal markers")
+	}
+	conflictOut := readFile(t, filepath.Join(root, rel))
+
+	indentOf := func(doc, id string) int {
+		for _, l := range strings.Split(doc, "\n") {
+			if strings.Contains(l, id) {
+				return lineIndentWidth(l)
+			}
+		}
+		return -1
+	}
+	syncIndent, conflictIndent := indentOf(syncOut, "P0-M1-9"), indentOf(conflictOut, "P0-M1-9")
+	if syncIndent != conflictIndent {
+		t.Errorf("the two paths disagree about indentation, and only git decides which runs.\n"+
+			"mergeProgressState: %d\nresolveProgressConflict: %d\n\ncopy path:\n%s\nconflict path:\n%s",
+			syncIndent, conflictIndent, syncOut, conflictOut)
+	}
+	if syncIndent != 0 {
+		t.Errorf("the carried task stayed nested, so it became a child of an unrelated task (indent %d):\n%s", syncIndent, syncOut)
+	}
+}

@@ -323,10 +323,14 @@ func TestConflictResolverCarriesIntoSeveralMilestonesAtOnce(t *testing.T) {
 // The insertion index must survive anything else that appends to `merged` during
 // the same iteration.
 //
-// msInsertAfter was recorded at the TOP of the walk body while the line itself is
-// appended at the BOTTOM, and the activity-merge block in between can inject
-// theirs' unseen activity rows. Its trigger is `strings.HasPrefix(line, "##")`,
-// and "##" is a prefix of "###" — so it fires on a milestone header. For a
+// The carry anchor (msInsertAfter then, `oursTaskIdxs`/`oursHeaderIdx` now) was
+// recorded at the TOP of the walk body while the line itself is appended at the
+// BOTTOM, and the activity-merge block in between can inject theirs' unseen
+// activity rows. Its trigger WAS `strings.HasPrefix(line, "##")`, and "##" is a
+// prefix of "###" — so it fired on a milestone header. (That trigger is
+// `isSectionBreak` now, which rejects `###`, so this specific collision can no
+// longer fire; the recordings stay at the bottom because that is correct
+// unconditionally.) For a
 // milestone whose block in "ours" is a bare header there is no later line to
 // correct the index, and the carried task was spliced BEFORE that header, i.e.
 // into the previous milestone. That produces a cross-milestone task ID, which

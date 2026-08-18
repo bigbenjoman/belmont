@@ -400,6 +400,18 @@ func mergeTaskLine(line string) (marker, id string, ok bool) {
 	return m[1], m[3], true
 }
 
+// anyTaskBullet reports whether a line is a task checkbox bullet, WITHOUT
+// requiring a parseable task ID. `mergeTaskLine` deliberately demands an ID,
+// because it answers "which task is this line about" — but the carry anchor
+// asks a different question, "where does this milestone's task list end", and
+// a hand-written `- [x] Parse the header` bounds that list whether or not
+// anything can name it. Using the ID-bearing test for both put a carried task
+// ABOVE every existing task in a milestone whose tasks happened to be ID-less,
+// because the anchor fell through to the milestone header.
+var anyTaskBulletRe = regexp.MustCompile(`^\s*-\s+\[.\]\s`)
+
+func anyTaskBullet(line string) bool { return anyTaskBulletRe.MatchString(line) }
+
 var mergeTaskLineRe = regexp.MustCompile(
 	`^\s*-\s+\[(.)\]\s+(?:(` + taskIDShapeOrdinal + `)|(` + taskIDShapeHandWritten + `):)`)
 

@@ -491,12 +491,33 @@ func lineIndentWidth(line string) int {
 // The anchor is `taskBodyEnd` of the last task, never the task bullet itself: a
 // bullet-only anchor splices a carried task between a task and its own indented
 // `**Verification**` / `**Evidence**` lines, which is issue #33's stranding in a
-// new place. A milestone that exists but holds no tasks yet anchors on its
-// header, or the first task a sibling adds to an empty milestone has nowhere to
-// land and is dropped from the only copy that exists.
-func milestoneCarryAnchor(lines []string, lastTaskIdx, lastHeaderIdx map[string]int, ms string) (int, bool) {
-	if at, ok := lastTaskIdx[ms]; ok {
-		return taskBodyEnd(lines, at), true
+// new place.
+//
+// The header fallback fires only when the milestone holds no task BULLETS at
+// all — `anyTaskBullet`, not `mergeTaskLine`. Keying it on the ID-bearing test
+// meant a milestone whose tasks were all hand-written and ID-less looked empty,
+// so the carry anchored on the header and landed ABOVE every existing task. The
+// fallback exists for the genuinely empty milestone: without it the first task a
+// sibling adds to one has nowhere to land and is dropped from the only copy that
+// exists.
+func milestoneCarryAnchor(lines []string, taskIdxs map[string][]int, lastHeaderIdx map[string]int, ms string) (int, bool) {
+	// The MAXIMUM `taskBodyEnd` over every task bullet in the milestone, not the
+	// last bullet's. Those differ whenever the milestone's final bullet is a
+	// NESTED child: `taskBodyEnd` bounds a body by the task's own indent, so
+	// from the child it stops at the child's own line and the splice lands
+	// inside the PARENT's body — above the parent's `**Verification**` /
+	// `**Evidence**` lines, which then re-attach to the carried task. That is
+	// issue #33's stranding, reached through the very function meant to prevent
+	// it. Taking the max means the enclosing parent's body end wins, because it
+	// encloses the child's.
+	if idxs, ok := taskIdxs[ms]; ok && len(idxs) > 0 {
+		end := -1
+		for _, at := range idxs {
+			if e := taskBodyEnd(lines, at); e > end {
+				end = e
+			}
+		}
+		return end, true
 	}
 	at, ok := lastHeaderIdx[ms]
 	return at, ok
@@ -620,7 +641,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	}
 
 	// A duplicated milestone heading gets the same refusal as a duplicated task
-	// ID, for the same reason: lastTaskIdx/lastHeaderIdx are last-writer-wins
+	// ID, for the same reason: msTaskIdxs/lastHeaderIdx are last-writer-wins
 	// per milestone, so a header-shaped session note — `### M1: retro notes`
 	// under `## Session History`, written mid-run after requireUnambiguousMilestones
 	// already passed — would anchor a carried task into the history section, and
@@ -746,7 +767,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 	wtOrphanID := map[string]bool{}
 	wtTaskIdx := map[string]int{}     // task ID -> index of its bullet line here
 	wtTaskMS := map[string]string{}   // task ID -> the milestone it sits under here
-	lastTaskIdx := map[string]int{}   // milestone -> index of its final task line
+	msTaskIdxs := map[string][]int{}  // milestone -> indices of ALL its task bullets
 	lastHeaderIdx := map[string]int{} // milestone -> index of its header line
 	out := strings.Split(worktreeContent, "\n")
 
@@ -760,6 +781,12 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		if isSectionBreak(line) {
 			currentMS = ""
 			continue
+		}
+		// Recorded for EVERY task bullet, before the ID gate below: a task with
+		// no parseable ID cannot be reconciled by state, but it still bounds
+		// where this milestone's task list ends.
+		if currentMS != "" && !dupMS[currentMS] && anyTaskBullet(line) {
+			msTaskIdxs[currentMS] = append(msTaskIdxs[currentMS], i)
 		}
 		wtLineMarker, wtLineID, wtLineOK := mergeTaskLine(line)
 		if !wtLineOK {
@@ -778,7 +805,6 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			// attributed, and never let it anchor a carry — warned above.
 			continue
 		}
-		lastTaskIdx[currentMS] = i
 		mt, ok := masterTasks[id]
 		if !ok {
 			continue
@@ -916,7 +942,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		// after its header when the milestone exists here but holds no tasks
 		// yet: otherwise the first task a sibling adds to an empty milestone
 		// has nowhere to land and is dropped from the only copy that exists.
-		at, ok := milestoneCarryAnchor(out, lastTaskIdx, lastHeaderIdx, mt.milestone)
+		at, ok := milestoneCarryAnchor(out, msTaskIdxs, lastHeaderIdx, mt.milestone)
 		if !ok {
 			warnings = append(warnings, fmt.Sprintf(
 				"task %s exists on main under %s, which this worktree's PROGRESS.md does not contain — not merged",

@@ -215,8 +215,8 @@ func runReverifyCmd(args []string) error {
 		// agent-failure branch below already records-and-continues; this is the
 		// same shape.
 		//
-		// It does change the exit code: a reset failure used to be the one thing
-		// in this loop that made `belmont reverify` exit non-zero, and now it
+		// It does change the exit code: a reset failure used to make `belmont
+		// reverify` exit non-zero and discard the whole report, and now it
 		// exits 0 like every other per-milestone failure, because this function
 		// returns nil once it reaches the summary. That is the existing
 		// convention rather than a new one — an agent that fails outright is
@@ -242,6 +242,10 @@ func runReverifyCmd(args []string) error {
 		prompt = adaptPromptForTool(prompt, tool)
 
 		// Build and run the tool command
+		// The other `return` still inside this loop. It is NOT the same hazard —
+		// `tool` does not vary per milestone, so an unsupported one fails on the
+		// first iteration with no results to discard — but it is worth naming, so
+		// nobody reads the comment above as "this loop has no early returns left".
 		args := toolHeadlessArgs(tool, prompt, root, verifyModelFlags, true)
 		if args == nil {
 			return fmt.Errorf("reverify: unsupported tool: %s", tool)
