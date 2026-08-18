@@ -938,7 +938,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 
 	// Carry over task lines master has that this worktree never saw — e.g. a
 	// follow-up a sibling added to its own milestone after this worktree
-	// forked. Collect first, keyed by the milestone's final task line, then
+	// forked. Collect first, keyed by the anchor index, then
 	// splice in one pass: computing indices as we mutate would mis-place
 	// insertions whenever the two documents order milestones differently.
 	// A task whose PARENT is also being carried travels inside that parent's
@@ -972,11 +972,11 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 			continue // reconciled in place by the walk above
 		}
 		mt := masterTasks[id]
-		// Anchor after the milestone's last task line — past its indented body,
-		// so the carry cannot land between a task and its own continuation — or
-		// after its header when the milestone exists here but holds no tasks
-		// yet: otherwise the first task a sibling adds to an empty milestone
-		// has nowhere to land and is dropped from the only copy that exists.
+		// `milestoneCarryAnchor` decides where. Do not restate its rule here: this
+		// comment used to say "after the milestone's last task line", which is
+		// the answer that strands a parent's `**Evidence**` when the milestone's
+		// final bullet is a nested child. One definition, and it lives on the
+		// function.
 		at, ok := milestoneCarryAnchor(out, msIDTaskIdxs, msAnyTaskIdxs, lastHeaderIdx, mt.milestone)
 		if !ok {
 			warnings = append(warnings, fmt.Sprintf(

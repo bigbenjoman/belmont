@@ -225,6 +225,17 @@ func runReverifyCmd(args []string) error {
 	tiers, _ := parseModelTiers(filepath.Join(featuresDir, feature, "models.yaml"))
 	verifyModelFlags := resolveModelFlags(tool, tiers.Tiers["verification"], root)
 
+	// Refused BEFORE the loop, not inside it. `tool` does not vary per milestone,
+	// so an unsupported one fails identically on every iteration — but the
+	// in-loop `return` discarded the whole report to say so, and since the reset
+	// failure above became record-and-continue that report can already hold
+	// results by the time iteration 2 runs. `detectTool` can return `windsurf`,
+	// which `toolHeadlessArgs` has no case for, so this is reachable with no
+	// `--tool` flag at all.
+	if toolHeadlessArgs(tool, "probe", root, verifyModelFlags, true) == nil {
+		return fmt.Errorf("reverify: unsupported tool: %s", tool)
+	}
+
 	for i, m := range targets {
 		fmt.Fprintf(os.Stderr, "━━ [%d/%d] VERIFY ━━ %s › %s: %s ━━\n", i+1, len(targets), feature, m.ID, m.Name)
 
@@ -265,12 +276,12 @@ func runReverifyCmd(args []string) error {
 		prompt = adaptPromptForTool(prompt, tool)
 
 		// Build and run the tool command
-		// The other `return` still inside this loop. It is NOT the same hazard —
-		// `tool` does not vary per milestone, so an unsupported one fails on the
-		// first iteration with no results to discard — but it is worth naming, so
-		// nobody reads the comment above as "this loop has no early returns left".
 		args := toolHeadlessArgs(tool, prompt, root, verifyModelFlags, true)
 		if args == nil {
+			// Unreachable: the same call is made once before the loop, so an
+			// unsupported tool has already been refused with nothing to discard.
+			// Kept as a guard rather than deleted, because `toolHeadlessArgs`
+			// takes the prompt and a future variant could in principle reject one.
 			return fmt.Errorf("reverify: unsupported tool: %s", tool)
 		}
 		cmd := exec.Command(toolBinary(tool), args...)
