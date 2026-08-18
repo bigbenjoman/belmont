@@ -138,8 +138,8 @@ to every file. It does not hold. **Three of the five gain essentially nothing fr
 counts each line plus its newline, as `censusFeature` does. Indentation is **approximately** the
 movable content, not a strict upper bound on it, and the two quantities differ in both directions.
 `censusFeature` claims every line index from a task line to `taskBodyEnd`, so: **(i)** an indented
-line that sits under a heading rather than under a task is never claimed and stays in the index —
-usually the larger term, and why "detail moved" normally comes in below the indented total; and
+line that sits under a heading rather than under a task is never claimed and stays in the index,
+which is the term that can pull "detail moved" below the indented total; and
 **(ii)** a blank line *inside* a task's body **is** claimed, and a blank line is not an indented
 line, so it adds its newline to the moved bytes. Where a register has no indentation outside a task
 body, only (ii) is left and moved exceeds indented — which is exactly the case for
@@ -158,6 +158,22 @@ one newline each. No total in this document changes.*
 > write path is M3/P1-1, and 44 B is 0.03% of 141,001, so nothing downstream of this document
 > moves. Both sides of the discrepancy were re-derived from `census.json` and the register on disk
 > before this correction was written, rather than taken from the report of them.
+
+> **RECONCILED by `P0-M1-FIX-8` (2026-08-18, second pass).** Term **(i)** above previously carried
+> the clause *"usually the larger term, and why 'detail moved' normally comes in below the indented
+> total"* — asserted from the five over-threshold registers in front of it, not from the estate.
+> Measured over **all 82 live registers**: **75 (91.5%) have moved exactly equal to indented**; 5
+> come in below — `repo-4/feat-075` (−40,024 B), `repo-1/feat-020`
+> (−9,906 B), `repo-3/feat-015` (−6,617 B), `repo-4/feat-071` (−399 B),
+> `repo-5/feat-016` (−231 B); and 2 come in above —
+> `repo-3/feat-063` (+1 B) and `repo-3/feat-070` (+44 B). **The normal case
+> is equality, not "below"**, and 67 of those 75 are equal at *zero*, carrying no indented lines at
+> all; only 8 registers balance two non-zero terms. So neither term dominates estate-wide — both are
+> usually absent, and where they are present neither direction is the rule. Re-derived by replaying
+> `censusFeature`'s own rule (`parseMilestones` + `taskBodyEnd`, counting each line plus its
+> newline in bytes) over every register `census.json` names, which reproduced all 82 of its
+> `total_bytes` and `detail_bytes` figures exactly. The clause is withdrawn and restated; no figure,
+> table or conclusion in this document changes.
 
 **Two of the five carry zero indented lines — not three.** The remaining two over-threshold
 registers have plenty: `repo-4/feat-075` has **11,832** indented lines
