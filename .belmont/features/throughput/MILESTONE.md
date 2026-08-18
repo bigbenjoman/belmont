@@ -408,4 +408,189 @@ Stdlib only — `os`, `path/filepath`, `encoding/json`, `time`, `sync`. **No new
 reference image, or visible UI.]
 
 ## Implementation Log
-[Written by implementation-agent — per-task status, files changed, commits, issues]
+
+*Written by implementation-agent, 2026-08-18. Baseline `ffd4b4bc` → `a42c45ea`.*
+
+### Summary
+- **Tasks Completed**: 6 of 6 (P0-12, P0-13, P0-1, P0-2, P0-3, P0-4)
+- **Tasks Blocked**: 3 new `[!]` sub-tasks recording deliberately-deferred clauses (P0-13a, P0-3a, P0-4a)
+- **Total Commits**: 6, one per task
+- **Gate suite green on every commit**: `go build`, `go test`, `go test -race`, `go test -tags eval`, `go vet` (default / `-tags eval` / `GOOS=windows`), `staticcheck`, `gofmt -l cmd/ scripts/`, `generate-skills.sh --check`, `belmont validate`
+
+### Headline findings
+
+1. **The branch backlog is a phantom.** Both branches the codebase scan flagged as most dangerous are already fully landed on `main`. M3, M4 and M6 are not standing on contested ground.
+2. **P0-4 answered the PRD's open question YES.** Five registers' indexes still exceed 25,000 tokens after extraction, not three — and for three of them extraction moves *nothing*, because their bulk is task head lines rather than indented narrative. Per the PRD's own terms the wave structure changes; escalated as `[!] P0-4a`.
+3. **P0-2 found a blocker the plan did not name and settled it before fixing the record shape**, as instructed.
+4. **`go test -race` was already clean** before P0-1 — warning 6's predicted pre-existing races did not materialise.
+
+---
+
+### Task: P0-12 — Bring the toolchain onto a supported version
+
+**Status**: SUCCESS · **Commit**: `dc6ba7e9`
+
+Measured against the module proxy rather than assumed: latest stable Go is **1.26.6**, with 1.27 at rc3. Both 1.21 and the locally installed 1.24.4 are outside Go's two-release support window. Bumped to `go 1.26.0`.
+
+**Files Modified**: `go.mod` (`go 1.21` → `go 1.26.0`); `.github/workflows/ci.yml` ×3 (test, generated, cross-platform); `.github/workflows/release.yml` ×1; `README.md:469`, `CONTRIBUTING.md:14` (`Go 1.21+` → `Go 1.26+`).
+
+All seven sites bumped in lockstep, per the warning that a partial bump fails silently — `GOTOOLCHAIN` defaults to `auto`, so CI left on the old pin would download a different toolchain rather than error.
+
+**Ruling on warning 7** (single-commit-vs-docs): README and CONTRIBUTING are included. They state the same version; AGENTS.md requires docs to move with the change. This is the same change, not other work.
+
+**Hazard 2 materialised and was fixed rather than worked around.** `staticcheck` failed after the bump: `file requires newer Go version go1.26 (application built with go1.25)`. Cause is staticcheck's *build* toolchain, not its version. Fix is `GOTOOLCHAIN=go1.26.0 go install honnef.co/go/tools/cmd/staticcheck@latest`. **CI is unaffected** — `setup-go` installs 1.26 before the `go install`, so CI's staticcheck is already built with 1.26. No pin needed.
+
+**Verification**: all gates green on go1.26.0, plus all five cross-compile targets. A pre-existing, unrelated failure was confirmed by stashing the bump: `go build -tags embed` fails with `pattern all:agents: no matching files found` on `go 1.21` too — `//go:embed` resolves relative to `cmd/belmont/`, and `scripts/build.sh` stages those directories first. Not a regression.
+
+---
+
+### Task: P0-13 — Triage the unmerged branch backlog
+
+**Status**: SUCCESS (classification and documentation, per instruction) · **Commit**: `d417b0c2`
+
+**File Created**: `docs/branch-triage.md` — all 35 branches, each with a verdict and a one-line reason. Verified programmatically to match `git branch -r --no-merged main` exactly: 35 rows, no duplicates, none invented.
+
+**Verdicts**: 2 merge, 3 rebase, 30 abandon.
+
+**The two branches flagged as most dangerous are phantoms.**
+- `origin/fix/unrecognised-task-markers` — "the widest collision in the backlog, 66 files" — is **24/24 patches already on `main`**.
+- `origin/feat/maintenance-ci` — "the only branch that collides with P0-12 and P0-1 directly" — is 29/31 landed, and both apparent leftovers were hand-verified present (the `worktree-state-isolation` row in `knowledge/KNOWLEDGE.md`; the `main.go`→`autocmd.go` repointing in `clean-tree-preflight.md`).
+- **Four of the TECH_PLAN's five named collisions are already on `main`.** Only `feat/verify-dedup` survives, and it is unmergeable for an unrelated reason — it edits the pre-`_src/` layout, now gitignored generated output, so it is a re-author (fold into M2/P0-5), not a merge.
+
+**The real hazard the plan did not name**: `origin/fix/post-51-triage` — newest branch (2026-08-17), 15 genuinely unlanded commits, six new regression tests, and it merges with **zero conflicts**. It touches `reconcile.go` and `worktree.go`, which P0-1 rewrites.
+
+**`origin/docs/pr-proposals` → merge.** 15 files under `docs/proposals/` exist nowhere on `main`, including `0004-context-budget-with-evidence.md` rev 5, M2's specification. `git merge-tree` yields exactly one conflict, in `.gitignore`. The triage also records how M2 reads 0004 *before* that merge (`git show origin/docs/pr-proposals:…`), so **M2 is not gated on it**.
+
+**Proposals-path convention settled**: `docs/proposals/` is canonical (larger, far more reviewed set; the path named by master TECH_PLAN rule 5; where 0007–0009 will live). 0001/0002 relocate on rebase.
+
+**Deliberately not done**: the "default branch matches the working state" clause. `origin/main` is 157 commits behind, so satisfying it means publishing 157 commits to a public fork. Recorded as `[!] P0-13a` and escalated to the repository owner. **No push, remote deletion, merge, rebase or PR was performed**; every `abandon` verdict is a recommendation to delete.
+
+Written to `docs/branch-triage.md` rather than the TECH_PLAN's nominated `docs/proposals/NEXT-SESSION.md`, because that file exists only on `origin/docs/pr-proposals` — writing there would manufacture a conflict in the branch this triage most wants to land cleanly.
+
+**Method note**: `git branch --no-merged` over-reports badly in a rebase-heavy repo (21 of 35 branches were fully or effectively landed). `git cherry` is the right primitive, with hand-checks on the residue. Two measurement traps are recorded in `NOTES.md`, both of which produced a wrong answer first: `git rev-parse "main:$path"` echoes unresolvable arguments back, so every missing file reads as present unless `--verify --quiet` is used; and two-dot `git diff main..<branch>` is meaningless when `main` is 157 ahead.
+
+---
+
+### Task: P0-1 — Atomic state writes
+
+**Status**: SUCCESS · **Commit**: `8e5981c7`
+
+**Files Created**: `cmd/belmont/fsutil_test.go` (race proof + 5 supporting cases), `knowledge/cross-cutting/state-atomicity.md`.
+**Files Modified**: `fsutil.go` (+`writeStateFile`, 2 template writes), `feature.go`, `guards.go` ×2, `merge_conflict.go`, `reverify.go`, `state.go`, `repair.go` ×2, `worktree.go` ×5, `reconcile.go` ×2, `steer.go`, `main.go` (`copyFile`), `knowledge/KNOWLEDGE.md` (routing row).
+
+**19 call sites** = the plan's 16, plus `copyFile` and the two `ensureStateFiles` templates. Every remaining `os.WriteFile` was confirmed non-state and is documented as such.
+
+**Rulings on each flagged site, as required:**
+
+| Site | Ruling |
+|---|---|
+| `main.go:846` `copyFile` | **Converted.** The plan's sixteen missed it; it is the transport for `PROGRESS.md` into a worktree and the highest-exposure site in the tree. Symlink-unlink preserved. |
+| `reconcile.go:308` `writeReconciliationResolution` | **Final write only.** Rename *replaces* a symlink where `os.WriteFile` *follows* it, so a mechanical whole-function swap silently converts symlinks to regular files. Symlink branch untouched. |
+| `worktree.go:241` `os.RemoveAll` before `copyDir` | **Not fixed — cannot be.** A *directory*-level tear no per-file helper closes. Recorded prominently in the knowledge entry under "What this does NOT fix", so nobody reads "atomic writes: done" and assumes otherwise. |
+| `steer.go:454` `appendSteeringEntry` | **Left on `O_APPEND`.** Converting an append to read-modify-rewrite is strictly worse — it widens the window to the whole file and adds a lost-update race. |
+| `main.go:1443` `ensureGitignoreEntry` | **Left.** `.gitignore` is a git file, not Belmont state. |
+| `fsutil.go:129/139` | **Converted** for consistency (cheapest possible). |
+| install/install_sync/monorepo/copyEnvFiles/release/probe | **Left.** Not Belmont state. |
+
+All four non-negotiable constraints implemented and pinned by tests: sibling temp via `os.CreateTemp(filepath.Dir(path), …)`, `Chmod` to the caller's perm before rename, `Sync` before rename, and no directory fsync (with the reason stated — this promises reader visibility, not crash durability).
+
+The five sites that discarded the write error now warn on stderr: a swallowed *rename* failure is worse than a swallowed truncate failure, because it leaves an orphan `.belmont-tmp-*` inside a feature directory that the walkers read as state.
+
+**The race proof is real, and was validated with a negative control.** `TestWriteStateFileIsNeverObservedPartiallyWritten` passes under `-race`, stable across 5 runs. A throwaway control using the *old* `os.WriteFile` in the identical harness observed a **0-byte read on every one of 3 runs within 0.02s**. The control was removed after validating; the result is recorded in the knowledge entry so nobody weakens the test's payload sizes without knowing what it is calibrated against.
+
+**`go test -race` was clean on the whole suite both before and after** — warning 6's predicted `worktreeTracker` races did not appear.
+
+---
+
+### Task: P0-2 — Token and wall-clock instrumentation
+
+**Status**: SUCCESS · **Commit**: `25249853`
+
+**Files Created**: `cmd/belmont/metrics.go`, `cmd/belmont/metrics_test.go` (15 cases).
+**Files Modified**: `render.go` (`streamLine` +`Subtype`/`Usage`, `claudeStreamWriter.usage`, new `usageCapture`), `auto_loop.go` (both exec sites + `attachUsageCapture` + `recordPhaseMetrics` + run identity), `types.go` (`loopConfig.RunID`, `.CriticalPath`), `fsutil.go` + `.gitignore` (`.belmont/metrics/`), `main.go` (`belmont metrics`).
+
+**The `tailWriter` blocker was settled first, as instructed.** Non-Claude tools write into a `tailWriter` keeping only the last 1500 bytes, so `executionResult.Output` is the *tail* of a stream. Whether a usage event lands inside it is luck: codex emits `turn.completed` last, but the `item.completed` events before it grow with agent output, so the usage line drifts out of a fixed window on exactly the long runs whose cost matters most. **Resolution**: a `usageCapture` tee that retains the usage-bearing line by *content* rather than position. Rejected raising the tail size — a bigger window is still a window, and it would also change error-reporting semantics.
+
+**Schemas were verified empirically against live runs, not guessed:**
+- **claude 2.1.234** — `result` event → `usage.{input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens}`. `render.go:270` discarded every non-`assistant` line, which is exactly where it was being thrown away.
+- **codex** — `turn.completed` → `usage`, with **different field names**: `cached_input_tokens` is the read, `cache_write_input_tokens` the creation. Swapping them yields a plausible wrong number.
+
+**Deviation from the TECH_PLAN's usage table, made deliberately.** The table lists gemini and cursor as "Yes". **gemini could not be verified** (`IneligibleTierError` on this account, gemini-cli 0.46.0) and cursor is not installed. Both record `null` with the note *"usage schema not yet verified against a live run — not estimated"*. A parser written against a guessed schema fails *silently* — always-zero or always-nil — and would contaminate the M1 baseline P3-3 is judged against. The plan file is spec-not-deliverable per the scope boundary, so this is recorded here and in `NOTES.md` rather than edited into it. **Follow-up: verify both against a live run and switch them on.**
+
+copilot / pi / opencode record `null` with a stated reason, per the plan. Token fields are pointers so a *reported* zero stays distinguishable from "not reported". **Nothing estimates a token count.**
+
+**Critical-path attribution is a new longest-chain pass**, not the wave index — `computeWaves` is Kahn levelling, so a milestone sits in wave 2 whenever any dependency sits in wave 1, whether or not it lies on a longest chain. `TestCriticalPathIsNotTheWaveIndex` pins this and also asserts the fixture still demonstrates the confusion.
+
+Wall-clock needed no new measurement, only persistence, exactly as the scan said.
+
+**Acceptance verified functionally**: two consecutive runs on one feature produce comparable per-run records (checked via `belmont metrics`), and `.belmont/metrics/` is gitignored with no working-tree change (checked via `git check-ignore` and `git status`).
+
+---
+
+### Task: P0-3 — Capture the pre-change baseline
+
+**Status**: PARTIAL — read-path half captured in full; cost half deliberately not fabricated · **Commit**: `c952426c`
+
+**Files Created**: `.belmont/features/throughput/BASELINE.md`, `baseline.json`. Both committed — metrics are gitignored, but a baseline M11 must read is not a metric.
+
+**Captured**, measured with the pinned v0.11.0 binary: per-feature register bytes for all 43 live registers in repo-3 and repo-4; `status --feature` text cost and `--format json` cost per feature; distribution (total/median/p90/max); the registers over the 100 KB ceiling; and the Belmont version, repo commit and Go toolchain.
+
+**The PRD's cited figures reproduce exactly** — `repo-4/feat-075` measures 1,860,979 B raw, 57,145 B text, 682,148 B JSON, the same numbers its composition analysis and 12× JSON warning rest on.
+
+**Not captured, and no number invented**: tokens and wall-clock per verified milestone. Three verified facts make this unavoidable — the orchestrating binary is pinned to v0.11.0 and carries no instrumentation (P0-2's code exists only in this tree); neither `~/repo-3/.belmont/metrics/` nor `~/repo-4/.belmont/metrics/` exists; and capturing it means running real milestones to `[v]` in two production repositories with an instrumented build, which is live agent spend an implementation agent should not trigger unasked. Tracked as `[!] P0-3a`, with the exact commands in `BASELINE.md`.
+
+The PRD is explicit that instrumentation reports nothing rather than guessing. A baseline is the last place to break that, because every later claim is stated against it.
+
+---
+
+### Task: P0-4 — Extraction census across all feature directories
+
+**Status**: SUCCESS · **Commit**: `a42c45ea`
+
+**Files Created**: `cmd/belmont/extract.go` (census only), `extract_test.go` (9 cases), `.belmont/features/throughput/CENSUS.md`, `census.json`.
+
+**Census only.** `extract` refuses without `--dry-run`, naming M3/P1-1 as where the write path and its round-trip proof land. `TestCensusWritesNothing` asserts no `details/` directory is created.
+
+**Measured denominator, stated**: **138 feature directories, 65 live registers, 68 archived.** Matches the scan; does not match the PRD's "the other 83". Walker reads `<root>/.belmont/features/` directly and never globs.
+
+**The open question is answered, and the answer is YES — five, not three.**
+
+| | |
+|---|---|
+| Over 100 KB today | 7 |
+| **Still over after extraction** | **5** |
+| Detail removed estate-wide | 1,744,231 B (**34.8%**) |
+
+`repo-3/feat-015`, `repo-3/feat-058`, `repo-3/feat-070`, `repo-4/feat-031`, `repo-4/feat-075`.
+
+**The pre-estimate was wrong in mechanism, not just magnitude.** It assumed size implies indented narrative and applied the worst file's 62% ratio to every file. **Three of the five contain no indented lines at all.** `repo-3/feat-015`: of 1,022,749 bytes, **795,799 are task *head* lines** and only 83,500 are indented, with a single task line of **11,542 characters**. Extraction moves 7.6% of it.
+
+Extraction remains right — 34.8% estate-wide, and 62.9% of the worst file (1,860,979 → 691,323 B, reproducing the PRD's composition analysis) — but does not alone bring every register under the ceiling.
+
+**Per the PRD's own terms, M4 becomes a prerequisite of M3 and the wave structure changes.** Only tech-planning may restructure milestones, so this is escalated as `[!] P0-4a` rather than applied.
+
+Reuses `parseMilestones` + `taskBodyEnd` rather than a third line-scanner, and records which *line indices* move rather than summing per-task lengths — a nested task bullet lies inside its parent's body *and* is a task itself, so the naive sum double-counts.
+
+---
+
+### Out-of-Scope Issues Found (across all tasks)
+
+| ID | Found During | Description | Priority |
+|---|---|---|---|
+| FWLUP-1 | P0-2 | gemini and cursor usage schemas unverified; both record `null`. Verify against a live run and switch on. The TECH_PLAN's usage table still lists them as "Yes". | P1 |
+| FWLUP-2 | P0-13 | `origin/fix/post-51-triage` merges with zero conflicts and touches `reconcile.go`/`worktree.go`, which P0-1 rewrote. Merge it before M3 or pay for it later. | P1 |
+| FWLUP-3 | P0-4 | M5/P1-8's 400-char task-line limit is load-bearing, not defensive — it is the only mechanism that would have prevented `feat-015`. Consider raising its priority. | P1 |
+| FWLUP-4 | P0-4 | P3-1's migration list is **seven** features, not the four the PRD assumes — and for three, migration alone is insufficient. | P2 |
+| FWLUP-5 | P0-1 | `os.RemoveAll(dstFeature)` before `copyDir` (`worktree.go:241`) still tears at directory level. Closing it means staging into a sibling directory and renaming. | P2 |
+| FWLUP-6 | P0-12 | `go test -race` is still not in `ci.yml`, though it is now clean and P0-1's proof depends on it. | P2 |
+| FWLUP-7 | P0-12 | `go build -tags embed` fails from a clean checkout (pre-existing). `scripts/build.sh` stages the embed inputs; a bare `-tags embed` build is a trap. | P3 |
+
+### Notes for Verification
+
+- **Three `[!]` tasks are deliberate escalations, not failures**: P0-13a (publishing 157 commits — owner's decision), P0-3a (live agent runs in two production repos — owner's decision), P0-4a (wave restructure — tech-planning's decision). Each names what is being asked and of whom.
+- **P0-4a is the one with downstream consequences.** It changes M3/M4 ordering if accepted, and it should be resolved before M3 begins.
+- **`staticcheck` must be rebuilt** with a toolchain ≥ the module's `go` directive or it errors locally; CI is unaffected. Recorded in `NOTES.md`.
+- **The race proof is calibrated.** Do not reduce `TestWriteStateFileIsNeverObservedPartiallyWritten`'s payload sizes or iteration count without re-running a negative control — a test that cannot fail proves nothing.
+- **Metrics fixtures are real captured tool output**, not invented JSON. If claude or codex change their event shape, those constants are what fail — that is intended.
+- Nothing was pushed; no remote branch was deleted, merged or rebased; `belmont install` was not run; no external Go dependency was added and there is still no `go.sum`.
+
