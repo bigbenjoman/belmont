@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,28 @@ import (
 	"strings"
 	"time"
 )
+
+// jsonString encodes a Go string as a JSON string literal, quotes included.
+//
+// NOT `fmt.Sprintf("%q")`, which produces a **Go** string literal. The two agree
+// on the easy cases — a quote, a backslash, a tab — and diverge on exactly the
+// input that reaches this file: `%q` emits `\xNN` for a control byte or invalid
+// UTF-8, and JSON has no `\x` escape, so the document fails to parse. A task
+// name pasted out of coloured terminal output carries ESC, and follow-up labels
+// are `t.ID` falling back to `t.Name`, i.e. free text a human wrote.
+//
+// The "build JSON manually to avoid importing encoding/json just for this"
+// rationale below predates this package importing encoding/json in ten other
+// files; the import is free now, and hand-rolled escaping was never correct.
+func jsonString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		// json.Marshal only fails on unencodable types, never on a string:
+		// invalid UTF-8 is replaced with U+FFFD rather than erroring.
+		return `""`
+	}
+	return string(b)
+}
 
 // resetVerifiedTasks rewrites verified task markers back to `[x]` within the
 // milestones named in resetIDs, so the verification agent picks them up again.
@@ -333,33 +356,32 @@ func runReverifyCmd(args []string) error {
 
 	if format == "json" {
 		// Build JSON manually to avoid importing encoding/json just for this
-		fmt.Printf(`{"feature":%q,"verified":%d,"passed":%d,"total_fwlups":%d,"results":[`, feature, len(results), passed, len(allFwlups))
+		fmt.Printf(`{"feature":%s,"verified":%d,"passed":%d,"total_fwlups":%d,"results":[`, jsonString(feature), len(results), passed, len(allFwlups))
 		for i, r := range results {
 			if i > 0 {
 				fmt.Print(",")
 			}
-			// Escaped per element with %q, like every sibling field in this
-			// block. Hand-concatenating quotes around the joined slice emitted
-			// invalid JSON the moment a follow-up label contained a `"` or a
-			// `\` — and these labels are not ID-shaped by construction: the
-			// label is `t.ID` falling back to `t.Name`, so any free-text task
-			// name a human wrote in PROGRESS.md reaches this writer verbatim.
-			// `- [ ] Add the "verified" marker check` was enough to make the
-			// whole document unparseable.
+			// Escaped per element through `jsonString`, like every other string
+			// in this block. Hand-concatenating quotes around the joined slice
+			// emitted invalid JSON the moment a label held a `"` or a `\`, and
+			// the `%q` that replaced it was still wrong for a control byte —
+			// these labels are not ID-shaped by construction: the label is
+			// `t.ID` falling back to `t.Name`, so any free-text task name a
+			// human wrote in PROGRESS.md reaches this writer verbatim.
 			fwlupsJSON := "[]"
 			if len(r.Fwlups) > 0 {
 				quoted := make([]string, len(r.Fwlups))
 				for i, f := range r.Fwlups {
-					quoted[i] = fmt.Sprintf("%q", f)
+					quoted[i] = jsonString(f)
 				}
 				fwlupsJSON = "[" + strings.Join(quoted, ",") + "]"
 			}
 			errJSON := "null"
 			if r.Error != "" {
-				errJSON = fmt.Sprintf("%q", r.Error)
+				errJSON = jsonString(r.Error)
 			}
-			fmt.Printf(`{"id":%q,"name":%q,"passed":%t,"fwlups":%s,"duration_s":%.1f,"error":%s}`,
-				r.ID, r.Name, r.Passed, fwlupsJSON, r.Duration, errJSON)
+			fmt.Printf(`{"id":%s,"name":%s,"passed":%t,"fwlups":%s,"duration_s":%.1f,"error":%s}`,
+				jsonString(r.ID), jsonString(r.Name), r.Passed, fwlupsJSON, r.Duration, errJSON)
 		}
 		fmt.Println("]}")
 	} else {

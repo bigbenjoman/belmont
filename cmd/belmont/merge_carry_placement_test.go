@@ -844,3 +844,143 @@ func TestCarryLandsInsideTheListNotPastItsTrailingBlank(t *testing.T) {
 		t.Errorf("the carried task landed under %s, not M1:\n%s", nonEmpty(ms, "no milestone"), out)
 	}
 }
+
+// A checkbox bullet is not always a task. Recording EVERY bullet as an anchor
+// candidate fixed the ID-less-milestone bug and introduced two worse ones: a
+// sample inside a fenced code block, and a reviewer checklist written under a
+// milestone's closing prose, both bound the "task list" and dragged the carry
+// past the real tasks. The first splices it INSIDE the fence.
+//
+// Fenced regions are skipped outright, and the anchor prefers ID-bearing bullets
+// with the ID-less set as fallback — so the widening still covers the milestone
+// it was added for, without letting prose speak for a milestone that has tasks.
+func TestCarryIgnoresCheckboxesThatAreNotTasks(t *testing.T) {
+	t.Run("sample inside a fenced code block", func(t *testing.T) {
+		base := "## Milestones\n\n### M1: Parsing\n- [ ] P0-M1-1: Parse the header\n"
+		ours := "## Milestones\n\n### M1: Parsing\n- [x] P0-M1-1: Parse the header\n\nFollow-ups are written as:\n\n```\n- [ ] describe the work here\n```\n"
+		theirs := "## Milestones\n\n### M1: Parsing\n- [ ] P0-M1-1: Parse the header\n- [ ] P0-M1-9: Emit a summary\n\nFollow-ups are written as:\n\n```\n- [ ] describe the work here\n```\n"
+
+		assertOutsideFence := func(t *testing.T, name, doc string) {
+			t.Helper()
+			lines := strings.Split(doc, "\n")
+			open, close, carried := -1, -1, -1
+			for i, l := range lines {
+				if isFenceDelimiter(l) {
+					if open == -1 {
+						open = i
+					} else if close == -1 {
+						close = i
+					}
+				}
+				if strings.Contains(l, "P0-M1-9") {
+					carried = i
+				}
+			}
+			if carried == -1 {
+				t.Fatalf("%s: the carried task is missing:\n%s", name, doc)
+			}
+			if open != -1 && close != -1 && open < carried && carried < close {
+				t.Errorf("%s: carried task spliced INSIDE the fenced code block:\n%s", name, doc)
+			}
+		}
+
+		syncOut, _ := mergeProgressState(theirs, ours)
+		assertOutsideFence(t, "mergeProgressState", syncOut)
+
+		root, rel := conflictFixture(t, base, ours, theirs)
+		if !resolveProgressConflict(root, rel, filepath.Join(root, rel)) {
+			t.Fatal("the conflict resolver declined a file of legal markers")
+		}
+		assertOutsideFence(t, "resolveProgressConflict", readFile(t, filepath.Join(root, rel)))
+	})
+
+	t.Run("checklist in a milestone's closing prose", func(t *testing.T) {
+		ours := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+  **Evidence**: commit aaa111
+
+Reviewer sign-off checklist (not tasks):
+- [ ] Ben has read the diff
+- [ ] CI is green
+`
+		theirs := `### M1: Parsing
+- [x] P0-M1-1: Parse the header
+  **Evidence**: commit aaa111
+- [ ] P0-M1-9: Emit a summary
+
+Reviewer sign-off checklist (not tasks):
+- [ ] Ben has read the diff
+- [ ] CI is green
+`
+		out, _ := mergeProgressState(theirs, ours)
+		lines := strings.Split(out, "\n")
+		carried, lastProse := -1, -1
+		for i, l := range lines {
+			if strings.Contains(l, "P0-M1-9") {
+				carried = i
+			}
+			if strings.Contains(l, "CI is green") {
+				lastProse = i
+			}
+		}
+		if carried == -1 {
+			t.Fatalf("the carried task is missing:\n%s", out)
+		}
+		if carried > lastProse {
+			t.Errorf("the carried task landed below the milestone's closing checklist, detached from the real tasks:\n%s", out)
+		}
+	})
+
+	// Where fence-skipping is actually load-bearing. In the fixtures above the
+	// milestone has an ID-bearing task, so the ID-preference alone keeps the
+	// fence out of it and removing the fence skip changes nothing. Here the
+	// milestone's own tasks are ID-less, so the fallback IS consulted — and
+	// without the skip it picks the bullet inside the fence and splices the carry
+	// after it, inside the code block.
+	t.Run("fence is skipped even when the fallback is in play", func(t *testing.T) {
+		ours := "### M1: Parsing\n- [x] Parse the header\n\nWrite follow-ups like:\n\n```\n- [ ] describe the work here\n```\n"
+		theirs := "### M1: Parsing\n- [x] Parse the header\n- [ ] P0-M1-9: Emit a summary\n\nWrite follow-ups like:\n\n```\n- [ ] describe the work here\n```\n"
+		out, _ := mergeProgressState(theirs, ours)
+		lines := strings.Split(out, "\n")
+		open, close, carried := -1, -1, -1
+		for i, l := range lines {
+			if isFenceDelimiter(l) {
+				if open == -1 {
+					open = i
+				} else if close == -1 {
+					close = i
+				}
+			}
+			if strings.Contains(l, "P0-M1-9") {
+				carried = i
+			}
+		}
+		if carried == -1 {
+			t.Fatalf("the carried task is missing:\n%s", out)
+		}
+		if open != -1 && carried > open {
+			t.Errorf("carried task landed at or past the fence, anchored on a sample rather than on the milestone's tasks:\n%s", out)
+		}
+	})
+
+	// The case the widening was added for still works: a milestone whose tasks
+	// are all ID-less falls back to them rather than to the header.
+	t.Run("ID-less milestone still anchors on its tasks", func(t *testing.T) {
+		ours := "### M1: Parsing\n- [x] Parse the header\n- [x] Parse the body\n"
+		theirs := "### M1: Parsing\n- [x] Parse the header\n- [x] Parse the body\n- [ ] P0-M1-9: Emit a summary\n"
+		out, _ := mergeProgressState(theirs, ours)
+		lines := strings.Split(out, "\n")
+		carried, lastExisting := -1, -1
+		for i, l := range lines {
+			if strings.Contains(l, "P0-M1-9") {
+				carried = i
+			}
+			if strings.Contains(l, "Parse the body") {
+				lastExisting = i
+			}
+		}
+		if carried < lastExisting {
+			t.Errorf("the ID-less fallback regressed — carry landed above the existing tasks:\n%s", out)
+		}
+	})
+}

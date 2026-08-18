@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // The reset `belmont reverify` performs is a DESTRUCTIVE step that runs before
@@ -201,44 +202,54 @@ func TestReverifyRereadsProgressBetweenMilestones(t *testing.T) {
 	}
 }
 
-// `belmont reverify --format json` builds its document by hand to avoid pulling
-// in encoding/json for one printf. That is fine for the ID-shaped fields, and it
-// was NOT fine for the follow-up list: it was concatenated as `["`+Join(`","`)+`"]`
-// while every sibling field used %q. Follow-up labels are `t.ID` falling back to
-// `t.Name`, so a free-text task name written by a human lands in this writer
-// verbatim, and one `"` makes the whole document unparseable — including the
-// `error` field that the reset-failure skip path relies on as its only signal.
+// `belmont reverify --format json` builds its document by hand. That is fine for
+// the numbers and wrong for every string, twice over: the follow-up list was
+// hand-concatenated (`["`+Join(`","`)+`"]`), which broke on a `"`; replacing that
+// with `%q` fixed the easy cases and still emits `\xNN` for a control byte or
+// invalid UTF-8, which JSON has no escape for. Follow-up labels are `t.ID`
+// falling back to `t.Name`, so free text a human wrote reaches the writer
+// verbatim — a name pasted out of coloured terminal output carries ESC.
 //
-// Asserted by actually parsing the output, not by matching a substring: the
-// point is that a JSON consumer can read it.
-func TestReverifyJSONSurvivesQuotesInFollowUpNames(t *testing.T) {
+// This asserts against `jsonString`, the production encoder. The version of this
+// test written alongside the `%q` fix rebuilt the document inside the test with
+// `%q` and unmarshalled THAT — so it asserted on its own construction and could
+// not fail whatever `reverify.go` did. It passed while the binary emitted
+// unparseable JSON.
+func TestReverifyJSONEncodesHostileFollowUpNames(t *testing.T) {
 	hostile := []string{
 		`Add the "verified" marker check`,
 		`Handle a back\slash in paths`,
 		"A tab\tand a newline\nin one name",
+		"Handle the \x1b[31mred\x1b[0m case",
+		"an invalid UTF-8 byte \xff here",
 	}
+	for _, name := range hostile {
+		encoded := jsonString(name)
+		var got string
+		if err := json.Unmarshal([]byte(encoded), &got); err != nil {
+			t.Errorf("jsonString(%q) = %s, which is not valid JSON: %v", name, encoded, err)
+			continue
+		}
+		// Invalid UTF-8 is replaced with U+FFFD rather than preserved byte for
+		// byte; everything else must round-trip exactly.
+		if !utf8.ValidString(name) {
+			continue
+		}
+		if got != name {
+			t.Errorf("jsonString round-trip changed the name:\n got %q\nwant %q", got, name)
+		}
+	}
+
+	// And the whole record, assembled the way runReverifyCmd assembles it.
 	quoted := make([]string, len(hostile))
 	for i, f := range hostile {
-		quoted[i] = fmt.Sprintf("%q", f)
+		quoted[i] = jsonString(f)
 	}
-	fwlupsJSON := "[" + strings.Join(quoted, ",") + "]"
-
-	doc := fmt.Sprintf(`{"id":%q,"name":%q,"passed":%t,"fwlups":%s,"duration_s":%.1f,"error":%s}`,
-		"M1", "First", false, fwlupsJSON, 0.0, fmt.Sprintf("%q", `reset failed: unexpected " in path`))
-
-	var got struct {
-		Fwlups []string `json:"fwlups"`
-		Error  string   `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(doc), &got); err != nil {
-		t.Fatalf("reverify JSON is unparseable: %v\n%s", err, doc)
-	}
-	if len(got.Fwlups) != len(hostile) {
-		t.Fatalf("round-trip lost follow-ups: got %d, want %d\n%s", len(got.Fwlups), len(hostile), doc)
-	}
-	for i, want := range hostile {
-		if got.Fwlups[i] != want {
-			t.Errorf("follow-up %d round-tripped as %q, want %q", i, got.Fwlups[i], want)
-		}
+	doc := fmt.Sprintf(`{"feature":%s,"results":[{"id":%s,"name":%s,"fwlups":[%s],"error":%s}]}`,
+		jsonString("demo"), jsonString("M1"), jsonString("First \x1b[0m"),
+		strings.Join(quoted, ","), jsonString(`reset failed: unexpected " in path`))
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(doc), &parsed); err != nil {
+		t.Fatalf("the assembled reverify document is unparseable: %v\n%s", err, doc)
 	}
 }
