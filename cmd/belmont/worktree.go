@@ -476,6 +476,32 @@ func lineIndentWidth(line string) int {
 	return len(line) - len(strings.TrimLeft(line, " \t"))
 }
 
+// milestoneCarryAnchor returns the index in `lines` that a task carried into
+// milestone `ms` should be spliced AFTER, and whether the milestone exists here
+// at all.
+//
+// This is the single definition of "the end of this milestone's task list", and
+// it is shared deliberately: `mergeProgressState` and `resolveProgressConflict`
+// each had their own, they disagreed, and which one ran depended only on whether
+// git happened to register a conflict — so the same wave produced a different
+// document for a reason no user could see (issue #60). The conflict path used
+// the last NON-BLANK line of the milestone's block, which put a carried task
+// below a milestone's closing prose; this one keeps it with the other tasks.
+//
+// The anchor is `taskBodyEnd` of the last task, never the task bullet itself: a
+// bullet-only anchor splices a carried task between a task and its own indented
+// `**Verification**` / `**Evidence**` lines, which is issue #33's stranding in a
+// new place. A milestone that exists but holds no tasks yet anchors on its
+// header, or the first task a sibling adds to an empty milestone has nowhere to
+// land and is dropped from the only copy that exists.
+func milestoneCarryAnchor(lines []string, lastTaskIdx, lastHeaderIdx map[string]int, ms string) (int, bool) {
+	if at, ok := lastTaskIdx[ms]; ok {
+		return taskBodyEnd(lines, at), true
+	}
+	at, ok := lastHeaderIdx[ms]
+	return at, ok
+}
+
 // dedentBlock shifts every line in a carried block left by `by` characters,
 // preserving the block's INTERNAL structure: a line indented deeper than the
 // block's own bullet stays deeper by the same amount, so a carried parent keeps
@@ -890,12 +916,7 @@ func mergeProgressState(masterContent, worktreeContent string) (string, []string
 		// after its header when the milestone exists here but holds no tasks
 		// yet: otherwise the first task a sibling adds to an empty milestone
 		// has nowhere to land and is dropped from the only copy that exists.
-		at, ok := lastTaskIdx[mt.milestone]
-		if ok {
-			at = taskBodyEnd(out, at)
-		} else {
-			at, ok = lastHeaderIdx[mt.milestone]
-		}
+		at, ok := milestoneCarryAnchor(out, lastTaskIdx, lastHeaderIdx, mt.milestone)
 		if !ok {
 			warnings = append(warnings, fmt.Sprintf(
 				"task %s exists on main under %s, which this worktree's PROGRESS.md does not contain — not merged",
