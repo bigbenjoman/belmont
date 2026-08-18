@@ -21,18 +21,19 @@ the next session will look.
 The backlog is far less dangerous than the plan assumed, and dangerous in a
 different place than the plan predicted.
 
-- **The two branches the milestone analysis flagged as most hazardous are
-  phantoms.** `origin/fix/unrecognised-task-markers` (24 commits, 64 files,
-  described as "the widest collision in the backlog") and
-  `origin/feat/maintenance-ci` (the only branch said to collide with P0-12,
-  P0-1 *and* P0-2 at once) are both **fully landed on `main` already**. They
-  appear in `git branch -r --no-merged` only because they were rebased before
-  landing, so their SHAs differ from the commits that carry their patches.
-  `git cherry main <branch>` reports 0 outstanding patches for the first and,
-  for the second, 2 apparent outstanding commits whose content was then verified
-  present on `main` by hand (the `worktree-state-isolation` row in
-  `knowledge/KNOWLEDGE.md`, and the `main.go` → `autocmd.go` repointing in
-  `knowledge/auto-mode/clean-tree-preflight.md`).
+- **The two branches the milestone analysis flagged as most hazardous carry no
+  code `main` does not already have.** `origin/fix/unrecognised-task-markers`
+  (24 commits, 64 files, described as "the widest collision in the backlog")
+  and `origin/feat/maintenance-ci` (the only branch said to collide with P0-12,
+  P0-1 *and* P0-2 at once) appear in `git branch -r --no-merged` only because
+  they were rebased before landing, so their SHAs differ from the commits that
+  carry their patches. `git cherry main <branch>` reports 0 outstanding patches
+  for the first and 2 for the second. **Corrected 2026-08-18 by
+  `P0-M1-FIX-3`:** of `maintenance-ci`'s 2, one — `1129cf84`, a 23-line
+  knowledge note — was **not** on `main` and has now been cherry-picked onto
+  local `main` as `23e71008`; the other is superseded. The two changes this
+  bullet originally named as the leftovers are on `main`, but neither is what
+  those commits contain. Evidence in the row below.
 - **Four of the five collisions named in the TECH_PLAN are also already on
   `main`**: `feat/loop-efficiency`, `fix/wave-merge-state-loss`,
   `fix/state-readers-and-live-views` and `fix/unrecognised-task-markers`. Only
@@ -94,9 +95,22 @@ Each was rebased or squashed before landing, so only the SHAs differ.
 `git cherry` compares patch-ids, which context drift defeats. Each of these was
 checked by hand against the working tree.
 
+**Caveat added 2026-08-18 (`P0-M1-FIX-3`).** That hand-check failed on the first
+row: one of `feat/maintenance-ci`'s two leftovers was never on `main`, and the
+reason given named two changes those commits do not contain. The bar this
+section is now held to — and the bar an `abandon` verdict has to clear, being a
+recommendation to destroy — is that an *"already on `main`"* claim names the
+commit **and** shows its content on `main` (grep the heading, cite the lines),
+and a *"superseded"* claim names the mechanism on `main` and cites the lines
+implementing it. `origin/fix/worktree-git-excludes` was re-checked to that bar
+and holds (`writeWorktreeGitExcludes` is absent from `cmd/`, with the three
+removal comments at `worktree.go:286`, `worktree_state_test.go:60`,
+`steer_test.go:148`, and `main`'s `worktree-state-isolation.md` is a superset of
+the branch's version). The rows below it were not re-audited to that bar.
+
 | Branch | Last commit | Reason |
 |---|---|---|
-| `origin/feat/maintenance-ci` | 2026-08-07 | 29/31 landed; the 2 apparent leftovers are both present — the `worktree-state-isolation` row in `knowledge/KNOWLEDGE.md` and the `main.go` → `autocmd.go` repointing in `clean-tree-preflight.md`. **This is the branch the milestone flagged as colliding with P0-12, P0-1 and P0-2 simultaneously. It does not.** |
+| `origin/feat/maintenance-ci` | 2026-08-07 | 29/31 landed. **The original reason here was wrong and is replaced — `P0-M1-FIX-3`, 2026-08-18.** It claimed both leftovers were already present, naming the `worktree-state-isolation` row in `knowledge/KNOWLEDGE.md` and the `main.go` → `autocmd.go` repointing in `clean-tree-preflight.md`. Those two changes *are* on `main` (`knowledge/KNOWLEDGE.md:25`; `knowledge/auto-mode/clean-tree-preflight.md:13` reads ``In `cmd/belmont/autocmd.go`:``) — but neither is what either leftover commit contains. The leftovers are: **(1) `1129cf84`**, 23 lines adding §*Gotcha — `--max-parallel` does not by itself produce worktrees* to `knowledge/auto-mode/parallel-wave-orchestration.md`. This was **genuinely absent** (`git grep 'does not by itself produce worktrees' main` returned nothing) and is now **cherry-picked onto local `main` as `23e71008`**, landing at `parallel-wave-orchestration.md:43-62`. The gate it documents is live on `main`: `hasExplicitDeps` at `cmd/belmont/autocmd.go:278-284`, dispatching to `runAutoParallel` only under `if hasExplicitDeps` at `:286`. **(2) `7a9b7b56`**, 26 lines adding §*Confirmed defect — the second merge in a wave clobbers the first's state* to `knowledge/auto-mode/worktree-state-isolation.md`. **Superseded on `main`**, which records the same last-writer-wins defect *and its fix* under §*PROGRESS.md is merged on sync, never replaced* (`worktree-state-isolation.md:44-58`, issue #24, revision `2026-08-08`), implemented by `mergeProgressState` (`cmd/belmont/worktree.go:504`, called from `syncFeatureStateAfterMerge` at `worktree.go:410`). The branch's text records the defect as **open**, so applying it would regress the file — do not cherry-pick it. With (1) landed and (2) superseded, nothing on this branch is unrecovered: **abandon stands**. **This is the branch the milestone flagged as colliding with P0-12, P0-1 and P0-2 simultaneously. It does not.** |
 | `origin/fix/worktree-git-excludes` | 2026-08-07 | `writeWorktreeGitExcludes` is already removed from `main` (three source comments record the removal), and `knowledge/auto-mode/worktree-state-isolation.md` exists. |
 | `origin/fix/wave-merge-state-loss` | 2026-08-07 | `main`'s `worktree.go` already scopes the sync per milestone and refuses duplicate headings; `syncFeatureStateAfterMerge` is covered by three test files (`worktree_sync_test.go`, `worktree_state_test.go`, `merge_symmetry_test.go`). Only the branch's own test filename is absent. |
 | `origin/backup/loop-efficiency-pre-rebase` | 2026-08-13 | Pre-rebase backup of `feat/loop-efficiency`, which is itself fully landed. |
@@ -193,7 +207,8 @@ git rev-parse --verify --quiet "main:$f"
 git merge-tree --write-tree main <branch>
 ```
 
-Two traps worth recording, because both produced a wrong answer first:
+Three traps worth recording. The first two produced a wrong answer first; the
+third is a consequence of correcting one of them:
 
 1. **`git branch --no-merged` over-reports badly in a rebase-heavy repo.** It
    compares commit ancestry, so a rebased-and-landed branch still lists as
@@ -205,7 +220,18 @@ Two traps worth recording, because both produced a wrong answer first:
    commits ahead it reports main's own additions as the branch's deletions —
    every branch looked like a 30,000-line deletion. Use three-dot
    (`main...<branch>`) for a branch's own changes.
+3. **A cherry-picked commit still shows as `+` under `git cherry`.** `1129cf84`
+   was cherry-picked onto `main` as `23e71008` on 2026-08-18 and `git cherry -v
+   main origin/feat/maintenance-ci` *still* lists it as outstanding, because the
+   conflict resolution changed its context lines and therefore its patch-id.
+   Re-running the commands above will contradict the row for
+   `feat/maintenance-ci`; the file content is the authority, not the count.
 
 ## Revisions
 
 - 2026-08-18 — initial triage, all 35 branches, `throughput` P0-13.
+- 2026-08-18 — `origin/feat/maintenance-ci` re-verdicted (`throughput`
+  P0-M1-FIX-3). One of its two leftovers, `1129cf84`, was **not** on `main`;
+  cherry-picked as `23e71008`. The other, `7a9b7b56`, is superseded and named as
+  such. Abandon still stands, now on evidence rather than on a commit count.
+  Headline bullet and the section preamble corrected to match.
