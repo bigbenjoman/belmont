@@ -232,7 +232,21 @@ func TestTopLevelUsageNamesEveryFlagEachCommandDefines(t *testing.T) {
 			continue
 		}
 		for _, m := range flagRe.FindAllStringSubmatch(out, -1) {
-			if !strings.Contains(topLine, "--"+m[1]) {
+			// Matched as a DELIMITED token, never as a bare substring. A plain
+			// `Contains(topLine, "--"+name)` is satisfied by any longer flag on
+			// the same line, and five real flags are shadowed that way:
+			//
+			//     auto --all      by [--allow-dirty]      auto --to      by --tool
+			//     auto --feature  by --features a,b,c     reverify --to  by --tool
+			//     recover --clean by [--clean-all]
+			//
+			// So `[--clean SLUG]` could be deleted from `recover`'s synopsis with
+			// this whole suite green — which is the review finding that prompted
+			// this test, reproduced inside the test written to prevent it. The
+			// sibling assertion in TestAutoUsageNamesTheMultiFeatureFlags applies
+			// the same trick by hand; this does it for every flag.
+			delimited := regexp.MustCompile(`--` + regexp.QuoteMeta(m[1]) + `([^A-Za-z0-9_-]|$)`)
+			if !delimited.MatchString(topLine) {
 				t.Errorf("%s defines --%s but `belmont --help` never names it:\n  %s", c.name, m[1], topLine)
 			}
 		}
