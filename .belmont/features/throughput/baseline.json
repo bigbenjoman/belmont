@@ -160,7 +160,7 @@
       "progress_total_bytes": 1973359,
       "progress_median_bytes": 17950,
       "progress_max_bytes": 1022749,
-      "progress_p90_bytes": 100523,
+      "progress_p90_bytes": 114941,
       "status_text_total_bytes": 237735,
       "status_json_total_bytes": 2008535,
       "over_100kb": [
@@ -168,7 +168,8 @@
         "feat-070",
         "feat-058",
         "feat-010"
-      ]
+      ],
+      "percentile_rule": "sorted[int(p*n)], zero-based, no interpolation \u2014 the rule cmd/belmont/percentile implements and `belmont extract` publishes. Restated 2026-08-19 by P0-M1-FIX-26(a); the original figures used mean-of-two-middles for the median and sorted[int(p*(n-1))] for p90, which no shipped code produces."
     },
     "repo-4": {
       "features": {
@@ -246,15 +247,16 @@
       "master_progress_bytes": 247645,
       "live_registers": 14,
       "progress_total_bytes": 2219167,
-      "progress_median_bytes": 17089,
+      "progress_median_bytes": 20297,
       "progress_max_bytes": 1860979,
-      "progress_p90_bytes": 60678,
+      "progress_p90_bytes": 129354,
       "status_text_total_bytes": 136638,
       "status_json_total_bytes": 1090735,
       "over_100kb": [
         "feat-075",
         "feat-031"
-      ]
+      ],
+      "percentile_rule": "sorted[int(p*n)], zero-based, no interpolation \u2014 the rule cmd/belmont/percentile implements and `belmont extract` publishes. Restated 2026-08-19 by P0-M1-FIX-26(a); the original figures used mean-of-two-middles for the median and sorted[int(p*(n-1))] for p90, which no shipped code produces."
     }
   },
   "per_milestone_cost_baseline": {

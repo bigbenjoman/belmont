@@ -202,14 +202,23 @@ see below.
 
 ## Not done here: bringing the default branch up to date
 
-`origin/main` is **157 commits behind** local `main`. The task's acceptance
-clause "the default branch matches the working state" is **deliberately not
-satisfied by this task**, and is tracked as a blocked task in
-`.belmont/features/throughput/PROGRESS.md` under M1.
+> **RESOLVED 2026-08-18, and the figure below was wrong when written**
+> (`P0-M1-FIX-29(b)`, 2026-08-19). `origin/main` now matches the working state:
+> `P0-13`'s second acceptance clause is satisfied and `P0-13a` is `[v]`, not blocked.
+> The gap was never 157 commits — that was read from a **stale remote-tracking ref**
+> nobody had fetched. The push proved the real state: **20 commits, all from that
+> session**; `origin/main` was already at upstream v0.11.0. The decision to escalate was
+> correct; the number it was escalated on was an order of magnitude too large. Root cause
+> in `NOTES.md` §Root Cause Patterns — a remote-tracking ref is not the remote, and it
+> fails one-directionally: it makes the remote look *behind*, never ahead.
 
-Satisfying it means pushing 157 commits to a public GitHub fork. That is a
+`origin/main` was recorded as **157 commits behind** local `main`, and the task's acceptance
+clause "the default branch matches the working state" was **deliberately not satisfied by
+this task**, tracked under M1 in `.belmont/features/throughput/PROGRESS.md`.
+
+Satisfying it meant pushing to a public GitHub fork. That is a
 publication decision belonging to the repository owner, not to an implementation
-agent, and it has been escalated to them. Nothing in this triage was pushed, no
+agent, and it was escalated to them; the owner authorised it on 2026-08-18. Nothing in this triage was pushed, no
 remote branch was deleted, merged or rebased, and no PR was opened. Every
 `abandon` verdict above is a **recommendation to delete**, not a deletion.
 

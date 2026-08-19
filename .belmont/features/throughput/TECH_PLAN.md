@@ -438,7 +438,11 @@ The cost half — tokens and wall-clock per verified milestone — moved to **M1
 
 Extraction is mechanical: 62.1% of the worst register's bytes are indented bodies beneath task lines, and 25.0% is the task head lines themselves. Indentation is the separator; no re-modelling is required and none should be attempted.
 
-`state.go`'s reader becomes detail-tier aware: when `details/M<N>.md` exists, task bodies are read from there; when it does not, from the register exactly as today. Status output must be **byte-identical** before and after extraction — that is the acceptance criterion, and it is checkable mechanically.
+`state.go`'s reader becomes detail-tier aware: when `details/M<N>.md` exists, task bodies are read from there; when it does not, from the register
+
+**Extraction alone does not meet the 25,000-token read budget, and M3 must not be reported as if it did.** *(Carried forward from `P0-4a`'s resolution, 2026-08-18; given a destination 2026-08-19 by `P0-M1-FIX-29(c)` — until then it existed only inside `P0-4a`'s own task body, which is not a home.)* The census measured **five registers still over the 100 KB / 25,000-token ceiling after extraction**, and three of the five gain essentially nothing from it (0%, 0%, 7.6%) because their bytes are task *head* lines, not indented bodies — `CENSUS.md` §The open question, answered has the per-register figures. What closes the gap for those five is **M4's `belmont slice`**, serving one milestone's slice on demand, two waves later.
+
+Two consequences for how M3 is verified. Its acceptance criteria are about **round-trip integrity** — no task lost, no state lowered, byte-for-byte reconstruction — and deliberately **not** about any register landing under the ceiling; a criterion M3 cannot meet alone would fail it for M4's absence. And no M3 report may claim the read budget is met: the honest statement is that extraction removes 32.6% of estate bytes and leaves five registers needing the slice. exactly as today. Status output must be **byte-identical** before and after extraction — that is the acceptance criterion, and it is checkable mechanically.
 
 ### P1-14 / P1-15 — Merge safety (M3)
 

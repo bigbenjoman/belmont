@@ -43,10 +43,14 @@ reason: a before-and-after comparison whose two halves were built differently pr
 Measured with the pinned v0.11.0 binary, per feature, across both target repos. Every figure is a
 byte count of real output, reproducible by re-running the same commands.
 
+**Median and p90 use `sorted[int(p*n)]`, zero-based, no interpolation** — the rule `cmd/belmont/percentile` implements and `belmont extract` publishes. *Corrected 2026-08-19 by `P0-M1-FIX-26(a)`: the original figures used **mean-of-two-middles** for the median and **`sorted[int(p*(n-1))]`** for p90 — off by one in the index base — and neither document said so. repo-4's median moved 17,089 → 20,297 and its p90 60,678 → 129,354; repo-3's p90 100,523 → 114,941. No underlying measurement changed: totals and maxima reproduce byte-for-byte, and the per-feature figures in `baseline.json` are untouched. The finding that raised this diagnosed the old p90 as linear-interpolation-lower; it was not — that yields 103,406.6 and 108,751.2, matching neither repo. The rule was identified by re-deriving every candidate against both published values.*
+
+**Why the documents moved and not the code.** M11/P3-3 re-measures with `belmont extract`, so the baseline has to be re-derivable by the statistic the shipped code produces — otherwise the before-and-after compare two different quantities. Changing `percentile` instead would silently restate every figure in `CENSUS.md`, which two agents have independently re-derived and verified.
+
 | Repo | Live registers | Master register | Register bytes (total) | Median | p90 | Max |
 |---|---:|---:|---:|---:|---:|---:|
-| repo-3 | 29 | 498,879 | 1,973,359 | 17,950 | 100,523 | 1,022,749 |
-| repo-4 | 14 | 247,645 | 2,219,167 | 17,089 | 60,678 | 1,860,979 |
+| repo-3 | 29 | 498,879 | 1,973,359 | 17,950 | 114,941 | 1,022,749 |
+| repo-4 | 14 | 247,645 | 2,219,167 | 20,297 | 129,354 | 1,860,979 |
 
 | Repo | Raw registers | `status --feature` (text) | `status --format json` | json:text | raw:text |
 |---|---:|---:|---:|---:|---:|
@@ -257,7 +261,28 @@ git -C <repo> checkout <recorded-revision>
 belmont status --root <repo> --feature <slug> --color never | wc -c   # text
 belmont status --root <repo> --feature <slug> --format json   | wc -c   # json
 wc -c < <repo>/.belmont/features/<slug>/PROGRESS.md                     # raw
+
+# The pin belongs in this block, not only at the top of the document
+# (P0-M1-FIX-26(e)): on any machine but the one that captured this,
+# `belmont` is not the build these figures were taken with.
+belmont version                       # must be the pinned build named in
+                                      # §What this was taken against
 ```
+
+**Aggregate rows are derived, not measured, and the derivation is here because it was not before**
+(`P0-M1-FIX-26(a)`). The three commands above produce per-feature figures only; median, p90 and the
+totals in §Read-path cost come from those. `total` is the sum, `max` the largest, and median/p90 are
+`sorted[int(p*n)]` — zero-based, no interpolation, the rule `cmd/belmont/percentile` implements:
+
+```python
+s = sorted(f["progress_bytes"] for f in baseline["read_path_baseline"][repo]["features"].values())
+median = s[min(int(0.50 * len(s)), len(s) - 1)]
+p90    = s[min(int(0.90 * len(s)), len(s) - 1)]
+```
+
+Run against `baseline.json` this reproduces every aggregate row in this document exactly. Without the
+rule written down, P0-3's "reproduce from the documented commands" criterion could not be met, and
+M11/P3-3 would have compared two statistics that are not the same statistic.
 
 > **`<repo>` and `<slug>` are aliases here, and this block is not runnable as written**
 > *(`P0-M1-FIX-24`, 2026-08-19)*. This repository is a public fork and rule 7 of the master

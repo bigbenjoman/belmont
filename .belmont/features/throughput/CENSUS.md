@@ -120,7 +120,7 @@ two of those under it.
 assumed.** `repo-2`'s largest register is 86,380 B, below the 100 KB ceiling before
 extraction and therefore below it after. It contributes no entry to either list: the same seven
 are over the ceiling today and the same five remain over it after extraction, with and without
-`repo-2`. The escalation in `[!] P0-4a` rests on a number the omission did not touch.
+`repo-2`. The escalation in `P0-4a` — resolved 2026-08-18, no restructure — rested on a number the omission did not touch.
 
 ### Why the estimate was wrong — the finding that matters
 
@@ -233,12 +233,24 @@ every register under the ceiling.
 
 ## Consequences for the plan
 
-1. **M4's read path becomes a prerequisite of M3, not its successor.** This is the branch the
-   PRD's open question defined: *"If one does, the read-path work in M4 stops being an
+1. **The PRD's open question fired, and the restructure it anticipated was measured and
+   declined.** The question was: *"If one does, the read-path work in M4 stops being an
    optimisation and becomes a prerequisite for M3, and the wave structure changes."* Five do,
-   with or without `repo-2`. Restructuring milestones is a tech-planning action, not an
-   implementation one, so this is recorded and escalated rather than applied — see `[!] P0-4a`
-   in `PROGRESS.md`.
+   with or without `repo-2` — so the antecedent holds. **The consequent does not.**
+   *(Corrected 2026-08-19 by `P0-M1-FIX-29(a)`; this section previously asserted the
+   restructure as a settled consequence and cited `[!] P0-4a` as a live escalation. `P0-4a`
+   resolved on 2026-08-18 — decision by Ben Lavender, **no restructure**, the graph stays at
+   four waves — and it is `[v]`, not `[!]`.)*
+
+   **Why it was declined**: the ordering the restructure would guarantee is already held
+   transitively. The migration needing both M3 and M4 is `P3-1`, inside M11; M11 depends on M4,
+   which depends on M3, so both land before any pathological register is migrated. Restructuring
+   was costed and buys nothing for a wave: W1=M1 · W2=M2,M4,M6,M7,M9,M10 · W3=M3,M8 · W4=M5 ·
+   W5=M11 — **five waves at 2.20x** against four at 3.25x today.
+
+   **What does carry forward**: extraction alone does not bring the five listed registers under
+   the 25,000-token read budget. M4's slice is what closes that gap, and `TECH_PLAN.md` §M3 says
+   so rather than implying the split suffices (`P0-M1-FIX-29(c)`).
 2. **M5/P1-8 ("reject oversized writes at the source") is load-bearing, not defensive.** The
    400-character task-line limit is the only mechanism in the plan that would have prevented
    `feat-015`, and the census shows three registers whose size is entirely a task-line
