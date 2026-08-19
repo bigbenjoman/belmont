@@ -16,7 +16,17 @@ the next session will look.
 
 ## Headline
 
-**35 unmerged remote branches. 30 are already dead, 2 should merge, 3 need a rebase.**
+**36 unmerged remote branches. 30 are already dead, 3 should merge, 3 need a rebase.**
+
+**Scope: `origin/*` only.** `upstream/*` is deliberately excluded and always was —
+the measurement command below has carried `grep -v upstream/` since the first
+triage — but that decision lived only in the command, so a later reader running
+`git branch -r --no-merged main` without it counts 38 and concludes the file is
+three verdicts short. It is one short. `upstream/belmont` (2026-02-05) and
+`upstream/v1-rebuild` (2026-06-04) are the third party's own branches: this fork
+tracks `upstream/main` and merges it periodically, and nothing here proposes a
+verdict on branches we do not own. Stated in prose now rather than implied by a
+`grep`, per `P0-M1-FIX-17`.
 
 The backlog is far less dangerous than the plan assumed, and dangerous in a
 different place than the plan predicted.
@@ -46,18 +56,19 @@ different place than the plan predicted.
   conflicts** today. It touches `reconcile.go` and `worktree.go`, which P0-1
   rewrites. Merge it before P0-1 or pay for it afterwards.
 
-## Verdicts — all 35 branches
+## Verdicts — all 36 branches
 
 Legend: **merge** = land as-is; **rebase** = content is wanted but the branch
 cannot apply where it sits; **abandon** = nothing left to recover, delete the
 remote branch.
 
-### Merge (2)
+### Merge (3)
 
 | Branch | Last commit | Verdict | Reason |
 |---|---|---|---|
 | `origin/docs/pr-proposals` | 2026-08-08 | **merge** | 15 files under `docs/proposals/` exist nowhere on `main`, including `0004-context-budget-with-evidence.md` rev 5 — **M2's specification**. `git merge-tree` yields exactly one conflict, in `.gitignore`. Highest-value, lowest-risk merge in the backlog. |
 | `origin/fix/post-51-triage` | 2026-08-17 | **merge** | 15 unlanded commits and 6 new regression tests (`merge_carry_placement`, `recover_active_run`, `reverify_reset`, `wave_integration`, `listing_unreadable_worktree`, `subcommand_help`). Merges with **zero conflicts**. Touches `reconcile.go`/`worktree.go` — **merge before P0-1**. |
+| `origin/fix/issue-sweep` | 2026-08-18 | **merge** | Added by `P0-M1-FIX-17`; pushed after the initial triage, which is why it had no verdict. 9 unlanded commits (`git cherry` reports 9 `+`, 0 landed), 33 files, +1,336/−211, closing #54, #56, #58, #59, #61. `git merge-tree` yields **zero conflicts** against `main` today. **Merge before wave 2**: it rewrites `_partials/dispatch-strategy.md` — M8/P1-11's own deliverable — plus `_partials/loop-recipe.md` and `_src/{implement,loop,next,status}.md`, which M2/P1-5 rewrites. Resolving that across seven concurrent worktrees costs far more than landing it at a fork point, which is the same argument prerequisite 7 makes for the redaction. |
 
 ### Rebase (3)
 
@@ -205,7 +216,8 @@ remote branch was deleted, merged or rebased, and no PR was opened. Every
 ## How this was measured
 
 ```bash
-# the 35
+# the 36 in scope — note `grep -v upstream/`: the backlog is origin/* only,
+# and without that filter this returns 38 (see §Headline)
 git branch -r --no-merged main | grep -v upstream/ | grep -v HEAD
 
 # supersession — the load-bearing one. '-' = patch already upstream, '+' = outstanding
@@ -224,7 +236,7 @@ third is a consequence of correcting one of them:
 
 1. **`git branch --no-merged` over-reports badly in a rebase-heavy repo.** It
    compares commit ancestry, so a rebased-and-landed branch still lists as
-   unmerged. 21 of these 35 branches are fully or effectively landed. Use
+   unmerged. 21 of these 36 branches are fully or effectively landed. Use
    `git cherry`, and hand-check the residue — patch-ids are defeated by context
    drift, which is what produced the false positives on `feat/maintenance-ci`
    and `fix/worktree-git-excludes`.
@@ -241,6 +253,18 @@ third is a consequence of correcting one of them:
 
 ## Revisions
 
+- 2026-08-19 — re-measured against the remote after `git fetch --prune`
+  (`throughput` `P0-M1-FIX-17`). **35 → 36 in-scope branches.** One genuinely new:
+  `origin/fix/issue-sweep`, pushed 2026-08-18 after the initial triage, verdict
+  **merge**, and flagged to land before wave 2 because it rewrites M8/P1-11's and
+  M2/P1-5's own files. The other two branches a naive re-run surfaces
+  (`upstream/belmont`, `upstream/v1-rebuild`) were never in scope — the method's
+  `grep -v upstream/` excluded them from the start — so the scope is now stated in
+  §Headline instead of being implied by a shell filter. Count corrected at all
+  four sites plus this footer. Note for anyone re-deriving these: `main` was
+  rewritten by `git filter-repo` on 2026-08-19, so every pre-rewrite SHA quoted
+  in this file resolves only as an unreachable object; match commit **subjects**
+  instead (`P0-M1-FIX-25`).
 - 2026-08-18 — initial triage, all 35 branches, `throughput` P0-13.
 - 2026-08-18 — `origin/feat/maintenance-ci` re-verdicted (`throughput`
   P0-M1-FIX-3). One of its two leftovers, `1129cf84`, was **not** on `main`;
