@@ -16,7 +16,7 @@ the next session will look.
 
 ## Headline
 
-**36 unmerged remote branches. 30 are already dead, 3 should merge, 3 need a rebase.**
+**36 unmerged remote branches. 30 are already dead, 3 should merge (1 now merged), 3 need a rebase.**
 
 **Scope: `origin/*` only.** `upstream/*` is deliberately excluded and always was —
 the measurement command below has carried `grep -v upstream/` since the first
@@ -68,7 +68,7 @@ remote branch.
 |---|---|---|---|
 | `origin/docs/pr-proposals` | 2026-08-08 | **merge** | 15 files under `docs/proposals/` exist nowhere on `main`, including `0004-context-budget-with-evidence.md` rev 5 — **M2's specification**. `git merge-tree` yields exactly one conflict, in `.gitignore`. Highest-value, lowest-risk merge in the backlog. |
 | `origin/fix/post-51-triage` | 2026-08-17 | **merge** | 15 unlanded commits and 6 new regression tests (`merge_carry_placement`, `recover_active_run`, `reverify_reset`, `wave_integration`, `listing_unreadable_worktree`, `subcommand_help`). Merges with **zero conflicts**. Touches `reconcile.go`/`worktree.go` — **merge before P0-1**. |
-| `origin/fix/issue-sweep` | 2026-08-18 | **merge** | Added by `P0-M1-FIX-17`; pushed after the initial triage, which is why it had no verdict. 9 unlanded commits (`git cherry` reports 9 `+`, 0 landed), 33 files, +1,336/−211, closing #54, #56, #58, #59, #61. `git merge-tree` yields **zero conflicts** against `main` today. **Merge before wave 2**: it rewrites `_partials/dispatch-strategy.md` — M8/P1-11's own deliverable — plus `_partials/loop-recipe.md` and `_src/{implement,loop,next,status}.md`, which M2/P1-5 rewrites. Resolving that across seven concurrent worktrees costs far more than landing it at a fork point, which is the same argument prerequisite 7 makes for the redaction. |
+| `origin/fix/issue-sweep` | 2026-08-18 | **MERGED 2026-08-19** | Added by `P0-M1-FIX-17`; pushed after the initial triage, which is why it had no verdict. 9 unlanded commits (`git cherry` reports 9 `+`, 0 landed), 33 files, +1,336/−211, closing #54, #56, #58, #59, #61. `git merge-tree` yields **zero conflicts** against `main` today. **Merge before wave 2**: it rewrites `_partials/dispatch-strategy.md` — M8/P1-11's own deliverable — plus `_partials/loop-recipe.md` and `_src/{implement,loop,next,status}.md`, which M2/P1-5 rewrites. Resolving that across seven concurrent worktrees costs far more than landing it at a fork point, which is the same argument prerequisite 7 makes for the redaction. |
 
 ### Rebase (3)
 
@@ -252,6 +252,19 @@ third is a consequence of correcting one of them:
    `feat/maintenance-ci`; the file content is the authority, not the count.
 
 ## Revisions
+
+- 2026-08-19 — `origin/fix/issue-sweep` **merged** into `main` before wave 2, per its own verdict.
+  It did **not** merge cleanly by then: five conflicts (`AGENTS.md`, `cmd/belmont/main.go`,
+  `cmd/belmont/reverify.go`, `docs/cli-commands.md`,
+  `knowledge/auto-mode/parallel-wave-orchestration.md`), all created by M1's own fix batch
+  moving the same files earlier that day — the verdict was measured at zero conflicts hours
+  before. That is the collision this row predicted, arriving from our side rather than theirs,
+  and it is the argument for landing shared-file branches at a fork point rather than after
+  seven worktrees have started. Resolutions: theirs for the table-driven `printUsage` (plus
+  `metrics`/`extract` added to `commandSynopsis`) and for the per-milestone reverify reset
+  (issue #49); both sides kept everywhere else. Gates green after merge: build, `go vet`,
+  `gofmt`, `go test`, `go test -race`, Tier 1 evals, `generate-skills.sh --check`,
+  `belmont validate`.
 
 - 2026-08-19 — re-measured against the remote after `git fetch --prune`
   (`throughput` `P0-M1-FIX-17`). **35 → 36 in-scope branches.** One genuinely new:

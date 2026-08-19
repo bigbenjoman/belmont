@@ -47,6 +47,10 @@ These cannot be milestone tasks: `belmont auto` cannot bootstrap the state direc
 
    **SATISFIED 2026-08-19** — step 6 landed before any wave-2 milestone started.
 
+   **Merged 2026-08-19.** Not cleanly: five conflicts, all created by M1's own fix batch moving `AGENTS.md`, `docs/cli-commands.md` and the CLI surface hours after the verdict measured zero. The collision was real, it just came from our side. Two of its changes are directly relevant here — a table-driven `printUsage` (which `metrics` and `extract` were added to) and a **per-milestone** reverify reset replacing the bulk one (issue #49), which is half of the defect this feature had recorded that morning.
+
+   ⚠️ **This invalidates any `belmont-pre` built before the merge, and that is a measurement problem, not a rebuild chore.** `issue-sweep` rewrites `_partials/dispatch-strategy.md`, `_partials/loop-recipe.md` and `_src/{implement,loop,next,status}.md` — the same prose M2/P1-5 and M8/P1-11 change. A frozen binary carrying *pre*-merge prose, compared against a post-change build carrying *post*-merge prose, folds `issue-sweep`'s effect into this feature's measured result. The two arms must differ **only** by this feature's work. Rebuild `belmont-pre` from the merge commit before gate 9, and record its SHA.
+
 8. **Reverify M1, then freeze the orchestrator.** `belmont reverify --feature throughput` promotes M1's remaining `[x]` tasks (P0-3, P0-M1-FIX-12). Then build the pinned artefact from M1's merge commit and keep it:
 
    ```bash
