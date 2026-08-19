@@ -12,6 +12,27 @@
 | Repo commit | `25249853a727dd251861557801f67e4b940867e5` |
 | Go toolchain | `go version go1.26.0 darwin/arm64` |
 | Token conversion | 4 bytes/token — the conversion every measurement in the PRD uses |
+| Measured repo revisions | `repo-3 af16dabd3411fc68852e51f3868d69f091326fb4` · `repo-4 2c1f7e857b30722018a3d860bb05a079f8daf1be` |
+| Coverage | **repo-3 and repo-4 only — 43 of 82 live registers (52%), 78.0% of register bytes** |
+
+**The measured repos are pinned, not just the binary** *(added 2026-08-19, `P0-M1-FIX-14`)*. The
+read-path commands below run against live working trees, so without these revisions re-running them
+returns today's estate rather than the baseline. This is not hypothetical: measured one day after
+capture, 3 of 43 registers had already moved — repo-3's register total by +21,037 B, its max by
++14,371 B, its master register by +12,593 B. M11/P3-3 scores this feature against this file, and
+unpinned, organic register growth is indistinguishable from the change's effect — exactly the
+confound the controls exist to remove. Note `repo-4/feat-031`'s 129,354 B was uncommitted
+working-tree state at capture, committed verbatim the same day as `79fee00e`.
+
+**What this file does NOT cover** *(added 2026-08-19, `P0-M1-FIX-15`)*. The estate is the five repos
+`PRD.md` names and `P0-M1-FIX-2` re-established. This baseline covers two of them. Absent:
+repo-1 (10 registers, 574,327 B), repo-2 (18, 386,620 B), repo-5 (11, 219,500 B). Estate-wide
+*register sizes* for all five do exist — `CENSUS.md` / `census.json`, captured the same day by
+`P0-4` — and that is the record to use for size; `status`-output sizes exist for no repo outside
+these two. One consequence is concrete and belongs to P3-3: `repo-1/feat-020` (360,542 B) is one of
+census's seven `over_threshold_before` entries and therefore on P3-1's migration list, with **no
+read-path baseline to be re-measured against**. P3-3 reports it as unbaselined rather than
+estimating it, per the PRD's rule that an unmeasured half is declared, never invented.
 
 The Go toolchain is recorded because P0-12 was sequenced *ahead* of this task for exactly that
 reason: a before-and-after comparison whose two halves were built differently proves nothing.
@@ -63,8 +84,12 @@ Three facts make this unavoidable rather than an omission:
 
 1. **The orchestrating binary is pinned to Homebrew v0.11.0** (master TECH_PLAN rule 1), which
    contains no instrumentation. P0-2's code exists only in this working tree.
-2. **Neither repo has ever recorded a metric** — `~/repo-3/.belmont/metrics/` and
-   `~/repo-4/.belmont/metrics/` do not exist. Verified, not assumed.
+2. **Neither repo had ever recorded a metric at capture time (2026-08-18)** —
+   `~/repo-3/.belmont/metrics/` and `~/repo-4/.belmont/metrics/` did not exist. Verified, not
+   assumed. *(Restated 2026-08-19 by `P0-M1-FIX-13`: this read "has ever recorded", present
+   perfect, which §Records that exist contradicts two sections below — six records were written
+   into `~/repo-3` later that same day by the withdrawn runs. The fact was true when written and
+   is now a statement about a moment, so it is tensed like one.)*
 3. **Capturing it needs instrumented runs, and where those may happen is now constrained.**
    *(Revised 2026-08-19.)* This originally read "running real milestones to `[v]` in both repos",
    which was acted on and withdrawn — see §How to capture it. Measurement in a product repo is
@@ -224,7 +249,20 @@ second job**, and it is why the cut order above is decided in advance rather tha
 ## Reproducing the read-path half
 
 ```bash
+# Pin the tree first, or you are measuring today's estate, not the baseline.
+# The revisions are in §What this was taken against.
+git -C <repo> rev-parse HEAD          # must match the recorded revision
+git -C <repo> checkout <recorded-revision>
+
 belmont status --root <repo> --feature <slug> --color never | wc -c   # text
 belmont status --root <repo> --feature <slug> --format json   | wc -c   # json
 wc -c < <repo>/.belmont/features/<slug>/PROGRESS.md                     # raw
 ```
+
+> **`<repo>` and `<slug>` are aliases here, and this block is not runnable as written**
+> *(`P0-M1-FIX-24`, 2026-08-19)*. This repository is a public fork and rule 7 of the master
+> TECH_PLAN forbids product identifiers in it, so every repo and feature name above and throughout
+> this file is an opaque identifier. Resolve them through
+> `~/belmont/private/estate-alias-map.json` in the private planning workspace — that map is the
+> only place the mapping exists, and it is deliberately not in this repository. Substituting real
+> paths is the last step before running, never something committed back.

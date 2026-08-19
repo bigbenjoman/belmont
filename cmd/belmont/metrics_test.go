@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -996,6 +997,47 @@ func TestEnsureMetricsIgnoredOutsideGit(t *testing.T) {
 	}
 }
 
+// TestEnsureMetricsIgnoredLeavesADirtyGitignoreUncommitted pins P0-M1-FIX-22.
+//
+// The commit's pathspec bounds it to .gitignore, but that does not make
+// .gitignore's prior contents ours to commit: under --allow-dirty a user may
+// already have unstaged edits there, and `git add -- .gitignore` stages those
+// too. The old code committed them under "belmont: gitignore .belmont/metrics/".
+//
+// The rule must still be written — that is the half that stops a metrics write
+// dirtying the tree — but the commit is skipped and the user is told.
+func TestEnsureMetricsIgnoredLeavesADirtyGitignoreUncommitted(t *testing.T) {
+	dir := gitignoreFixture(t)
+	userEdit := "# my own rule\nsecrets.env\n"
+	mustWrite(t, filepath.Join(dir, ".gitignore"), userEdit)
+
+	ensureMetricsIgnored(dir)
+
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	if !strings.Contains(string(data), metricsIgnoreEntry) {
+		t.Errorf("the ignore rule must be written even when the commit is skipped:\n%s", data)
+	}
+	if !strings.Contains(string(data), "secrets.env") {
+		t.Errorf("the user's own edit must survive:\n%s", data)
+	}
+
+	// The user's edit must still be uncommitted — nothing of theirs was landed.
+	out, err := exec.Command("git", "-C", dir, "status", "--porcelain", "--", ".gitignore").Output()
+	if err != nil {
+		t.Fatalf("git status: %v", err)
+	}
+	if strings.TrimSpace(string(out)) == "" {
+		t.Error("expected .gitignore to remain uncommitted; Belmont committed the user's edit")
+	}
+	log, err := exec.Command("git", "-C", dir, "log", "--oneline", "-1").Output()
+	if err == nil && strings.Contains(string(log), "gitignore "+metricsIgnoreEntry) {
+		t.Errorf("Belmont must not have created its own commit here: %s", log)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // P0-M1-FIX-12 — a phase that did no model work is flagged, never dropped
 // ---------------------------------------------------------------------------
@@ -1022,7 +1064,7 @@ func TestZeroUsageRecordSeparatesAbsentFromZero(t *testing.T) {
 
 // TestSummariseFlagsZeroUsagePhasesWithoutExcludingThem pins the decision
 // recorded in metrics.go's header: a phase that exits before the tool does any
-// model work (three session-limit exits did exactly this on 2026-08-18, 3-4s
+// model work (two session-limit exits did exactly this on 2026-08-18, 3-4s
 // each) is counted in every total it contributes zero to, and reported
 // separately so a per-phase figure can be quoted knowingly.
 func TestSummariseFlagsZeroUsagePhasesWithoutExcludingThem(t *testing.T) {

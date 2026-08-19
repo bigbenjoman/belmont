@@ -258,8 +258,8 @@
     }
   },
   "per_milestone_cost_baseline": {
-    "status": "NOT CAPTURED",
-    "reason": "Requires instrumented `belmont auto` runs. The P0-2 instrumentation exists only in this working tree; the orchestrating binary is pinned to Homebrew v0.11.0, which has no metrics code, and no .belmont/metrics/ directory exists in either repo. Numbers were NOT invented to fill the gap.",
-    "how_to_capture": "Build this tree (`go build ./cmd/belmont`), run at least one milestone to `[v]` in each repo with that binary, then `belmont metrics --feature SLUG --format json`."
+    "status": "NOT CAPTURED \u2014 superseded method; see how_to_capture",
+    "reason": "Requires instrumented `belmont auto` runs. Superseded 2026-08-19: the original method drove `belmont auto` into product repositories, which `PRD.md` \u00a7Constraints now forbids by name and records as already violated once (four runs, 13 commits on a product `main`, two DB migrations). The replacement is a two-arm design \u2014 a disposable seeded testbed carrying the causal claim (M13), plus passive observation of real runs (M12) \u2014 both run at M11 against `belmont-pre`, a binary frozen at M1. Six records DO exist from the withdrawn runs and are kept for reference only: no milestone reached `[v]` and two are zero-usage session-limit exits. Nothing in this file derives from them. Numbers were NOT invented to fill the gap.",
+    "how_to_capture": "DO NOT run `belmont auto` in a product repository to capture this. See `BASELINE.md` \u00a7How to capture it (the current procedure; the old one is marked Withdrawn there), `PRD.md` \u00a7Constraints and \u00a7Out of Scope, and `TECH_PLAN.md` \u00a7M12 / \u00a7M13. This field previously carried the withdrawn method verbatim, which made it a live instruction to an agent reading this JSON alone \u2014 `BASELINE.md` designates this file the machine-readable companion and tells M11/M13 to append to it. Corrected by P0-M1-FIX-13."
   }
 }

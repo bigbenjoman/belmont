@@ -19,7 +19,18 @@ import (
 // millisecond earlier and fine a millisecond later.
 //
 // TestWriteStateFileIsNeverObservedPartiallyWritten is the proof the task
-// requires, and it is meaningful only under `go test -race`.
+// requires. It asserts **filesystem** atomicity — that no reader observes a
+// partially-written file — which is a property of rename(2), not of the Go
+// memory model.
+//
+// Corrected 2026-08-19 by P0-M1-FIX-19; this previously said the proof "is
+// meaningful only under `go test -race`". It is not: writer and reader share no
+// Go memory except channels, so -race is orthogonal to what is being asserted
+// and the test is meaningful under a plain `go test`. The claim also pointed at
+// a precondition that was in no CI step at the time. Both halves are fixed —
+// `go test -race ./cmd/belmont` is now a CI step, and it earns its place
+// catching P0-M1-FIX-18's tailWriter race, which is a genuine Go data race and
+// is pinned by TestTailWriterConcurrentWriters rather than by this test.
 
 // TestWriteStateFileIsNeverObservedPartiallyWritten runs a writer and a reader
 // concurrently against one path and asserts the reader only ever sees a

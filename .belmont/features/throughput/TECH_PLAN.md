@@ -424,7 +424,9 @@ Proof: a concurrent read-during-write test under `go test -race`. **An atomicity
 
 `toolexec.go` already assembles the invocation; add a per-tool usage extractor beside it and a `metrics.go` that appends one JSONL record per phase. Wall-clock is measured around the `exec.Command` in `auto_loop.go`. Critical-path marking comes from `computeWaves` — a milestone is on the critical path if it lies on a longest chain through the DAG.
 
-**P0-3 was re-scoped on 2026-08-19 and now covers the read-path half only** — the register-size and `status` output figures in `BASELINE.md`, which are captured, reproduce exactly, and carry commit evidence at `ff06d45`. It records the Belmont commit it was taken against.
+**P0-3 was re-scoped on 2026-08-19 and now covers the read-path half only** — the register-size and `status` output figures in `BASELINE.md`, which are captured and carry commit evidence at `ff06d45`. It records the Belmont commit it was taken against, and — since `P0-M1-FIX-14` — the revisions of the two repositories it measured.
+
+*Softened 2026-08-19 by `P0-M1-FIX-14`; this read "reproduce exactly", unqualified.* What reproduces exactly is **the capture**, and 40 of the 43 measured registers on re-run one day later. The **procedure** did not, because it pinned the Belmont binary but not the working trees it measured, and three registers had already grown. Both halves are now pinned, and the distinction is stated rather than collapsed: a figure being exact against its own capture is not the same claim as a command being re-runnable.
 
 The cost half — tokens and wall-clock per verified milestone — moved to **M12 and M13**, because it turned out to be a milestone's worth of work rather than a task's: a model-pinning mechanism that does not exist, an outcome field that does not exist, a seeded testbed, a paired runner and an analysis path. `P0-3a`, the placeholder that carried it, is withdrawn `[-]`. See §M12 and §M13 below.
 

@@ -988,6 +988,24 @@ func isGitWorkTree(root string) bool {
 	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 
+// gitPathIsClean reports whether one path has no uncommitted changes — staged,
+// unstaged or untracked. `git status --porcelain -- <path>` prints nothing when
+// the path is clean, so emptiness is the answer.
+//
+// It fails CLOSED, returning false when git cannot answer. Callers use it to
+// decide whether committing a path would sweep in somebody else's work, and the
+// safe answer under uncertainty is "assume it would" — see ensureMetricsIgnored
+// (P0-M1-FIX-22).
+func gitPathIsClean(root, path string) bool {
+	cmd := exec.Command("git", "status", "--porcelain", "--", path)
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == ""
+}
+
 // commitLogReadable reports whether `git log` can answer questions here at all.
 //
 // It exists because "the log is unreadable" and "no finding carried a task ID"

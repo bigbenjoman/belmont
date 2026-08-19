@@ -42,7 +42,7 @@ import (
 //
 // A third case sits between "reported" and "not reported": a phase that dies
 // before the tool does any model work still reports usage, all of it zero. The
-// three session-limit exits on 2026-08-18 produced exactly that — 3-4 s of
+// two session-limit exits on 2026-08-18 produced exactly that — 3-4 s of
 // wall-clock each and {input:0, output:0, cache_creation:0, cache_read:0} from
 // claude's error `result` event. **Such records are counted, not excluded, and
 // they are flagged**: they stay in Phases, in WallMs and in the token totals

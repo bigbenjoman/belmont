@@ -169,12 +169,29 @@ document changes.*
 > `repo-5/feat-016` (−231 B); and 2 come in above —
 > `repo-3/feat-063` (+1 B) and `repo-3/feat-070` (+44 B). **The normal case
 > is equality, not "below"**, and 67 of those 75 are equal at *zero*, carrying no indented lines at
-> all; only 8 registers balance two non-zero terms. So neither term dominates estate-wide — both are
-> usually absent, and where they are present neither direction is the rule. Re-derived by replaying
+> all; the remaining **8 are equal at a non-zero value**. Re-derived by replaying
 > `censusFeature`'s own rule (`parseMilestones` + `taskBodyEnd`, counting each line plus its
 > newline in bytes) over every register `census.json` names, which reproduced all 82 of its
 > `total_bytes` and `detail_bytes` figures exactly. The clause is withdrawn and restated; no figure,
 > table or conclusion in this document changes.
+
+> **CORRECTED by `P0-M1-FIX-21` (2026-08-19).** The clause above previously read *"only 8 registers
+> balance two non-zero terms. So neither term dominates estate-wide — both are usually absent, and
+> where they are present neither direction is the rule."* Both sentences are withdrawn. The 8 is
+> derived as 75 equal − 67 equal-at-zero, which establishes only that those registers are **equal at
+> a non-zero value** — it says nothing about terms (i) and (ii) individually. It was also
+> arithmetically incompatible with the correction below, which measures term (ii) as non-zero in
+> **only 5 of the 82 registers**: at most 5 registers can balance two non-zero terms, so 8 cannot.
+> The replacement asserts equality at a non-zero value and stops there, because that is the whole of
+> what the arithmetic supports; deciding how often each term is individually non-zero needs a
+> per-register measurement of both terms, which nothing in this document has taken.
+>
+> **This is the sixth consecutive instance of one defect class** (`FIX-6` → `FIX-8` → `FIX-9` →
+> `FIX-10` → `FIX-11` → this), and the first found *inside* a correction that had already passed two
+> verification rounds. Every figure in this section has been re-derived and every figure is right;
+> what keeps failing is the sentence *relating* two of them. The rounds have been scoped to the
+> clause objected to, so each one lands a new relational claim beside the last. Recorded in
+> `NOTES.md` §Root Cause Patterns: verify the paragraph, not the clause.
 
 > **CORRECTED by `P0-M1-FIX-9` (2026-08-18; wording corrected by `P0-M1-FIX-11` same day).** Term
 > **(ii)** above previously read *"only (ii) is left and moved exceeds indented"* — the same **class
@@ -240,6 +257,14 @@ belmont extract --dry-run \
 ```
 
 `--dry-run` is required, not optional: this release ships the census only.
+
+> **The paths above are aliases and this block is not runnable as written** (`P0-M1-FIX-24`,
+> 2026-08-19). The 2026-08-19 estate redaction rewrote every product identifier in this repository
+> to an opaque one, per rule 7 of the master TECH_PLAN — so `/Users/benlavender/repo-1` and the
+> rest are placeholders, not paths. Resolve them through `~/belmont/private/estate-alias-map.json`
+> in the private planning workspace, which is the only place the mapping exists. The coverage claim
+> below is about the run that produced this document, made before the redaction; it is not a claim
+> that the command as printed will run today.
 
 Paths are absolute and unabbreviated on purpose — the roots after the first comma are not a
 separate shell word, so `~` in them is never expanded. A root that cannot be read is **no longer

@@ -339,16 +339,35 @@ func runAutoPreflight(root string, allowDirty, dryRun bool) error {
 //
 // The one-line edit is committed when this had to write it, because otherwise
 // the fix only moves the dirt: an uncommitted .gitignore trips the same preflight
-// on the next run. The commit carries an explicit pathspec, so unrelated work
-// (possible under --allow-dirty) is never swept in. Best-effort throughout —
-// a repository that cannot commit still gets the ignore rule, which is the half
-// that stops a metrics write from dirtying anything.
+// on the next run. The commit carries an explicit pathspec, so nothing outside
+// .gitignore is ever swept in. Best-effort throughout — a repository that cannot
+// commit still gets the ignore rule, which is the half that stops a metrics
+// write from dirtying anything.
+//
+// The pathspec bounds the commit to .gitignore; it does NOT make .gitignore's
+// own prior contents ours to commit. Under --allow-dirty a user may already have
+// unstaged edits to that file, and `git add -- .gitignore` stages those too, so
+// the commit would land somebody else's work under a Belmont message. So: if
+// .gitignore was already dirty before the append, write the rule and do not
+// commit. The rule still lands — which is the guarantee that matters — and the
+// user is told the tree stays dirty by their own edit. Corrected 2026-08-19 by
+// P0-M1-FIX-22, whose finding was that the old comment asserted the narrow
+// pathspec ruled this out. It does not.
 func ensureMetricsIgnored(root string) {
+	// Sampled BEFORE the append, or the write we are about to make is itself the
+	// dirt we would be testing for.
+	dirtyBefore := isGitWorkTree(root) && !gitPathIsClean(root, ".gitignore")
+
 	if !ensureGitignoreEntry(root, metricsIgnoreEntry) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "%s+ .gitignore: %s (metrics are local-only)%s\n", ansiDim, metricsIgnoreEntry, ansiReset)
 	if !isGitWorkTree(root) {
+		return
+	}
+	if dirtyBefore {
+		fmt.Fprintf(os.Stderr, "%s⚠ .gitignore already had uncommitted changes — the metrics rule was written but NOT committed,%s\n  because committing it would have landed your edit too. Commit it yourself before the next run.\n",
+			ansiYellow, ansiReset)
 		return
 	}
 	msg := "belmont: gitignore " + metricsIgnoreEntry
