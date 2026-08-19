@@ -71,18 +71,59 @@ Three facts make this unavoidable rather than an omission:
 
 ### How to capture it
 
+> **METHOD CHANGED 2026-08-19 — decision by Ben Lavender.** The procedure below previously said
+> "run at least one milestone to `[v]` in **each repo**", meaning `~/repo-3` and `~/repo-4`.
+> That is **withdrawn**, for two independent reasons, and the second is the load-bearing one.
+>
+> 1. **Blast radius.** `belmont auto` is an autonomous implementation agent, not an observer.
+>    Run against `~/repo-3` it made 13 commits to `main` including two database migrations
+>    (local only; nothing pushed). Both repos are revenue-critical and repo-4 is pre-launch.
+>    Measurement must not be able to break the thing it measures.
+> 2. **It cannot produce the comparison it exists for.** A milestone can only be implemented
+>    once. Driving `feat-004` M1 with the *old* Belmont leaves no way to
+>    re-run *that same milestone* with the new one, so M11/P3-3 would be comparing two
+>    different pieces of work and attributing the difference to Belmont. A before-number whose
+>    after-number must come from different work is not a baseline, it is an anecdote.
+>
+> The replacement is a purpose-built, resettable test repository. Same milestone, same starting
+> state, run twice — which is the only design that isolates Belmont's contribution.
+
+The testbed lives outside every product repo and is seeded once, then reset between arms:
+
 ```bash
+# 1. Seed (once). The seed commit is the fixed starting state for every arm.
+#    The register MUST be seeded to the sizes measured in CENSUS.md — this feature targets
+#    large-register read paths, and a toy PROGRESS.md exercises none of them.
+git -C <testbed> tag baseline-seed
+
+# 2. Arm A — current Belmont (no throughput work), from the seed:
+git -C <testbed> reset --hard baseline-seed
+<belmont-current> auto --feature <slug> --from M1 --to M1 --tool claude
+<belmont-current> metrics --feature <slug> --root <testbed> --format json   # → arm A
+
+# 3. Arm B — this tree's Belmont, from the *identical* seed:
+git -C <testbed> reset --hard baseline-seed
 cd ~/repos/belmont && go build -o /tmp/belmont-instrumented ./cmd/belmont
-# run at least one milestone to [v] in each repo with THAT binary, then:
-/tmp/belmont-instrumented metrics --feature SLUG --root ~/repo-3 --format json
-/tmp/belmont-instrumented metrics --feature SLUG --root ~/repo-4  --format json
+/tmp/belmont-instrumented auto --feature <slug> --from M1 --to M1 --tool claude
+/tmp/belmont-instrumented metrics --feature <slug> --root <testbed> --format json  # → arm B
 ```
 
-Append the results to `baseline.json` under `per_milestone_cost_baseline` and set its `status`
-to `CAPTURED`. **Until that happens, M11/P3-3 can compare the read-path half of the success
-criteria and must report the cost half as unevidenced rather than estimating it.** The PRD is
-explicit that instrumentation reports nothing rather than guessing; a baseline is the last place
-to break that rule, because every later claim is stated against it.
+Append both arms to `baseline.json` under `per_milestone_cost_baseline`, record the seed commit
+SHA and the register sizes alongside them, and set `status` to `CAPTURED`. Run each arm more
+than once if the budget allows — agent runs are noisy, and a single pair cannot separate a real
+improvement from run-to-run variance.
+
+**Until that happens, M11/P3-3 can compare the read-path half of the success criteria and must
+report the cost half as unevidenced rather than estimating it.** The PRD is explicit that
+instrumentation reports nothing rather than guessing; a baseline is the last place to break that
+rule, because every later claim is stated against it.
+
+**Records that exist but are not the baseline.** Seven metrics records were captured from the
+withdrawn repo-3 runs (`~/repo-3/.belmont/metrics/feat-004.jsonl`). They
+are real measurements of real work and are kept for reference, but they are **not** the baseline
+and must not be presented as one: no milestone reached `[v]`, and two of the records are
+zero-usage phases from session-limit exits (see `P0-M1-FIX-12`, which is why the summary now
+flags them). Nothing in `baseline.json` is derived from them.
 
 ## Reproducing the read-path half
 
