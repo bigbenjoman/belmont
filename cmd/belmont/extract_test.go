@@ -365,3 +365,65 @@ func TestCensusUnlistableRootIsReportedNotAborted(t *testing.T) {
 		t.Error("the report must say why the root could not be read")
 	}
 }
+
+// TestCensusUnreadableRegisterIsReportedNotSwallowed pins P0-M1-FIX-20, the
+// register-level analogue of the root-level test above.
+//
+// A PROGRESS.md that exists but cannot be read used to be bucketed into
+// NoRegisterDirs alongside "this directory has no register at all". The two mean
+// opposite things: one is a fact about the estate, the other is a hole in the
+// measurement. Folded together, LiveRegisters and every byte total silently
+// shrank while coverage_complete still reported true — which is the honesty
+// guarantee P0-M1-FIX-7 added one level up.
+func TestCensusUnreadableRegisterIsReportedNotSwallowed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file permissions are not enforced the same way on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	root := t.TempDir()
+	// Two features: one readable, one whose register exists but is unreadable.
+	// The readable one proves the walk continues and still counts.
+	for _, slug := range []string{"readable", "locked"} {
+		dir := filepath.Join(root, ".belmont", "features", slug)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "# Progress\n\n## Milestones\n\n### M1: One\n- [ ] P0-1: A task\n"
+		if err := os.WriteFile(filepath.Join(dir, "PROGRESS.md"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	locked := filepath.Join(root, ".belmont", "features", "locked", "PROGRESS.md")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o644) })
+
+	rep, err := runCensus([]string{root}, "", true)
+	if err != nil {
+		t.Fatalf("--allow-unreadable-roots must complete the run: %v", err)
+	}
+	if rep.CoverageComplete {
+		t.Error("coverage_complete must be false when a live register could not be read")
+	}
+	if len(rep.UnreadableRegisters) != 1 {
+		t.Fatalf("unreadable registers: got %+v, want exactly 1", rep.UnreadableRegisters)
+	}
+	if rep.UnreadableRegisters[0].Reason == "" {
+		t.Error("the report must say why the register could not be read")
+	}
+	// The distinction that matters: it is NOT counted as a directory without a
+	// register, because it has one.
+	if rep.NoRegisterDirs != 0 {
+		t.Errorf("dirs_without_register: got %d, want 0 — the register exists, it just could not be read", rep.NoRegisterDirs)
+	}
+	if rep.LiveRegisters != 1 {
+		t.Errorf("live_registers: got %d, want 1 (the readable one)", rep.LiveRegisters)
+	}
+	// And it must abort without the override, the same as an unreadable root.
+	if _, err := runCensus([]string{root}, "", false); err == nil {
+		t.Error("without --allow-unreadable-roots an unreadable register must refuse, not report a short denominator")
+	}
+}

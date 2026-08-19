@@ -76,6 +76,25 @@ type unreadableRoot struct {
 	Reason string `json:"reason"`
 }
 
+// unreadableRegister is the same failure one level down, and it is a separate
+// field rather than a bucket in NoRegisterDirs because the two mean opposite
+// things. A feature directory with no PROGRESS.md is a *fact about the estate* —
+// it is archived, or not yet planned — and belongs in the denominator. A
+// PROGRESS.md that exists and could not be read (EACCES, EIO, a dangling
+// symlink) is a *gap in the measurement*: the register is live, it counts
+// towards LiveRegisters and every byte total derived from it, and silently
+// filing it as "no register" shrinks every figure in the report at once.
+//
+// This is P0-M1-FIX-7's defect one level down. That fix stopped a root being
+// swallowed by os.IsNotExist(err) -> continue; the identical shape survived here
+// until P0-M1-FIX-20. Both are the same lesson: an error that is not
+// os.IsNotExist must never be folded into the count that means "absent".
+type unreadableRegister struct {
+	Feature string `json:"feature"`
+	Path    string `json:"path"`
+	Reason  string `json:"reason"`
+}
+
 // censusReport is the whole run, with its denominators stated.
 //
 // Roots is what was asked for; RootsWalked is what was actually measured. They
@@ -83,21 +102,22 @@ type unreadableRoot struct {
 // derived from one, and a denominator is only checkable if the scope that
 // produced it is written down beside it.
 type censusReport struct {
-	Roots            []string         `json:"roots"`
-	RootsWalked      []string         `json:"roots_walked"`
-	UnreadableRoots  []unreadableRoot `json:"unreadable_roots"`
-	CoverageComplete bool             `json:"coverage_complete"`
-	FeatureDirs      int              `json:"feature_dirs"`
-	LiveRegisters    int              `json:"live_registers"`
-	ArchivedDirs     int              `json:"archived_dirs"`
-	NoRegisterDirs   int              `json:"dirs_without_register"`
-	ThresholdBytes   int              `json:"threshold_bytes"`
-	TotalBytes       int              `json:"total_bytes"`
-	TotalIndexBytes  int              `json:"total_index_bytes"`
-	TotalDetailBytes int              `json:"total_detail_bytes"`
-	OverBefore       []string         `json:"over_threshold_before"`
-	OverAfter        []string         `json:"over_threshold_after"`
-	Features         []featureCensus  `json:"features"`
+	Roots               []string             `json:"roots"`
+	RootsWalked         []string             `json:"roots_walked"`
+	UnreadableRoots     []unreadableRoot     `json:"unreadable_roots"`
+	UnreadableRegisters []unreadableRegister `json:"unreadable_registers"`
+	CoverageComplete    bool                 `json:"coverage_complete"`
+	FeatureDirs         int                  `json:"feature_dirs"`
+	LiveRegisters       int                  `json:"live_registers"`
+	ArchivedDirs        int                  `json:"archived_dirs"`
+	NoRegisterDirs      int                  `json:"dirs_without_register"`
+	ThresholdBytes      int                  `json:"threshold_bytes"`
+	TotalBytes          int                  `json:"total_bytes"`
+	TotalIndexBytes     int                  `json:"total_index_bytes"`
+	TotalDetailBytes    int                  `json:"total_detail_bytes"`
+	OverBefore          []string             `json:"over_threshold_before"`
+	OverAfter           []string             `json:"over_threshold_after"`
+	Features            []featureCensus      `json:"features"`
 }
 
 // censusFeature measures one register.
@@ -185,10 +205,11 @@ func runCensus(roots []string, only string, allowUnreadableRoots bool) (censusRe
 	// coverage fields as arrays, and a consumer can read them without a
 	// null check.
 	rep := censusReport{
-		Roots:           roots,
-		RootsWalked:     []string{},
-		UnreadableRoots: []unreadableRoot{},
-		ThresholdBytes:  extractionThresholdBytes,
+		Roots:               roots,
+		RootsWalked:         []string{},
+		UnreadableRoots:     []unreadableRoot{},
+		UnreadableRegisters: []unreadableRegister{},
+		ThresholdBytes:      extractionThresholdBytes,
 	}
 
 	for _, root := range roots {
@@ -220,6 +241,19 @@ func runCensus(roots []string, only string, allowUnreadableRoots bool) (censusRe
 			progressPath := filepath.Join(dir, "PROGRESS.md")
 			data, err := os.ReadFile(progressPath)
 			if err != nil {
+				if !os.IsNotExist(err) {
+					// The register is there and we could not read it. Reporting
+					// it as "no register" would remove it from LiveRegisters and
+					// from every byte total, and CoverageComplete would still
+					// say true — the exact dishonesty P0-M1-FIX-7 closed at root
+					// level.
+					rep.UnreadableRegisters = append(rep.UnreadableRegisters, unreadableRegister{
+						Feature: repoName + "/" + slug,
+						Path:    progressPath,
+						Reason:  err.Error(),
+					})
+					continue
+				}
 				rep.NoRegisterDirs++
 				if fileExists(filepath.Join(dir, "ARCHIVE.md")) {
 					rep.ArchivedDirs++
@@ -246,13 +280,25 @@ func runCensus(roots []string, only string, allowUnreadableRoots bool) (censusRe
 		return rep.Features[i].TotalBytes > rep.Features[j].TotalBytes
 	})
 
-	rep.CoverageComplete = len(rep.UnreadableRoots) == 0
+	rep.CoverageComplete = len(rep.UnreadableRoots) == 0 && len(rep.UnreadableRegisters) == 0
 	if !rep.CoverageComplete && !allowUnreadableRoots {
 		var b strings.Builder
-		fmt.Fprintf(&b, "extract: %d of %d roots could not be read, so this census would cover only part of what was asked for:",
-			len(rep.UnreadableRoots), len(roots))
-		for _, u := range rep.UnreadableRoots {
-			fmt.Fprintf(&b, "\n  %s: %s", u.Root, u.Reason)
+		if len(rep.UnreadableRoots) > 0 {
+			fmt.Fprintf(&b, "extract: %d of %d roots could not be read, so this census would cover only part of what was asked for:",
+				len(rep.UnreadableRoots), len(roots))
+			for _, u := range rep.UnreadableRoots {
+				fmt.Fprintf(&b, "\n  %s: %s", u.Root, u.Reason)
+			}
+		}
+		if len(rep.UnreadableRegisters) > 0 {
+			if b.Len() > 0 {
+				b.WriteString("\n")
+			}
+			fmt.Fprintf(&b, "extract: %d live register(s) could not be read, so every byte total below would be short by their contents:",
+				len(rep.UnreadableRegisters))
+			for _, u := range rep.UnreadableRegisters {
+				fmt.Fprintf(&b, "\n  %s: %s", u.Feature, u.Reason)
+			}
 		}
 		b.WriteString("\nRefusing rather than reporting a smaller denominator: an incomplete census reads exactly like a complete one once its numbers are quoted elsewhere.")
 		b.WriteString("\nFix the paths (absolute, no ~ — only the first is a shell word), or pass --allow-unreadable-roots to census the readable roots anyway; the report then states which roots it missed.")
@@ -279,8 +325,17 @@ func renderCoverage(b *strings.Builder, rep censusReport) {
 	if rep.CoverageComplete {
 		fmt.Fprintf(b, "Coverage: COMPLETE — all %d requested roots were read.\n", len(rep.Roots))
 	} else {
-		fmt.Fprintf(b, "Coverage: INCOMPLETE — %d of %d requested roots could not be read.\n",
-			len(rep.UnreadableRoots), len(rep.Roots))
+		// Both causes are named, because "INCOMPLETE" against a full root list
+		// otherwise reads as a contradiction and gets dismissed.
+		b.WriteString("Coverage: INCOMPLETE —")
+		if len(rep.UnreadableRoots) > 0 {
+			fmt.Fprintf(b, " %d of %d requested roots could not be read.",
+				len(rep.UnreadableRoots), len(rep.Roots))
+		}
+		if len(rep.UnreadableRegisters) > 0 {
+			fmt.Fprintf(b, " %d live register(s) could not be read.", len(rep.UnreadableRegisters))
+		}
+		b.WriteString("\n")
 	}
 	for _, r := range rep.RootsWalked {
 		fmt.Fprintf(b, "  walked  %s\n", r)
@@ -288,8 +343,11 @@ func renderCoverage(b *strings.Builder, rep censusReport) {
 	for _, u := range rep.UnreadableRoots {
 		fmt.Fprintf(b, "  MISSED  %s (%s)\n", u.Root, u.Reason)
 	}
+	for _, u := range rep.UnreadableRegisters {
+		fmt.Fprintf(b, "  UNREAD  %s (%s)\n", u.Feature, u.Reason)
+	}
 	if !rep.CoverageComplete {
-		b.WriteString("  Every figure below counts only the walked roots and is a LOWER BOUND on the estate.\n")
+		b.WriteString("  Every figure below is a LOWER BOUND on the estate.\n")
 	}
 }
 
@@ -299,12 +357,23 @@ func renderCoverageFooter(b *strings.Builder, rep censusReport) {
 	if rep.CoverageComplete {
 		return
 	}
-	missed := make([]string, 0, len(rep.UnreadableRoots))
-	for _, u := range rep.UnreadableRoots {
-		missed = append(missed, u.Root)
+	b.WriteString("\n")
+	if len(rep.UnreadableRoots) > 0 {
+		missed := make([]string, 0, len(rep.UnreadableRoots))
+		for _, u := range rep.UnreadableRoots {
+			missed = append(missed, u.Root)
+		}
+		fmt.Fprintf(b, "!! COVERAGE INCOMPLETE — %d of %d roots were never read (%s).\n",
+			len(rep.UnreadableRoots), len(rep.Roots), strings.Join(missed, ", "))
 	}
-	fmt.Fprintf(b, "\n!! COVERAGE INCOMPLETE — %d of %d roots were never read (%s).\n",
-		len(rep.UnreadableRoots), len(rep.Roots), strings.Join(missed, ", "))
+	if len(rep.UnreadableRegisters) > 0 {
+		unread := make([]string, 0, len(rep.UnreadableRegisters))
+		for _, u := range rep.UnreadableRegisters {
+			unread = append(unread, u.Feature)
+		}
+		fmt.Fprintf(b, "!! COVERAGE INCOMPLETE — %d live register(s) could not be read (%s).\n",
+			len(rep.UnreadableRegisters), strings.Join(unread, ", "))
+	}
 	b.WriteString("!! Do not quote these totals as the estate: they are lower bounds over a partial walk.\n")
 }
 
