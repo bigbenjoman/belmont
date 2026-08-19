@@ -26,11 +26,11 @@ This is a **thin** document. It carries only the rules an agent executing a mile
 
 **5. Contract-changing work gets a proposal first.** `docs/proposals/NNNN-*.md`, specification before implementation, adversarial review rounds. **Note the current state, verified 2026-08-18: there is no `docs/proposals/` directory on `main`.** 0003–0006 live only on `origin/docs/pr-proposals`; 0001 and 0002 on `origin/proposal/0001-quick-mode` and `origin/proposal/0002-prd-hygiene`. `throughput`'s M2 takes `0004-context-budget-with-evidence.md` rev 5 as its specification and the feature owes 0007–0009, so **P0-13's branch triage must return a verdict on `origin/docs/pr-proposals` before M2 begins.**
 
+**6. Tier 1 evals cannot license a prose change.** `AGENTS.md:59`. Nothing in Tier 1 reads a `SKILL.md`. Any milestone whose deliverable is skill prose needs Tier 2 — `BELMONT_EVAL_LIVE=1 go test -tags eval -timeout 0 -run TestEvalLive ./cmd/belmont`, where `-timeout 0` is required or the live tool child is orphaned. See the feature TECH_PLAN's §Commands for which milestones that covers.
+
 **7. No product's confidential information enters this repository.** Added 2026-08-19. `github.com/bigbenjoman/belmont` is **public** and a fork of `blake-simpson/belmont`, and `.belmont/` is committed here as the state of record — so anything written into a feature directory is published. Product feature names, roadmaps and per-feature measurements appear here only as **opaque identifiers**; the identifier↔product mapping lives at `~/belmont/`, never here. This binds every artefact: census output, baselines, per-run records, test fixtures, code comments and knowledge entries alike.
 
 *Measured, not hypothetical.* On 2026-08-19 `origin/main` was found to carry a complete inventory of 82 feature slugs across all five products with per-feature sizes and task counts, plus product names in two *source* files that would travel in any upstream contribution. Remediation is a gate on `throughput`'s wave 2; the residual exposure — objects already pushed to a public fork stay reachable through the parent's network — was knowingly accepted by the repository owner rather than resolved by deleting the fork. See `features/throughput/TECH_PLAN.md` §Prerequisites — before wave 2.
-
-**6. Tier 1 evals cannot license a prose change.** `AGENTS.md:59`. Nothing in Tier 1 reads a `SKILL.md`. Any milestone whose deliverable is skill prose needs Tier 2 — `BELMONT_EVAL_LIVE=1 go test -tags eval -timeout 0 -run TestEvalLive ./cmd/belmont`, where `-timeout 0` is required or the live tool child is orphaned. See the feature TECH_PLAN's §Commands for which milestones that covers.
 
 ## Ignore rules, and why self-hosting needs them
 
@@ -44,8 +44,10 @@ This is a **thin** document. It carries only the rules an agent executing a mile
 
 ## Concurrency
 
-Run `belmont auto` at `--max-parallel 2` or `3`, not the default 5. Wave 2 of `throughput` holds six milestones, but the measured local speedup is ~1.4× — LLM decode is memory-bandwidth bound and concurrent agents share one budget. Overcommitting is measurably worse than running serially.
+Run `belmont auto` at `--max-parallel 2` or `3`, not the default 5. Wave 2 of `throughput` holds seven milestones (M2, M3, M6, M7, M9, M10, M12 — M12 was added 2026-08-19), but the measured local speedup is ~1.4× — LLM decode is memory-bandwidth bound and concurrent agents share one budget. Overcommitting is measurably worse than running serially.
 
 ## Open question inherited from the workspace
 
 **Where framework-feature state lives long-term.** `throughput` executes here while the workspace keeps the master catalogue, so that catalogue now spans two repositories. Workable for one feature; revisit before a second framework feature is planned. Recorded in `~/belmont/.belmont/TECH_PLAN.md` §Open architectural questions.
+
+*Decided 2026-08-19 during `/belmont:review-plans`, so the next session finds a decision rather than an absence:* **this repository deliberately has no master `.belmont/PROGRESS.md`**, and therefore no features table. `belmont status` still enumerates `features/throughput/` from disk, so nothing in the single-feature path needs one; what a missing table costs is `belmont sync` (nothing to write) and `parseMasterDeps` (no Priority/Dependencies to read, so `belmont auto --features` / `--all` would schedule without them). With one feature both are free, and a second catalogue here is the two-drifting-copies failure this file exists to avoid. **Create it at either of two triggers, not before**: a second framework feature is planned here, or `belmont auto --all` is wanted in this repository.

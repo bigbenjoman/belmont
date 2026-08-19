@@ -567,9 +567,9 @@ Three branches carry a known dependency and must be triaged deliberately rather 
 
 **Solution**: A write that would push a task line past the configured limit is rejected, with a message directing the content to the detail tier.
 
-**Notes**: This is the mechanism that changes agent behaviour; the ceilings above only detect the result.
+**Notes**: This is the mechanism that changes agent behaviour; the ceilings above only detect the result. **Scope is the lines a write introduces or modifies, never the whole file** — see TECH_PLAN.md §Edge Cases. A whole-file check would make every register that already holds an over-length line unwritable the moment M5 ships, this feature's own included (measured 2026-08-19: 13 lines over the limit, longest 2,925 chars), and so would refuse the very migration that fixes them.
 
-**Verification**: An oversized task-line write is rejected and names the detail tier. A normal write succeeds.
+**Verification**: An oversized task-line write is rejected and names the detail tier. A normal write succeeds. **A write to a register that already contains an over-length line, where the write does not touch that line, succeeds** — the pre-existing line is reported by `belmont validate`, not by refusing the write.
 
 ### P1-9: Stop shipping every skill's shared prose to every skill
 **Severity**: HIGH
@@ -729,3 +729,16 @@ Three branches carry a known dependency and must be triaged deliberately rather 
 **Notes**: A criterion that was not met is reported as not met. The point of the baseline is that this cannot be argued either way — which is also why the completion rate is published beside every median: a run that terminated cheaply without finishing would otherwise improve the number. Do **not** claim causality from the passive arm alone; it cannot separate Belmont's contribution from milestone variety. Do **not** quote the seeded suite's figure as a real-world number without the translation step.
 
 **Verification**: The comparison exists for both arms, names the exact model IDs and Belmont commits behind each, and states a verdict against every success criterion. Pricing, if any cost figure is quoted, is fixed at analysis time so a vendor price change cannot masquerade as an improvement.
+
+### P3-4-REVIEW: Document the CLI surface this feature added
+**Source**: Review audit 2026-08-19 (`/belmont:review-plans`, Layer 4)
+
+**Severity**: MEDIUM
+
+**Task Description**: `belmont metrics` and `belmont extract` ship today — dispatched at `cmd/belmont/main.go:316-318` and listed in `belmont help` — but appear in none of `README.md`, `docs/cli-commands.md`, or `AGENTS.md`'s command inventory, which still reads `install, update, status, auto, reverify, repair, blockers, sync, recover, steer, validate, version`. Both were delivered by M1 (`P0-2`, `P0-4`), both `[v]`. `AGENTS.md` §Notes requires the README and `docs/` to move with the code, so this is a rule the repository states about itself and did not follow.
+
+**Solution**: Add both commands to the three surfaces. `docs/cli-commands.md` gets a section each covering the flags `belmont help` already advertises — `metrics --feature SLUG [--root PATH] [--format text|json]`, `extract --dry-run [--feature SLUG] [--root PATH] [--roots PATH,PATH] [--allow-unreadable-roots] [--format text|json]` — including that `--dry-run` is currently mandatory on `extract` and that `--roots` entries must be absolute (`P0-M1-FIX-7`: `~` is expanded only in the first comma-separated word). Update the `AGENTS.md` inventory sentence and the README's brief command table.
+
+**Notes**: Filed against M11 rather than M1 deliberately. M11 is the highest-numbered milestone whose work this touches — `P3-1` drives `belmont extract` across five repos and `P3-3` reads `belmont metrics` — and per `AGENTS.md`'s rule a cross-cutting follow-up goes to the highest such milestone, never a new one. Filing it in M1 would reopen a milestone whose `belmont reverify` is prerequisite 8, a gate on wave 2. By M11 the surface is settled, so the documentation is written once against its final shape rather than twice.
+
+**Verification**: `belmont metrics` and `belmont extract` each appear in `README.md`, `docs/cli-commands.md` and `AGENTS.md`. Every flag documented is accepted by the built binary, and every flag `belmont help` prints is documented.
