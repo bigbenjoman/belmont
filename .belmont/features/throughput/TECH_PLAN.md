@@ -37,7 +37,15 @@ These cannot be milestone tasks: `belmont auto` cannot bootstrap the state direc
 
    **Accepted residual risk, recorded rather than argued.** Objects already pushed to a public fork stay reachable through the parent repository's network, so a force-push does not undo the publication; only deleting the fork would. Decision by Ben Lavender, 2026-08-19: redact in place and accept that. This step reduces future exposure and the exposure already taken stands.
 
+   **DONE 2026-08-19.** 625 identifier substitutions across the twelve files — five repo names to `repo-1`…`repo-5`, 77 feature slugs to `feat-001`…`feat-077`. `main` rewritten with `git filter-repo` (`--replace-text` **and** `--replace-message`; commit messages carried the names too, which this section had not anticipated) and force-pushed: `e49c04fd` → `ff11815`. Every ref on `origin` was audited afterwards, not just `main` — `origin/main` and `origin/HEAD` were the only dirty ones, so no stale branch keeps the estate published. Map at `~/belmont/private/estate-alias-map.json`; pre-rewrite bundle beside it, gitignored.
+
+   **Scope the rewrite to `17897aa2..main`, and here is why that is not optional.** The first attempt ran `filter-repo` across all refs. It produced a clean history and destroyed the fork relationship: `17897aa2`, the merge base with `blake-simpson/belmont`, ceased to exist, so every future `git merge upstream/main` would have seen two unrelated histories with identical content. Restored from the bundle, re-run with `--refs 17897aa2..main`, and the merge base is preserved and verified an ancestor of `HEAD`. **The upstream half of the history contains none of these identifiers** — measured before either attempt: `git grep` for all five names over `upstream/main` returns nothing. So there is never a reason to rewrite past the merge base, and doing so costs the periodic upstream re-merge the master PRD commits to.
+
+   *A figure-preservation guard is worth writing even for a one-off.* The redaction script masked identifiers on both sides and refused to write any file whose measured digits did not survive byte-identically. It fired twice — once correctly (aliases carry digits of their own) and once on this very section's literal `repo-1`…`repo-5` examples. Both were guard bugs, not data loss, but a silent run would have given no reason to believe that.
+
 7. **Do not start wave 2 before step 6 lands.** Seven milestones commit into this repository concurrently. Redacting after they start means redacting a moving target across seven worktrees.
+
+   **SATISFIED 2026-08-19** — step 6 landed before any wave-2 milestone started.
 
 8. **Reverify M1, then freeze the orchestrator.** `belmont reverify --feature throughput` promotes M1's remaining `[x]` tasks (P0-3, P0-M1-FIX-12). Then build the pinned artefact from M1's merge commit and keep it:
 
