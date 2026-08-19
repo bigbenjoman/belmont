@@ -65,65 +65,84 @@ Three facts make this unavoidable rather than an omission:
    contains no instrumentation. P0-2's code exists only in this working tree.
 2. **Neither repo has ever recorded a metric** — `~/repo-3/.belmont/metrics/` and
    `~/repo-4/.belmont/metrics/` do not exist. Verified, not assumed.
-3. **Capturing it means running real milestones to `[v]` in both repos** with an instrumented
-   build. That is live agent work costing real tokens against two production repositories; it is
-   not something an implementation agent should trigger unasked.
+3. **Capturing it needs instrumented runs, and where those may happen is now constrained.**
+   *(Revised 2026-08-19.)* This originally read "running real milestones to `[v]` in both repos",
+   which was acted on and withdrawn — see §How to capture it. Measurement in a product repo is
+   **observational only**; anything that drives a run happens in a disposable seeded testbed.
+   Neither arm is something an implementation agent should trigger unasked.
 
 ### How to capture it
 
-> **METHOD CHANGED 2026-08-19 — decision by Ben Lavender.** The procedure below previously said
-> "run at least one milestone to `[v]` in **each repo**", meaning `~/repo-3` and `~/repo-4`.
-> That is **withdrawn**, for two independent reasons, and the second is the load-bearing one.
+> **METHOD CHANGED 2026-08-19 — product re-planning session, decision by Ben Lavender.**
+> The procedure here previously said "run at least one milestone to `[v]` in **each repo**",
+> meaning `~/repo-3` and `~/repo-4`. **Withdrawn.** It was acted on once, on 2026-08-18: four
+> `belmont auto` runs drove 13 commits into `repo-3`'s `main`, including two database
+> migrations (local only, nothing pushed). Review record:
+> `~/belmont/repo-3-agent-run-review-2026-08-19.md`.
 >
-> 1. **Blast radius.** `belmont auto` is an autonomous implementation agent, not an observer.
->    Run against `~/repo-3` it made 13 commits to `main` including two database migrations
->    (local only; nothing pushed). Both repos are revenue-critical and repo-4 is pre-launch.
->    Measurement must not be able to break the thing it measures.
-> 2. **It cannot produce the comparison it exists for.** A milestone can only be implemented
->    once. Driving `feat-004` M1 with the *old* Belmont leaves no way to
->    re-run *that same milestone* with the new one, so M11/P3-3 would be comparing two
->    different pieces of work and attributing the difference to Belmont. A before-number whose
->    after-number must come from different work is not a baseline, it is an anecdote.
+> Two independent reasons, and the second is load-bearing:
+> 1. **Blast radius.** `belmont auto` is an implementation agent, not an observer. Measuring
+>    Belmont must not be able to damage what it measures, and repo-4 is pre-launch.
+> 2. **It could not produce its own comparison.** A milestone is implemented once, so driving a
+>    real milestone with the old build leaves no way to re-run *that same milestone* with the
+>    new one. The after-arm would necessarily be different work.
 >
-> The replacement is a purpose-built, resettable test repository. Same milestone, same starting
-> state, run twice — which is the only design that isolates Belmont's contribution.
+> The replacement is **two arms with distinct jobs** — see PRD §Success Criteria, §Constraints
+> and §Research Notes (2026-08-19), which are canonical. This file holds the procedure only.
 
-The testbed lives outside every product repo and is seeded once, then reset between arms:
+**Arm 1 — seeded paired suite (carries the causal claim).** Disposable testbed, state seeded to
+the worst measured real register (~1.86 MB, 300+ milestones, ~346k tokens of archives — see
+`CENSUS.md`), milestone under test deliberately small. Read-path overhead does not scale with how
+much code a milestone writes, so runs finish in minutes while still exercising what M2–M4 attack.
 
 ```bash
-# 1. Seed (once). The seed commit is the fixed starting state for every arm.
-#    The register MUST be seeded to the sizes measured in CENSUS.md — this feature targets
-#    large-register read paths, and a toy PROGRESS.md exercises none of them.
+# Seed once; this commit is the fixed starting state for every arm and replicate.
 git -C <testbed> tag baseline-seed
 
-# 2. Arm A — current Belmont (no throughput work), from the seed:
+# 4-5 seeded milestones x 3 replicates ~= 12-15 pairs (the paired-design threshold).
+# ALTERNATE arm order across replicates - A/B, then B/A, then A/B - so prompt-cache
+# warmth and vendor drift average out rather than always favouring whichever arm is second.
 git -C <testbed> reset --hard baseline-seed
-<belmont-current> auto --feature <slug> --from M1 --to M1 --tool claude
-<belmont-current> metrics --feature <slug> --root <testbed> --format json   # → arm A
+<belmont-current>          auto --feature <slug> --from M<n> --to M<n> --tool claude   # arm A
+<belmont-current>          metrics --feature <slug> --root <testbed> --format json
 
-# 3. Arm B — this tree's Belmont, from the *identical* seed:
 git -C <testbed> reset --hard baseline-seed
-cd ~/repos/belmont && go build -o /tmp/belmont-instrumented ./cmd/belmont
-/tmp/belmont-instrumented auto --feature <slug> --from M1 --to M1 --tool claude
-/tmp/belmont-instrumented metrics --feature <slug> --root <testbed> --format json  # → arm B
+/tmp/belmont-instrumented  auto --feature <slug> --from M<n> --to M<n> --tool claude   # arm B
+/tmp/belmont-instrumented  metrics --feature <slug> --root <testbed> --format json
 ```
 
-Append both arms to `baseline.json` under `per_milestone_cost_baseline`, record the seed commit
-SHA and the register sizes alongside them, and set `status` to `CAPTURED`. Run each arm more
-than once if the budget allows — agent runs are noisy, and a single pair cannot separate a real
-improvement from run-to-run variance.
+**Arm 2 — passive observation (carries external validity).** No commands. Adopt the instrumented
+build as the daily driver once M1 verifies; every normal run on the five repos then records
+metrics as a side effect, at zero extra token cost and with no interference. The pre-change
+window closes at the M11 rollout. This arm supplies the real **overhead-to-work ratio** that the
+seeded figure must be translated through — the small-work design deliberately over-weights
+overhead, so quoting the seeded number raw would overstate the real-world reduction.
+
+**Controls — all three are acceptance-relevant, not method trivia.**
+
+- **Pin exact model IDs.** Never the drifting `opus` / `sonnet` aliases in `modelTiers`, or a
+  vendor-side model change masquerades as your improvement.
+- **Keep `cache_read` and `cache_creation` separate** in every record, so prompt-cache warmth is
+  inspectable after the fact rather than baked into a total. Cache hit rate is both a confound
+  here *and* one of the things the feature improves, so it cannot simply be factored out.
+- **Publish the completion rate beside every median.** A run that terminated cheaply without
+  finishing flatters a median — which is exactly what the zero-usage records surfaced by
+  `P0-M1-FIX-12` are.
+
+Record per-pair figures, not just aggregates, so M11/P3-3 can compute a confidence interval.
+Append to `baseline.json` under `per_milestone_cost_baseline` with the seed SHA, the pinned model
+IDs and the Belmont commit per arm, then set `status` to `CAPTURED`.
 
 **Until that happens, M11/P3-3 can compare the read-path half of the success criteria and must
 report the cost half as unevidenced rather than estimating it.** The PRD is explicit that
 instrumentation reports nothing rather than guessing; a baseline is the last place to break that
 rule, because every later claim is stated against it.
 
-**Records that exist but are not the baseline.** Seven metrics records were captured from the
-withdrawn repo-3 runs (`~/repo-3/.belmont/metrics/feat-004.jsonl`). They
-are real measurements of real work and are kept for reference, but they are **not** the baseline
-and must not be presented as one: no milestone reached `[v]`, and two of the records are
-zero-usage phases from session-limit exits (see `P0-M1-FIX-12`, which is why the summary now
-flags them). Nothing in `baseline.json` is derived from them.
+**Records that exist but are not the baseline.** Seven records were captured from the withdrawn
+repo-3 runs (`~/repo-3/.belmont/metrics/feat-004.jsonl`). They are real
+measurements of real work and are kept for reference, but they are **not** the baseline and must
+not be presented as one: no milestone reached `[v]`, and two are zero-usage phases from
+session-limit exits. Nothing in `baseline.json` derives from them.
 
 ## Reproducing the read-path half
 
