@@ -427,3 +427,72 @@ func TestCensusUnreadableRegisterIsReportedNotSwallowed(t *testing.T) {
 		t.Error("without --allow-unreadable-roots an unreadable register must refuse, not report a short denominator")
 	}
 }
+
+// TestDedupeRootsCollapsesTheSameDirectory pins P0-M1-FIX-31.
+//
+// A duplicated root doubles feature_dirs, live_registers and every byte total
+// while coverage_complete still reports true — a doubled denominator reads
+// exactly like a correct one. --root defaults to ".", so the documented
+// five-repo command run from inside one of those repos triggers it with no flag
+// mistake at all.
+func TestDedupeRootsCollapsesTheSameDirectory(t *testing.T) {
+	dir := t.TempDir()
+	other := t.TempDir()
+
+	kept, collapsed := dedupeRoots([]string{dir, other, dir})
+	if len(kept) != 2 || kept[0] != dir || kept[1] != other {
+		t.Errorf("kept: got %v, want [%s %s] in original order", kept, dir, other)
+	}
+	if len(collapsed) != 1 || collapsed[0] != dir {
+		t.Errorf("collapsed: got %v, want [%s]", collapsed, dir)
+	}
+
+	// A symlinked alias of a listed root is the same directory and must collapse.
+	if runtime.GOOS != "windows" {
+		link := filepath.Join(t.TempDir(), "alias")
+		if err := os.Symlink(dir, link); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+		kept, collapsed = dedupeRoots([]string{dir, link})
+		if len(kept) != 1 {
+			t.Errorf("a symlinked alias must collapse: kept %v", kept)
+		}
+		if len(collapsed) != 1 || collapsed[0] != link {
+			t.Errorf("collapsed: got %v, want [%s]", collapsed, link)
+		}
+	}
+}
+
+// TestCensusDoesNotDoubleCountADuplicatedRoot is the end-to-end half: the same
+// register must be measured once, not twice.
+func TestCensusDoesNotDoubleCountADuplicatedRoot(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".belmont", "features", "only")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "# Progress\n\n## Milestones\n\n### M1: One\n- [ ] P0-1: A task\n"
+	if err := os.WriteFile(filepath.Join(dir, "PROGRESS.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	kept, collapsed := dedupeRoots([]string{root, root})
+	if len(collapsed) != 1 {
+		t.Fatalf("expected the duplicate to be collapsed, got %v", collapsed)
+	}
+	rep, err := runCensus(kept, "", false)
+	if err != nil {
+		t.Fatalf("runCensus: %v", err)
+	}
+	if rep.FeatureDirs != 1 || rep.LiveRegisters != 1 {
+		t.Errorf("feature_dirs=%d live_registers=%d, want 1/1 — the duplicate was counted",
+			rep.FeatureDirs, rep.LiveRegisters)
+	}
+	if len(rep.Features) != 1 {
+		t.Errorf("features listed %d times, want 1", len(rep.Features))
+	}
+	if rep.TotalBytes != len(body) {
+		t.Errorf("total_bytes=%d, want %d — doubled totals read exactly like correct ones",
+			rep.TotalBytes, len(body))
+	}
+}

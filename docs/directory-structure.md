@@ -96,6 +96,8 @@ your-project/
 │   │       ├── PROGRESS.md
 │   │       ├── models.yaml      # Per-feature model tiers (optional, written by /belmont:tech-plan)
 │   │       └── MILESTONE.md
+│   ├── metrics/                 # Per-phase cost records, one .jsonl per feature (gitignored,
+│   │                            # local-only — written by `belmont auto`, read by `belmont metrics`)
 │   ├── MILESTONE.md             # Active milestone context (created during implement)
 │   └── MILESTONE-M1.done.md     # Archived milestone (after completion)
 ├── .claude/                     # Claude Code (if selected)

@@ -172,6 +172,37 @@ func censusFeature(repo, slug, content string) featureCensus {
 	return fc
 }
 
+// dedupeRoots collapses roots that name the same directory, returning the kept
+// roots in their original order plus the entries that were dropped.
+//
+// A duplicated root is counted twice by runCensus — same feature dirs, same
+// registers, same bytes — and `coverage_complete` still reports true, so a
+// doubled denominator is indistinguishable from a correct one. That defeats the
+// guarantee P0-M1-FIX-7 and P0-M1-FIX-20 exist to provide, and it needs no flag
+// mistake to trigger: --root defaults to ".", so running the documented
+// five-repo command from *inside* one of those repos doubles it (P0-M1-FIX-31).
+//
+// Symlinks are resolved first, so a symlinked alias of a listed repo collapses
+// too. EvalSymlinks failing is not fatal — a root that cannot be resolved is
+// kept and left for runCensus to report as unreadable, which is the honest
+// division of labour: this function decides identity, not readability.
+func dedupeRoots(roots []string) (kept []string, collapsed []string) {
+	seen := make(map[string]bool, len(roots))
+	for _, r := range roots {
+		key := r
+		if resolved, err := filepath.EvalSymlinks(r); err == nil {
+			key = resolved
+		}
+		if seen[key] {
+			collapsed = append(collapsed, r)
+			continue
+		}
+		seen[key] = true
+		kept = append(kept, r)
+	}
+	return kept, collapsed
+}
+
 // runCensus walks each root's .belmont/features/ and measures every live
 // register. Roots are walked directly — see the file comment on why globbing is
 // wrong.
@@ -490,6 +521,11 @@ func runExtractCmd(args []string) error {
 			return fmt.Errorf("extract: resolve root %s: %w", r, err)
 		}
 		roots = append(roots, a)
+	}
+
+	roots, collapsed := dedupeRoots(roots)
+	for _, c := range collapsed {
+		fmt.Fprintf(os.Stderr, "extract: %s names the same directory as an earlier root — counted once\n", c)
 	}
 
 	rep, err := runCensus(roots, strings.TrimSpace(*feature), *allowUnreadable)

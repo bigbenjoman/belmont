@@ -9,7 +9,7 @@
 |---|---|
 | Orchestrator | `/opt/homebrew/bin/belmont (pinned Homebrew v0.11.0)` |
 | Belmont version | `belmont 0.11.0 (bb5f6ef, 2026-08-17T10:56:07Z)` |
-| Repo commit | `25249853a727dd251861557801f67e4b940867e5` |
+| Repo commit | `fc33be901b4fd04e0196b50f780810a8fe52d575` |
 | Go toolchain | `go version go1.26.0 darwin/arm64` |
 | Token conversion | 4 bytes/token — the conversion every measurement in the PRD uses |
 | Measured repo revisions | `repo-3 af16dabd3411fc68852e51f3868d69f091326fb4` · `repo-4 2c1f7e857b30722018a3d860bb05a079f8daf1be` |
@@ -78,7 +78,7 @@ targets; the median feature (17 KB) gains nothing from migration, exactly as the
 
 **This half of the baseline does not exist yet, and no number was invented to fill it.**
 
-Requires instrumented `belmont auto` runs. The P0-2 instrumentation exists only in this working tree; the orchestrating binary is pinned to Homebrew v0.11.0, which has no metrics code, and no .belmont/metrics/ directory exists in either repo. Numbers were NOT invented to fill the gap.
+Requires instrumented `belmont auto` runs. The P0-2 instrumentation exists only in this working tree; the orchestrating binary is pinned to Homebrew v0.11.0, which has no metrics code, and at capture time (2026-08-18) no .belmont/metrics/ directory existed in either repo. Numbers were NOT invented to fill the gap. *(Re-tensed 2026-08-19 by P0-M1-FIX-26(d), for the same reason fact 2 below was: six records were written into repo-3 later that same day by the withdrawn runs, as §Records that exist states.)*
 
 Three facts make this unavoidable rather than an omission:
 

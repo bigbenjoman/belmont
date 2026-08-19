@@ -14,6 +14,8 @@ belmont status --format json            # Machine-readable status
 belmont status --feature auth           # Feature-specific status
 belmont status --color always           # Force ANSI-coloured markers (auto|always|never; auto honors NO_COLOR + TTY)
 belmont status --show-archived          # Include archived features in the listing (default: collapsed to a footer count)
+belmont metrics --feature auth          # What a feature cost: tokens and wall-clock per phase
+belmont extract --dry-run --feature auth # Census: what splitting narrative out of PROGRESS.md would yield
 belmont auto --feature auth              # Run feature auto (auto-detect tool)
 belmont auto --feature auth --tool codex # Use specific tool
 belmont auto --feature auth --tool pi    # Run with Pi (local LLM via ~/.belmont/local-llms.json)
@@ -176,9 +178,9 @@ remembered. The JSON shape is `{"repairs": [{"line": N, "task_id": "...",
 belmont metrics --feature SLUG [--root PATH] [--format text|json]
 ```
 
-Summarises `.belmont/metrics/<feature>.jsonl` — one append-only record per phase, written by `belmont auto`. Records are **local-only and gitignored**; `auto` guarantees the ignore rule at startup (see the clean-tree preflight above).
+Summarises `.belmont/metrics/<feature>.jsonl` — one append-only record per phase, written by `belmont auto`. Records are **local-only and gitignored**; `auto` guarantees the ignore rule at startup (see §Clean-working-tree preflight, below).
 
-The governing rule is that **a figure is either reported by the tool that spent it, or it is null.** Nothing here estimates a token count — not from character counts, not from a ratio, not from a previous run. A host that cannot report usage (copilot, pi, opencode) records `null` with a stated reason and wall-clock only. A plausible invention would silently contaminate the baseline every later comparison is judged against.
+The governing rule is that **a figure is either reported by the tool that spent it, or it is null.** Nothing here estimates a token count — not from character counts, not from a ratio, not from a previous run. A host that cannot report usage records `null` with a stated reason and wall-clock only. That is **five** of the seven: `toolReportsUsage` (`metrics.go`) returns true for `claude` and `codex` only, so copilot, pi, opencode, **gemini and cursor** all record null. *(Corrected 2026-08-19 by `P0-M1-FIX-28(c)`, which said three: gemini and cursor were listed as reporting in the feature's own plan table and record null in the shipped code, because their usage schema was never verified against a live run and Belmont does not ship a parser written against a guess.)* A plausible invention would silently contaminate the baseline every later comparison is judged against.
 
 Two distinctions the summary keeps rather than flattening:
 

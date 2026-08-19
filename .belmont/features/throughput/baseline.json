@@ -2,7 +2,7 @@
   "captured": "2026-08-18",
   "captured_by": "throughput P0-3",
   "belmont_version": "belmont 0.11.0 (bb5f6ef, 2026-08-17T10:56:07Z)",
-  "belmont_commit": "25249853a727dd251861557801f67e4b940867e5",
+  "belmont_commit": "fc33be901b4fd04e0196b50f780810a8fe52d575",
   "go_toolchain": "go version go1.26.0 darwin/arm64",
   "bytes_per_token": 4,
   "orchestrator_binary": "/opt/homebrew/bin/belmont (pinned Homebrew v0.11.0)",
@@ -261,5 +261,11 @@
     "status": "NOT CAPTURED \u2014 superseded method; see how_to_capture",
     "reason": "Requires instrumented `belmont auto` runs. Superseded 2026-08-19: the original method drove `belmont auto` into product repositories, which `PRD.md` \u00a7Constraints now forbids by name and records as already violated once (four runs, 13 commits on a product `main`, two DB migrations). The replacement is a two-arm design \u2014 a disposable seeded testbed carrying the causal claim (M13), plus passive observation of real runs (M12) \u2014 both run at M11 against `belmont-pre`, a binary frozen at M1. Six records DO exist from the withdrawn runs and are kept for reference only: no milestone reached `[v]` and two are zero-usage session-limit exits. Nothing in this file derives from them. Numbers were NOT invented to fill the gap.",
     "how_to_capture": "DO NOT run `belmont auto` in a product repository to capture this. See `BASELINE.md` \u00a7How to capture it (the current procedure; the old one is marked Withdrawn there), `PRD.md` \u00a7Constraints and \u00a7Out of Scope, and `TECH_PLAN.md` \u00a7M12 / \u00a7M13. This field previously carried the withdrawn method verbatim, which made it a live instruction to an agent reading this JSON alone \u2014 `BASELINE.md` designates this file the machine-readable companion and tells M11/M13 to append to it. Corrected by P0-M1-FIX-13."
+  },
+  "measured_repo_revisions": {
+    "note": "The repositories the read-path half was measured against, pinned so the procedure is re-runnable. Added 2026-08-19 by P0-M1-FIX-26(b); P0-M1-FIX-14 named this file the better home and only BASELINE.md got them.",
+    "repo-3": "af16dabd3411fc68852e51f3868d69f091326fb4",
+    "repo-4": "2c1f7e857b30722018a3d860bb05a079f8daf1be",
+    "caveat": "repo-4/feat-031's 129,354 B was uncommitted working-tree state at capture, committed verbatim the same day as 79fee00e."
   }
 }

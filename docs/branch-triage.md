@@ -1,6 +1,6 @@
 # Branch triage — the unmerged backlog
 
-*Produced by `throughput` P0-13 on 2026-08-18, against local `main` at `dc6ba7e9`.
+*Produced by `throughput` P0-13 on 2026-08-18, against local `main` at `4f71915c`.
 Every verdict below is measured, not recalled. Re-run the commands in
 §How this was measured before trusting a row that looks stale.*
 

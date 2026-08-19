@@ -115,11 +115,11 @@
 - `toolReportsUsage` is referenced only from `metrics_test.go:365` — fine as an invariant checker, but say so in a comment or use it in `attachUsageCapture` instead of the duplicated switch — `cmd/belmont/metrics.go:86-91`
 - `censusFeature` marks every line in a parent task's body as moved, including nested task *head* lines M3's extraction is specified to leave in place, so `IndexBytes` is a lower bound. Cannot change P0-4's answer (it can only push the over-threshold count higher, and the answer is already YES) but M3 should know the census under-reports the residual index — `cmd/belmont/extract.go:113-127`
 - `copyFile` for master context files still discards its error (pre-existing, "best-effort"). No orphan risk — the helper's `defer` always cleans the temp — only a silent loss. Inconsistent with the five sites upgraded to a stderr warning — `cmd/belmont/worktree.go:258`
-- CI does not run `go test -race ./cmd/belmont`, so P0-1's acceptance rests on a command CI never executes
+- ~~CI does not run `go test -race ./cmd/belmont`, so P0-1's acceptance rests on a command CI never executes~~ — **resolved 2026-08-19** (`P0-M1-FIX-18`/`P0-M1-FIX-19`): the step is in `ci.yml`. Note the resolution also changed *why* it is there — P0-1's proof never needed `-race`; `tailWriter`'s did.
 - This file has four separate `### Discovery` headings; merge or number them
 
 ### From verification [2026-08-18] (P0-M1-FIX-8 round 3)
-- Archived round-3 log and commit `98178662`'s message both record the FIX-8 flip as `[ ] → [x]`; the actual prior marker was `[!]` (a circuit-breaker deferral, not a human gate) — `MILESTONE-M1.done.md` round-3 §Files Modified
+- Archived round-3 log and commit `ad8da7ec`'s message both record the FIX-8 flip as `[ ] → [x]`; the actual prior marker was `[!]` (a circuit-breaker deferral, not a human gate) — `MILESTONE-M1.done.md` round-3 §Files Modified
 - Round-3 self-validation says "20 lines added, 3 removed" in CENSUS.md; `git show --numstat` says 18/2 — a restated figure inside the self-validation of a task about restated figures — `MILESTONE-M1.done.md` round-3 §Self-Validation criterion 4
 - `CENSUS.md:162` opens `**RECONCILED by …**` where the two sibling annotations use `**CORRECTED by …**` — deliberate (withdrawal-and-restatement, not a wrong number) but it breaks the visual grep; settle the annotation vocabulary before the next one is written
 
@@ -235,13 +235,13 @@
 **Source**: M1 / `P0-M1-FIX-8`
 
 ### [2026-08-18] Pattern: a remote-tracking ref was read as if it were the remote
-**Issue**: `P0-13a` escalated "publish 157 commits to a public fork" to the repository owner, and the decision was taken on that basis. The push then reported `17897aa2..dce4f648` — the real gap was **20 commits**, all from this session. `origin/main` was already current with upstream v0.11.0.
+**Issue**: `P0-13a` escalated "publish 157 commits to a public fork" to the repository owner, and the decision was taken on that basis. The push then reported `17897aa2..3125a067` — the real gap was **20 commits**, all from this session. `origin/main` was already current with upstream v0.11.0.
 **Root Cause**: `origin/main` is a *remote-tracking* ref. It records the last `git fetch`, not the remote. Every measurement in the triage — the 157-commit gap, the "v0.9.1, April" date, the "the default branch does misrepresent the repo" conclusion — was derived from a local pointer that had not been refreshed, and nothing in the reasoning distinguished "what the remote holds" from "what we last saw it holding". The branch-collision analysis rests on the same refs, so the `--no-merged main` set may also be stale.
 **Prevention**: `git fetch --all --prune` before any measurement that will be reported as the state of a remote, and say in the report when the fetch happened. Treat `origin/*` as a cache with an unknown age unless you refreshed it yourself. The failure mode is quiet and one-directional: a stale ref makes the remote look *behind*, never ahead, so it inflates the apparent cost of publishing and never warns you.
 **Source**: M1 / P0-13a
 
 ### [2026-08-18] Pattern: fix rounds scoped to the objected clause leave the same defect standing one paragraph up
-**Issue**: Round-3 code review found `CENSUS.md:144-146` ("moved exceeds indented") over-asserted in exactly the way round 3 had just withdrawn two lines below — 75 of the 77 term-(i)=0 registers are *equal*, only 2 exceed. Third instance of this class in one section (FIX-6, FIX-8, now FIX-9).
+**Issue**: Round-3 code review found `CENSUS.md:144-146` ("moved exceeds indented") over-asserted in exactly the way round 3 had just withdrawn two lines below — 75 registers are *equal* and 2 exceed. *(Restated 2026-08-19 by `P0-M1-FIX-30`: this read "75 of the **77 term-(i)=0 registers**". The 77 is 75 + 2, and equality only proves term(i) == term(ii) — an equal register with both terms positive is not term-(i)=0. With term (ii) non-zero in 5 registers the supported bound is 74–77, not exactly 77. Seventh instance of the class, in the section nominated as its own prevention record.)* Third instance of this class in one section (FIX-6, FIX-8, now FIX-9).
 **Root Cause**: Each fix round edits precisely the clause the objection quotes; sibling claims in the same section are never re-read against the new evidence, so the section converges one sentence per round instead of once.
 **Prevention**: When a fix withdraws an over-assertion, re-read the whole enclosing section against the same measurement before committing — every claim of the same shape (*usually*, *normally*, *exceeds*, *below*) either re-derives from the data or receives the same annotation in the same round.
 **Source**: M1 / P0-M1-FIX-8 round 3 (code review) → P0-M1-FIX-9
