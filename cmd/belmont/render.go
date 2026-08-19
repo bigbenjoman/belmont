@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 )
 
 // shouldColor resolves whether ANSI colors should be emitted.
@@ -184,7 +185,22 @@ func taskStatusIcon(status taskStatus, color bool) string {
 
 // tailWriter writes all data to an underlying writer and keeps a rolling
 // buffer of the last `size` bytes for later retrieval.
+//
+// Write and String are safe for concurrent use, and that is load-bearing rather
+// than defensive. attachUsageCapture sets cmd.Stdout to a wrapper
+// (claudeStreamWriter / usageCapture) while leaving cmd.Stderr as the bare
+// tailWriter. os/exec collapses stdout and stderr onto one pipe and one copying
+// goroutine only when interfaceEqual(c.Stderr, c.Stdout) holds; the wrapper
+// breaks that equality, so on every claude and codex invocation two goroutines
+// reach Write at once. Unguarded, they interleave appends to buf and lineBuf and
+// corrupt executionResult.Output — which feeds error reporting and
+// extractDecisionJSON, so the damage surfaces as a misparsed decision rather
+// than as a crash.
+//
+// -race does not catch it: no test drives a real exec.Cmd through this path.
+// TestTailWriterConcurrentWriters does, and is the regression pin.
 type tailWriter struct {
+	mu      sync.Mutex
 	out     io.Writer
 	buf     []byte
 	size    int
@@ -197,6 +213,9 @@ func newTailWriter(out io.Writer, size int, prefix string) *tailWriter {
 }
 
 func (tw *tailWriter) Write(p []byte) (int, error) {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+
 	// Always store raw bytes in buf for error tail reporting
 	tw.buf = append(tw.buf, p...)
 	if len(tw.buf) > tw.size {
@@ -224,6 +243,8 @@ func (tw *tailWriter) Write(p []byte) (int, error) {
 }
 
 func (tw *tailWriter) String() string {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
 	return string(tw.buf)
 }
 

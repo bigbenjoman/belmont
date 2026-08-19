@@ -25,6 +25,14 @@ jobs:
       - name: Test
         run: go test ./cmd/belmont
 
+      # The concurrency Belmont actually runs is orchestrator-side: parallel
+      # waves, and os/exec handing one tailWriter to two copying goroutines
+      # whenever cmd.Stdout is wrapped for usage capture. Nothing above catches
+      # a race there — plain `go test` stayed green over the live one in
+      # P0-M1-FIX-18 for as long as it existed. This step is that guard.
+      - name: Test (race detector)
+        run: go test -race ./cmd/belmont
+
       # Tier 1 of the eval harness: offline, deterministic, no agent and no
       # tokens. It is behind the `eval` build tag, so the line above does not
       # compile it — without this step the harness could rot silently.
