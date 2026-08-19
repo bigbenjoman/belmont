@@ -1,12 +1,13 @@
 ### Model Tier Preflight (non-Claude CLIs)
 
-Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi, opencode) run the entire skill in a single top-level session at whichever model the session was started with — there's no sub-agent dispatch to override mid-session. Before doing any heavy work, compare the **required tier** for the current skill to the **session's current model** and surface a warning if they diverge. Do NOT block execution; let the user decide.
+Non-Claude CLIs (Codex, Gemini, Cursor, Copilot, Pi, opencode) run the skill at whichever model the session was started with — none of them exposes a per-dispatch model override. (opencode can dispatch sub-agents, but its `task` tool carries no model parameter; the rest run everything in one top-level session.) Before doing any heavy work, compare the **required tier** for the current skill to the **session's current model** and surface a warning if they diverge. Do NOT block execution; let the user decide.
 
 **Workflow at start-of-skill (non-Claude only)**:
 
 1. **Read** `.belmont/features/<slug>/models.yaml`. If absent, skip this preflight (defaults apply).
 2. **Determine the required tier for this skill**:
    - `implement` → `tiers.implementation`
+   - `next` → `tiers.implementation` (the single-task shortcut dispatches the same implementation agent)
    - `verify` → `tiers.verification`
    - `code-review` (if applicable) → `tiers.code-review`
    - `debug-manual` → `tiers.implementation` (the fix itself dispatches the implementation agent; spec reconciliation runs in the orchestrator session at the same model on non-Claude CLIs)

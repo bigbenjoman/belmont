@@ -7,6 +7,8 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -330,26 +332,129 @@ func main() {
 	}
 }
 
+// commandSynopsis is the single definition of each command's argument shape. It
+// backs both `belmont --help` and `belmont <cmd> --help`, because two
+// hand-maintained copies is exactly how the first one drifted: `--features` and
+// `--all` are real modes of `belmont auto`, carry their own help strings, and
+// appeared in neither this usage text nor any FlagSet output — so from the CLI
+// itself the only way to meet them was the error `belmont auto` prints when you
+// omit `--feature`. A reader concluded that parallelism meant "within one
+// feature" and never found the mode `--max-parallel` exists for.
+//
+// Scoped to the CLI deliberately: `docs/cli-commands.md` HAS documented both
+// since before this branch, so "they surfaced only in an error message" — the
+// phrasing issue #50 uses, and which an earlier draft of this comment repeated —
+// is not true of the project as a whole. See issue #50.
+var commandSynopsis = []struct {
+	Name string
+	Args string
+	Note string
+}{
+	{Name: "install", Args: "[--source PATH] [--project PATH] [--tools all|none|claude,codex,...] [--no-prompt]"},
+	{Name: "update", Args: "[--check] [--force] [--no-commit]"},
+	{Name: "status", Args: "[--root PATH] [--feature SLUG] [--format text|json] [--color auto|always|never] [--max-task-name N] [--show-archived]"},
+	{
+		Name: "auto",
+		Args: "(--feature SLUG | --features a,b,c | --all) [--from M1] [--to M5] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--policy autonomous|milestone|every_action] [--max-iterations N] [--max-parallel N] [--max-failures N] [--allow-dirty] [--dry-run] [--root PATH]",
+		Note: "(alias: belmont loop)",
+	},
+	{Name: "reverify", Args: "[--feature SLUG] [--from M1] [--to M5] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]"},
+	{Name: "repair", Args: "[--feature SLUG] [--dry-run] [--mechanical-only] [--apply-proposal FILE] [--yes] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]"},
+	{Name: "blockers", Args: "[--feature SLUG] [--summary] [--root PATH] [--format text|json] [--color auto|always|never]"},
+	{Name: "metrics", Args: "--feature SLUG [--root PATH] [--format text|json]"},
+	{Name: "extract", Args: "--dry-run [--feature SLUG] [--root PATH] [--roots PATH,PATH] [--allow-unreadable-roots] [--format text|json]"},
+	{Name: "sync", Args: "[--root PATH]"},
+	{Name: "recover", Args: "[--list] [--merge SLUG] [--clean SLUG] [--clean-all] [--force] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]"},
+	{Name: "steer", Args: "[--feature SLUG] [--milestone M5] [--message \"text\" | --file PATH | -] [--root PATH]"},
+	{Name: "validate", Args: "[--feature SLUG] [--strict] [--root PATH] [--format text|json]"},
+	{Name: "version"},
+}
+
+// usageLine renders one command's synopsis. Unknown names degrade to the bare
+// command rather than panicking: a new subcommand that forgets its table entry
+// should print something imperfect, not crash on --help.
+func usageLine(name string) string {
+	for _, c := range commandSynopsis {
+		if c.Name != name {
+			continue
+		}
+		if c.Args == "" {
+			return "belmont " + c.Name
+		}
+		return "belmont " + c.Name + " " + c.Args
+	}
+	return "belmont " + name
+}
+
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "Belmont Helper")
 	fmt.Fprintln(w, "==============")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  belmont install [--source PATH] [--project PATH] [--tools all|none|claude,codex,...]")
-	fmt.Fprintln(w, "  belmont update [--check] [--force] [--no-commit]")
-	fmt.Fprintln(w, "  belmont status [--root PATH] [--feature SLUG] [--format text|json] [--color auto|always|never]")
-	fmt.Fprintln(w, "  belmont auto --feature SLUG [--from M1] [--to M5] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--policy autonomous|milestone|every_action] [--max-iterations N] [--max-parallel N] [--allow-dirty] [--root PATH]")
-	fmt.Fprintln(w, "    (alias: belmont loop)")
-	fmt.Fprintln(w, "  belmont reverify [--feature SLUG] [--from M1] [--to M5] [--root PATH] [--format text|json]")
-	fmt.Fprintln(w, "  belmont repair [--feature SLUG] [--dry-run] [--mechanical-only] [--apply-proposal FILE] [--yes] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
-	fmt.Fprintln(w, "  belmont blockers [--feature SLUG] [--summary] [--root PATH] [--format text|json] [--color auto|always|never]")
-	fmt.Fprintln(w, "  belmont metrics --feature SLUG [--root PATH] [--format text|json]")
-	fmt.Fprintln(w, "  belmont extract --dry-run [--feature SLUG] [--root PATH] [--roots PATH,PATH] [--allow-unreadable-roots] [--format text|json]")
-	fmt.Fprintln(w, "  belmont sync [--root PATH]")
-	fmt.Fprintln(w, "  belmont recover [--list] [--merge SLUG] [--clean SLUG] [--clean-all] [--tool claude|codex|gemini|copilot|cursor|pi|opencode] [--root PATH] [--format text|json]")
-	fmt.Fprintln(w, "  belmont steer [--feature SLUG] [--milestone M5] [--message \"text\" | --file PATH | -] [--root PATH]")
-	fmt.Fprintln(w, "  belmont validate [--feature SLUG] [--root PATH] [--format text|json]")
-	fmt.Fprintln(w, "  belmont version")
+	for _, c := range commandSynopsis {
+		fmt.Fprintln(w, "  "+usageLine(c.Name))
+		if c.Note != "" {
+			fmt.Fprintln(w, "    "+c.Note)
+		}
+	}
+}
+
+// parseCommandFlags parses args into fs, handling `--help` as the success it is.
+//
+// `flag.ContinueOnError` makes Parse return `flag.ErrHelp` for `-h`/`--help`, and
+// `fs.SetOutput(io.Discard)` suppresses the usage the flag package would
+// otherwise print. Every call site wrapped that sentinel as an ordinary error, so
+// `belmont <cmd> --help` printed "<cmd>: flag: help requested" and exited 1. The
+// exit code is what bites beyond cosmetics: `--help` in a Makefile, a CI script
+// or a doc-check fails, and the message gives the reader nothing to act on.
+//
+// One helper rather than eleven `errors.Is` checks, for the reason #39 gave for
+// the two milestone readers: eleven sites each answering the same question is
+// eleven chances to answer it differently — and here all eleven had already
+// answered it wrongly and identically.
+//
+// Returns handled==true once help has been printed; callers return nil.
+func parseCommandFlags(set *flag.FlagSet, args []string, name string) (handled bool, err error) {
+	if perr := set.Parse(args); perr != nil {
+		if errors.Is(perr, flag.ErrHelp) {
+			printCommandHelp(os.Stdout, set, name)
+			return true, nil
+		}
+		return false, fmt.Errorf("%s: %w", name, perr)
+	}
+	return false, nil
+}
+
+// printCommandHelp prints one command's synopsis followed by its own flag
+// defaults.
+//
+// The synopsis comes from commandSynopsis so it cannot drift from `belmont
+// --help`; the flags come from the FlagSet itself.
+//
+// Note precisely what each half buys, because the pair used to be stated as one
+// guarantee and the combined claim was false. Rendering both texts from
+// commandSynopsis makes them AGREE — it does nothing to make either COMPLETE,
+// and `TestCommandHelpAndTopLevelUsageAgree` cannot tell the difference: gut an
+// entry to `{Name: "recover"}` and eight real flags leave every usage text with
+// the agreement still perfect. Printing the FlagSet here is what makes `belmont
+// <cmd> --help` complete, and it is local to this function: `belmont --help`
+// renders from the table alone and was missing seven real flags when this was
+// written. Completeness of the top-level text is enforced by
+// `TestTopLevelUsageNamesEveryFlagEachCommandDefines`, which reads each
+// FlagSet's own output and fails on any flag the table omits — not by anything
+// in this file.
+func printCommandHelp(w io.Writer, set *flag.FlagSet, name string) {
+	fmt.Fprintln(w, "Usage:")
+	fmt.Fprintln(w, "  "+usageLine(name))
+	for _, c := range commandSynopsis {
+		if c.Name == name && c.Note != "" {
+			fmt.Fprintln(w, "    "+c.Note)
+		}
+	}
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Flags:")
+	set.SetOutput(w)
+	set.PrintDefaults()
 }
 
 func must(err error) {

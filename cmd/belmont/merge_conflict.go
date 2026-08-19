@@ -156,7 +156,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// task ID appears more than once inside the region, on either side.
 	//
 	// Both make every lookup below ambiguous: theirsStates is
-	// last-occurrence-wins and msInsertAfter anchors a splice. The input that
+	// last-occurrence-wins and the carry anchor maps are last-writer-wins. The input that
 	// produces them is ordinary — a header-shaped session note. `### M2: verify
 	// round notes` under `## Session History` re-opens the milestones region for
 	// this scanner exactly as it does for parseMilestones, so a task line quoted
@@ -416,13 +416,20 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	oursInRegion := false
 	oursMS := ""
 	oursSeen := make(map[string]bool)
-	// Where a task carried over from "theirs" gets spliced in: the index in
-	// `merged` of the LAST NON-BLANK line of that milestone's block. Tracking
-	// the last task bullet alone would splice a carried task between a task and
-	// its own indented `**Verification**` / `**Evidence**` body — the same class
-	// of stranding as issue #33 — and inserting at the block boundary instead
-	// would land it past the blank line that ends the list.
-	msInsertAfter := make(map[string]int)
+	// Where a task carried over from "theirs" gets spliced in. These two maps
+	// are the raw material; `milestoneCarryAnchor` turns them into the index,
+	// and it is shared with `mergeProgressState` so the two merge paths cannot
+	// answer "the end of this milestone's task list" differently again.
+	//
+	// This used to be a single `msInsertAfter` holding the index of the LAST
+	// NON-BLANK line of the milestone's block. That agrees with the anchor for
+	// every milestone ending on its last task's body — which is most of them —
+	// and disagrees the moment one ends with prose after its tasks, putting a
+	// carried task below the closing note while the copy path put it above.
+	// Issue #60.
+	oursIDTaskIdxs := make(map[string][]int)
+	oursAnyTaskIdxs := make(map[string][]int)
+	oursHeaderIdx := make(map[string]int)
 	// Where each of ours' task lines landed in `merged`, and which milestone it
 	// sits in. A carried task that was nested under a parent this side already
 	// has is spliced after that parent's body rather than at the end of the
@@ -430,8 +437,21 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 	// whatever task happens to sit last is #33's mis-attribution in a new place.
 	oursTaskIdx := make(map[string]int)
 	oursTaskMS := make(map[string]string)
+	oursInFence := false
 	for _, line := range oursLines {
 		oursLineID := ""
+		// A fenced block is a sample, never structure — same rule as the copy
+		// path. The delimiter line itself is still appended below; only its
+		// CONTENTS are exempt from being read as tasks or headers.
+		if isFenceDelimiter(line) {
+			oursInFence = !oursInFence
+			merged = append(merged, line)
+			continue
+		}
+		if oursInFence {
+			merged = append(merged, line)
+			continue
+		}
 		if m := msHeaderRe.FindStringSubmatch(line); m != nil {
 			oursInRegion = true
 			oursMS = "M" + m[1]
@@ -529,20 +549,46 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		merged = append(merged, line)
 
 		// Recorded AFTER the append, against the index the line actually landed
-		// at. Recording it before was a live bug: the activity-merge block above
-		// appends theirs' unseen rows during this same iteration, and its trigger
-		// `strings.HasPrefix(line, "##")` also matches a `###` milestone header —
-		// so the header landed K rows later than the index taken at the top. A
-		// milestone whose block here is a bare header has no later line to correct
-		// it, and the carried task was spliced before that header, into the
-		// PREVIOUS milestone. The result parses as a cross-milestone task ID,
-		// which `belmont validate` rates severityError.
-		if oursInRegion && oursMS != "" && strings.TrimSpace(line) != "" {
-			msInsertAfter[oursMS] = len(merged) - 1
+		// at. Recording it before was a live bug ONCE: the activity-merge block
+		// above appends theirs' unseen rows during this same iteration, and its
+		// trigger used to be `strings.HasPrefix(line, "##")`, which also matches a
+		// `###` milestone header — so the header landed K rows later than the
+		// index taken at the top, the carried task was spliced before that header
+		// into the PREVIOUS milestone, and the result parsed as a cross-milestone
+		// task ID, which `belmont validate` rates severityError.
+		//
+		// That mechanism is CLOSED, and saying otherwise overstates it: the
+		// trigger is `isSectionBreak` now, which returns false for `###`, and on
+		// any iteration where the flush does fire the region reset above has
+		// already set `oursInRegion = false` — so the flush and the recording
+		// below are mutually exclusive. Verified by moving both recordings to the
+		// top of the loop: the suite stays green. Recording after the append is
+		// kept because it is unconditionally correct rather than because this
+		// specific collision is still live, and re-deriving it from an ordering
+		// argument is how it went wrong the first time.
+		// Both recorded AFTER the append, against the index the line actually
+		// landed at — see the comment above for why that is a rule here even
+		// though the collision that produced it can no longer fire.
+		if oursInRegion && oursMS != "" {
+			if msHeaderRe.MatchString(line) {
+				oursHeaderIdx[oursMS] = len(merged) - 1
+			}
+			// Both maps: `mergeTaskLine` for real tasks, `anyTaskBullet` for
+			// every checkbox bullet. Testing only for an ID anchored the carry on
+			// the milestone HEADER for a milestone of hand-written tasks,
+			// splicing it above everything; recording only `anyTaskBullet`
+			// anchored it on a sample inside a fenced block. The anchor prefers
+			// the first and falls back to the second.
+			if anyTaskBullet(line) {
+				oursAnyTaskIdxs[oursMS] = append(oursAnyTaskIdxs[oursMS], len(merged)-1)
+				if _, _, hasID := mergeTaskLine(line); hasID {
+					oursIDTaskIdxs[oursMS] = append(oursIDTaskIdxs[oursMS], len(merged)-1)
+				}
+			}
 		}
-		// Recorded AFTER the append for the same reason msInsertAfter is: the
-		// activity-merge block above can append rows during this same iteration,
-		// so an index taken at the top of the body is stale by exactly that many.
+		// Recorded AFTER the append for the same reason the anchor maps are, and
+		// with the same caveat: the collision that motivated the rule cannot fire
+		// since the flush trigger became `isSectionBreak`.
 		if oursLineID != "" {
 			oursTaskIdx[oursLineID] = len(merged) - 1
 		}
@@ -627,7 +673,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		// bucket decides parentage rather than merely tidiness:
 		//
 		//   - a parent that is the last task in its milestone here has
-		//     `taskBodyEnd(parent) == msInsertAfter[ms]`, so a carried child and
+		//     `taskBodyEnd(parent) == milestoneCarryAnchor(ms)`, so a carried child and
 		//     a brand-new top-level task collide. Emitted in incoming document
 		//     order, a new top-level task written first takes the child with it —
 		//     exactly the re-parenting the parent anchor exists to prevent.
@@ -644,7 +690,8 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 		}
 		pending := make(map[int][]carriedBlock)
 		for _, tt := range carried {
-			if _, ok := msInsertAfter[tt.milestone]; !ok {
+			anchor, anchorOK := milestoneCarryAnchor(merged, oursIDTaskIdxs, oursAnyTaskIdxs, oursHeaderIdx, tt.milestone)
+			if !anchorOK {
 				fmt.Fprintf(os.Stderr,
 					"  \033[33m⚠ %s: incoming task %s belongs to %s, which this side does not have — not auto-resolving; escalating to the reconciliation agent\033[0m\n",
 					relPath, tt.id, tt.milestone)
@@ -669,7 +716,7 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 					relPath, tt.id, nestedID)
 				return false
 			}
-			at, depth := msInsertAfter[tt.milestone], -1
+			at, depth := anchor, -1
 			if tt.parent != "" && oursSeen[tt.parent] {
 				// Nested under a task this side already has: land it inside that
 				// parent's body, past the parent's own `**Verification**` /
@@ -689,7 +736,24 @@ func resolveProgressConflict(root, relPath, filePath string) bool {
 				at = taskBodyEnd(merged, oursTaskIdx[tt.parent])
 				depth = lineIndentWidth(merged[oursTaskIdx[tt.parent]])
 			}
-			pending[at] = append(pending[at], carriedBlock{depth: depth, lines: tt.block})
+			// Flattened when it lands on the MILESTONE anchor, exactly as
+			// `mergeProgressState` does. Spliced with the incoming side's
+			// indentation intact, a block written nested under something this
+			// side cannot resolve becomes a child of whichever task sits last in
+			// the milestone. Doing this on one path only broke the invariant
+			// #46/#53/#60 exist to hold: a bullet nested under a NON-task list
+			// item ("- Follow-ups raised in review:") has `parent == ""` on both
+			// paths, so the copy path flattened it to top level and this one left
+			// it at indent 2 as a child of an unrelated task — a different
+			// document from the same wave, decided only by whether git registered
+			// a conflict.
+			block := tt.block
+			if depth == -1 {
+				if by := lineIndentWidth(block[0]); by > 0 {
+					block = dedentBlock(block, by)
+				}
+			}
+			pending[at] = append(pending[at], carriedBlock{depth: depth, lines: block})
 		}
 
 		// Splice highest index first so the earlier insertion points stay valid.

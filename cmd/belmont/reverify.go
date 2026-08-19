@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,28 @@ import (
 	"strings"
 	"time"
 )
+
+// jsonString encodes a Go string as a JSON string literal, quotes included.
+//
+// NOT `fmt.Sprintf("%q")`, which produces a **Go** string literal. The two agree
+// on the easy cases — a quote, a backslash, a tab — and diverge on exactly the
+// input that reaches this file: `%q` emits `\xNN` for a control byte or invalid
+// UTF-8, and JSON has no `\x` escape, so the document fails to parse. A task
+// name pasted out of coloured terminal output carries ESC, and follow-up labels
+// are `t.ID` falling back to `t.Name`, i.e. free text a human wrote.
+//
+// The "build JSON manually to avoid importing encoding/json just for this"
+// rationale below predates this package importing encoding/json in ten other
+// files; the import is free now, and hand-rolled escaping was never correct.
+func jsonString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		// json.Marshal only fails on unencodable types, never on a string:
+		// invalid UTF-8 is replaced with U+FFFD rather than erroring.
+		return `""`
+	}
+	return string(b)
+}
 
 // resetVerifiedTasks rewrites verified task markers back to `[x]` within the
 // milestones named in resetIDs, so the verification agent picks them up again.
@@ -51,6 +74,59 @@ func resetVerifiedTasks(content string, resetIDs map[string]bool) (string, bool)
 	return strings.Join(lines, "\n"), changed
 }
 
+// resetMilestoneBeforeVerify rewrites one milestone's verified markers back to
+// `[x]` and reports how many it changed.
+//
+// Two properties matter, and both are about bounding damage rather than about
+// the rewrite itself.
+//
+// **Scoped to one milestone, called immediately before that milestone is
+// dispatched.** The reset is destructive and runs before anything justifies it:
+// nothing here restores a `[v]`, there is no backup and no signal handler, and
+// the caller's failure branch records the error and moves on. Doing it for the
+// whole range up front meant a run killed seconds in — Ctrl-C, a laptop
+// sleeping, an agent hitting a rate limit — left every milestone downgraded and
+// none re-verified, a diff that reads exactly like a regression. No Go code ever
+// promotes a `[v]` (see knowledge/cross-cutting/verified-flip-recording.md), so
+// each mark destroyed costs another verification agent run to earn back.
+//
+// **Re-read from disk on every call, never from a startup snapshot.** The
+// verification agent commits its own edits to PROGRESS.md between milestones, so
+// by the second iteration the content read at startup is stale; writing M2's
+// reset from it would revert whatever M1's agent just recorded. That is the
+// idempotency question issue #49 flagged as worth settling first, and this is
+// the answer: the function owns the read, so there is no stale copy to get
+// wrong.
+func resetMilestoneBeforeVerify(progressPath, milestoneID string) (int, error) {
+	content, err := os.ReadFile(progressPath)
+	if err != nil {
+		return 0, fmt.Errorf("reverify: cannot read %s: %w", progressPath, err)
+	}
+	newContent, changed := resetVerifiedTasks(string(content), map[string]bool{milestoneID: true})
+	if !changed {
+		return 0, nil
+	}
+	// Counted through parseMilestones rather than by diffing lines, so the count
+	// reported to the user comes from the same reader that decides what a marker
+	// means. Counting the rewrite's own line changes instead would add one more
+	// place answering "what is a `[v]`", which is the shape of #27 and #31.
+	n := 0
+	for _, m := range parseMilestones(string(content)) {
+		if m.ID != milestoneID {
+			continue
+		}
+		for _, t := range m.Tasks {
+			if t.Status == taskVerified {
+				n++
+			}
+		}
+	}
+	if err := os.WriteFile(progressPath, []byte(newContent), 0644); err != nil {
+		return 0, fmt.Errorf("reverify: failed to reset verified tasks in %s: %w", milestoneID, err)
+	}
+	return n, nil
+}
+
 // runReverifyCmd handles the "belmont reverify" command.
 // Walks through completed milestones and runs verification on each sequentially.
 // Reports which milestones passed and which had follow-up tasks created.
@@ -64,8 +140,8 @@ func runReverifyCmd(args []string) error {
 	fs.StringVar(&to, "to", "", "end milestone (e.g. M10)")
 	fs.StringVar(&format, "format", "text", "output format (text|json)")
 	fs.StringVar(&tool, "tool", "", "CLI tool (claude|codex|gemini|copilot|cursor|pi|opencode)")
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("reverify: %w", err)
+	if handled, err := parseCommandFlags(fs, args, "reverify"); err != nil || handled {
+		return err
 	}
 	root, _ = filepath.Abs(root)
 
@@ -93,51 +169,31 @@ func runReverifyCmd(args []string) error {
 	milestones := parseMilestones(string(progressContent))
 	inRange := milestonesInRange(milestones, from, to)
 
-	// Reset [v] (verified) tasks to [x] (done) in targeted milestones so the
-	// verification agent will pick them up again. Only milestones in range that
-	// have [v] or [x] tasks are candidates for re-verification.
+	// Milestones this command can act on: `[x]` is done-not-verified and gets
+	// verified as-is; `[v]` is re-verified, which means resetting it to `[x]`
+	// first so the agent picks it up.
 	//
-	// Build a set of milestone IDs that contain [v] tasks and need resetting.
-	resetIDs := map[string]bool{}
-	for _, m := range inRange {
-		for _, t := range m.Tasks {
-			if t.Status == taskVerified {
-				resetIDs[m.ID] = true
-				break
-			}
-		}
-	}
-
-	if len(resetIDs) > 0 {
-		newContent, changed := resetVerifiedTasks(string(progressContent), resetIDs)
-		if changed {
-			if err := writeStateFile(progressPath, []byte(newContent), 0644); err != nil {
-				return fmt.Errorf("reverify: failed to reset verified tasks: %w", err)
-			}
-			// Re-parse after rewrite so downstream filtering sees [x] tasks.
-			milestones = parseMilestones(newContent)
-			inRange = milestonesInRange(milestones, from, to)
-		}
-	}
-
-	// Find milestones that have [x] (done but not verified) tasks
+	// Selected BEFORE any reset, and deliberately so. The reset used to run for
+	// the whole range up front purely to make `[v]` milestones visible to this
+	// filter — which meant a run interrupted during M1 had already destroyed
+	// M7's verified marks having verified nothing. Reading both states here
+	// removes the reason for the bulk write; each milestone is reset
+	// immediately before it is dispatched instead. See issue #49.
 	var targets []milestone
 	for _, m := range inRange {
-		hasDoneTasks := false
 		for _, t := range m.Tasks {
-			if t.Status == taskDone {
-				hasDoneTasks = true
+			if t.Status == taskDone || t.Status == taskVerified {
+				targets = append(targets, m)
 				break
 			}
-		}
-		if hasDoneTasks {
-			targets = append(targets, m)
 		}
 	}
 
 	if len(targets) == 0 {
 		if format == "json" {
-			fmt.Println(`{"verified":0,"results":[]}`)
+			// Same keys as the non-empty document below, so a consumer reads
+			// one schema whether or not anything was dispatched.
+			fmt.Printf("{\"feature\":%s,\"processed\":0,\"passed\":0,\"total_fwlups\":0,\"results\":[]}\n", jsonString(feature))
 		} else {
 			fmt.Fprintln(os.Stderr, "No milestones with unverified tasks to re-verify in the specified range.")
 		}
@@ -171,8 +227,50 @@ func runReverifyCmd(args []string) error {
 	tiers, _ := parseModelTiers(filepath.Join(featuresDir, feature, "models.yaml"))
 	verifyModelFlags := resolveModelFlags(tool, tiers.Tiers["verification"], root)
 
+	// Refused BEFORE the loop, not inside it. `tool` does not vary per milestone,
+	// so an unsupported one fails identically on every iteration — but the
+	// in-loop `return` discarded the whole report to say so, and since the reset
+	// failure above became record-and-continue that report can already hold
+	// results by the time iteration 2 runs. `detectTool` can return `windsurf`,
+	// which `toolHeadlessArgs` has no case for, so this is reachable with no
+	// `--tool` flag at all.
+	if toolHeadlessArgs(tool, "probe", root, verifyModelFlags, true) == nil {
+		return fmt.Errorf("reverify: unsupported tool: %s", tool)
+	}
+
 	for i, m := range targets {
 		fmt.Fprintf(os.Stderr, "━━ [%d/%d] VERIFY ━━ %s › %s: %s ━━\n", i+1, len(targets), feature, m.ID, m.Name)
+
+		// Reset THIS milestone's verified tasks, and only now, so an interrupted
+		// or failing run has downgraded at most the milestone in flight.
+		//
+		// A reset failure is recorded and skipped, not returned. Returning here
+		// threw away the whole report: a run over M1..M3 that failed to reset M3
+		// printed nothing at all about M1 and M2, which had already been
+		// verified by then and whose results are the reason the user ran it. The
+		// agent-failure branch below already records-and-continues; this is the
+		// same shape.
+		//
+		// It does change the exit code: a reset failure used to make `belmont
+		// reverify` exit non-zero and discard the whole report, and now it
+		// exits 0 like every other per-milestone failure, because this function
+		// returns nil once it reaches the summary. That is the existing
+		// convention rather than a new one — an agent that fails outright is
+		// already reported and not returned — and the signal is the summary,
+		// where the milestone prints as `✗ … — error: …`, is absent from the
+		// `n/n passed` count, and carries a non-null `error` in `--format json`.
+		if n, err := resetMilestoneBeforeVerify(progressPath, m.ID); err != nil {
+			fmt.Fprintf(os.Stderr, "\n\033[31m  ✗ %s could not be reset for re-verification: %s — skipped\033[0m\n\n", m.ID, err)
+			results = append(results, msResult{
+				ID:     m.ID,
+				Name:   m.Name,
+				Passed: false,
+				Error:  fmt.Sprintf("reset before verification failed: %s", err),
+			})
+			continue
+		} else if n > 0 {
+			fmt.Fprintf(os.Stderr, "   resetting %d verified task(s) in %s before re-verification\n", n, m.ID)
+		}
 
 		// Build milestone-scoped verify prompt
 		prompt := fmt.Sprintf("/belmont:verify --feature %s", feature)
@@ -182,6 +280,10 @@ func runReverifyCmd(args []string) error {
 		// Build and run the tool command
 		args := toolHeadlessArgs(tool, prompt, root, verifyModelFlags, true)
 		if args == nil {
+			// Unreachable: the same call is made once before the loop, so an
+			// unsupported tool has already been refused with nothing to discard.
+			// Kept as a guard rather than deleted, because `toolHeadlessArgs`
+			// takes the prompt and a future variant could in principle reject one.
 			return fmt.Errorf("reverify: unsupported tool: %s", tool)
 		}
 		cmd := exec.Command(toolBinary(tool), args...)
@@ -267,21 +369,35 @@ func runReverifyCmd(args []string) error {
 
 	if format == "json" {
 		// Build JSON manually to avoid importing encoding/json just for this
-		fmt.Printf(`{"feature":%q,"verified":%d,"passed":%d,"total_fwlups":%d,"results":[`, feature, len(results), passed, len(allFwlups))
+		// "processed", not "verified": len(results) counts milestones the loop
+		// attempted — failures included — and the only number this command could
+		// honestly call verified is `passed`, which is already emitted. See #61.
+		fmt.Printf(`{"feature":%s,"processed":%d,"passed":%d,"total_fwlups":%d,"results":[`, jsonString(feature), len(results), passed, len(allFwlups))
 		for i, r := range results {
 			if i > 0 {
 				fmt.Print(",")
 			}
+			// Escaped per element through `jsonString`, like every other string
+			// in this block. Hand-concatenating quotes around the joined slice
+			// emitted invalid JSON the moment a label held a `"` or a `\`, and
+			// the `%q` that replaced it was still wrong for a control byte —
+			// these labels are not ID-shaped by construction: the label is
+			// `t.ID` falling back to `t.Name`, so any free-text task name a
+			// human wrote in PROGRESS.md reaches this writer verbatim.
 			fwlupsJSON := "[]"
 			if len(r.Fwlups) > 0 {
-				fwlupsJSON = `["` + strings.Join(r.Fwlups, `","`) + `"]`
+				quoted := make([]string, len(r.Fwlups))
+				for i, f := range r.Fwlups {
+					quoted[i] = jsonString(f)
+				}
+				fwlupsJSON = "[" + strings.Join(quoted, ",") + "]"
 			}
 			errJSON := "null"
 			if r.Error != "" {
-				errJSON = fmt.Sprintf("%q", r.Error)
+				errJSON = jsonString(r.Error)
 			}
-			fmt.Printf(`{"id":%q,"name":%q,"passed":%t,"fwlups":%s,"duration_s":%.1f,"error":%s}`,
-				r.ID, r.Name, r.Passed, fwlupsJSON, r.Duration, errJSON)
+			fmt.Printf(`{"id":%s,"name":%s,"passed":%t,"fwlups":%s,"duration_s":%.1f,"error":%s}`,
+				jsonString(r.ID), jsonString(r.Name), r.Passed, fwlupsJSON, r.Duration, errJSON)
 		}
 		fmt.Println("]}")
 	} else {

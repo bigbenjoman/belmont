@@ -4,8 +4,19 @@ Belmont ships a small Go CLI (`belmont`) for status checks, automated feature im
 
 ## Usage
 
+Every subcommand that takes flags answers `--help` (and `-h`) with its own
+synopsis plus its own flag defaults, and exits 0 — so `belmont auto --help` is a
+reliable way to see what a command actually takes, including flags this page
+might not list. (`version` takes no flags and is answered before any flag set
+exists, so it prints the version for `--help` too, also exiting 0.)
+
+```bash
+belmont auto --help                     # Synopsis + every flag auto really accepts
+```
+
 ```bash
 belmont install                         # Install skills/agents into current project
+belmont install --no-prompt             # Non-interactive: accept detected tools, no questions (for CI/scripts)
 belmont update                          # Update to latest release (auto-commits Belmont-managed files)
 belmont update --check                  # Check for updates without installing
 belmont update --no-commit              # Update without auto-committing
@@ -16,6 +27,7 @@ belmont status --color always           # Force ANSI-coloured markers (auto|alwa
 belmont status --show-archived          # Include archived features in the listing (default: collapsed to a footer count)
 belmont metrics --feature auth          # What a feature cost: tokens and wall-clock per phase
 belmont extract --dry-run --feature auth # Census: what splitting narrative out of PROGRESS.md would yield
+belmont status --max-task-name 80       # Widen the task-name column before it is truncated
 belmont auto --feature auth              # Run feature auto (auto-detect tool)
 belmont auto --feature auth --tool codex # Use specific tool
 belmont auto --feature auth --tool pi    # Run with Pi (local LLM via ~/.belmont/local-llms.json)
@@ -26,6 +38,8 @@ belmont auto --all                       # Run all pending features in parallel
 belmont auto --all --max-parallel 2      # Cap concurrent features (parallel within wave, merges batched post-wave)
 belmont auto --all --max-parallel 1      # Strict serial: each feature merges before the next starts
 belmont auto --feature auth --allow-dirty # Skip clean-working-tree preflight (not recommended)
+belmont auto --feature auth --dry-run     # Show the execution plan without running it
+belmont auto --feature auth --max-failures 2 # Stop after N CONSECUTIVE failed phases (default 3)
 belmont reverify --feature my-feature     # Re-verify all completed milestones
 belmont reverify --feature my-feature --from M3 --to M10  # Re-verify specific range
 belmont reverify --feature my-feature --tool codex  # Use specific tool
@@ -44,6 +58,7 @@ belmont recover --list                   # Same as above
 belmont recover --merge auth             # Retry merge for a preserved worktree
 belmont recover --clean auth             # Delete worktree and branch
 belmont recover --clean-all              # Clean all preserved worktrees
+belmont recover --clean auth --force     # Act anyway when .belmont/auto.json is stale
 belmont steer --message "pin all axes"   # Inject instructions into an in-flight auto run
 belmont steer --milestone M5 --file fix.md   # Scope to one milestone, read from file
 belmont steer -                          # Read steering text from stdin
@@ -218,7 +233,7 @@ Measures what moving indented narrative detail out of `PROGRESS.md` would yield,
 
 - **A milestone whose live worktree state could not be read.** During a parallel run each milestone's state is overlaid from the worktree that owns it. When that worktree's `PROGRESS.md` is missing or unreadable — a half-cleaned worktree, a failed merge that left the directory behind, a `.belmont/` copy interrupted mid-write — the view falls back to master's fork-point copy. That fallback used to be silent, which meant `belmont validate` printed a clean bill of health for a file it had only partly seen, and `belmont auto` started on it. It is now stated, by `validate`, `status` and `blockers` alike, and the path that could not be read is printed so you can look at it directly. The same warning covers the serial / multi-feature shape, where the whole feature is read from one worktree.
 
-  It deliberately does **not** tell you to run `belmont recover`: this condition only arises while a run is active, and `belmont recover --list` scans the directory the live wave worktrees are in with no active-run filter, so mid-run it lists them as preserved and offers to clean them.
+  It deliberately does **not** tell you to run `belmont recover`: this condition only arises while a run is active, and the path named above is the thing to look at. `recover` itself is no longer a trap — since #52 it reads `.belmont/auto.json`, marks a live wave's worktrees `[IN FLIGHT]` in `--list`, and refuses `--merge` / `--clean` / `--clean-all` on them unless `--force` is passed.
 
 ```bash
 belmont validate                            # Scan every feature

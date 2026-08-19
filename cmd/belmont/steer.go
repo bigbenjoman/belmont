@@ -212,8 +212,8 @@ func runSteerCmd(args []string) error {
 	fs.StringVar(&milestone, "milestone", "", "narrow steering to a single milestone (e.g. M5)")
 	fs.StringVar(&message, "message", "", "steering text (inline)")
 	fs.StringVar(&file, "file", "", "read steering text from file")
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("steer: %w", err)
+	if handled, err := parseCommandFlags(fs, args, "steer"); err != nil || handled {
+		return err
 	}
 
 	absRoot, err := filepath.Abs(root)

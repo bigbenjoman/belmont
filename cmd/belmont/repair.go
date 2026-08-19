@@ -809,10 +809,14 @@ func repairLabel(f repairFinding) string {
 // an insertion past the destination task's own body and the same one
 // `mergeProgressState` uses. One definition of where a task ends.
 //
-// Anchoring follows `mergeProgressState`: after the destination's last task
-// line (past its indented body), or after its header when it holds no tasks
-// yet — otherwise the first task moved into an empty milestone has nowhere to
-// land. Region boundaries are `isSectionBreak`, like every other reader.
+// Anchoring follows `mergeProgressState`: the furthest `taskBodyEnd` over the
+// destination's tasks, or its header when the destination holds none — otherwise
+// the first task moved into an empty milestone has nowhere to land. Region
+// boundaries are `isSectionBreak`, like every other reader.
+//
+// It does not literally call `milestoneCarryAnchor`, because repair has to skip
+// any task that is itself being moved out, and that function knows nothing about
+// a pending move. The DEFINITION is shared; the guard around it is repair's.
 //
 // Returns the new lines, warnings, and the starting indices of moves that could
 // not be placed. A move that cannot be placed leaves its whole block exactly
@@ -822,7 +826,7 @@ func moveTaskLines(lines []string, moves map[int]string) ([]string, []string, []
 	msHeaderRe := regexp.MustCompile(`^###\s+(?:[✅⬜🔄🚫]\s*)?M(\d+):`)
 	taskRe := regexp.MustCompile(`^\s*-\s+\[(.)\]\s+`)
 
-	lastTaskIdx := map[string]int{}
+	msTaskIdxs := map[string][]int{}
 	lastHeaderIdx := map[string]int{}
 	currentMS := ""
 	for i, line := range lines {
@@ -836,7 +840,7 @@ func moveTaskLines(lines []string, moves map[int]string) ([]string, []string, []
 			continue
 		}
 		if currentMS != "" && taskRe.MatchString(line) {
-			lastTaskIdx[currentMS] = i
+			msTaskIdxs[currentMS] = append(msTaskIdxs[currentMS], i)
 		}
 	}
 
@@ -891,17 +895,29 @@ func moveTaskLines(lines []string, moves map[int]string) ([]string, []string, []
 	insertAfter := map[int][]int{} // anchor index -> moved block start indices
 	for _, idx := range placeable {
 		dest := moves[idx]
-		anchor, ok := lastTaskIdx[dest]
-		if ok && moving[anchor] {
-			anchor, ok = lastHeaderIdx[dest]
-		} else if ok {
-			// Past the anchor task's indented body, so the moved block cannot
-			// land between that task and its own continuation lines.
-			anchor = taskBodyEnd(lines, anchor)
-			if moving[anchor] {
-				// The anchor's body runs into a block that is leaving.
-				anchor, ok = lastHeaderIdx[dest]
+		// The FURTHEST body end over every task in the destination, not the last
+		// task's. They differ when the destination's final bullet is a nested
+		// child: `taskBodyEnd` bounds a body by the task's own indent, so from
+		// the child it stops at the child's line and the move lands inside the
+		// PARENT's body, above the parent's `**Evidence**` — which then reads as
+		// the moved task's. That is the same #33 stranding the two merge paths
+		// were fixed for, and repair kept committing it while three comments
+		// asserted it anchored identically to them.
+		anchor, ok := -1, false
+		for _, ti := range msTaskIdxs[dest] {
+			if moving[ti] {
+				continue // that task is itself leaving; it cannot anchor anything
 			}
+			end := taskBodyEnd(lines, ti)
+			if moving[end] {
+				continue // its body runs into a block that is leaving
+			}
+			if end > anchor {
+				anchor, ok = end, true
+			}
+		}
+		if !ok {
+			anchor, ok = lastHeaderIdx[dest]
 		}
 		if !ok {
 			anchor, ok = lastHeaderIdx[dest]
@@ -1229,8 +1245,8 @@ func runRepairCmd(args []string) error {
 	fs.BoolVar(&dryRun, "dry-run", false, "report findings and commit evidence; change nothing")
 	fs.BoolVar(&mechanicalOnly, "mechanical-only", false, "apply only what commit evidence settles; do not dispatch an agent")
 	fs.BoolVar(&yes, "yes", false, "apply reviewed proposals without prompting")
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("repair: %w", err)
+	if handled, err := parseCommandFlags(fs, args, "repair"); err != nil || handled {
+		return err
 	}
 	root, _ = filepath.Abs(root)
 

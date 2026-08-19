@@ -25,8 +25,8 @@ func runInstall(args []string) error {
 	fsFlags.StringVar(&project, "project", ".", "project directory")
 	fsFlags.StringVar(&toolsFlag, "tools", "", "all|none|comma list")
 	fsFlags.BoolVar(&noPrompt, "no-prompt", false, "disable interactive prompts")
-	if err := fsFlags.Parse(args); err != nil {
-		return fmt.Errorf("install: %w", err)
+	if handled, err := parseCommandFlags(fsFlags, args, "install"); err != nil || handled {
+		return err
 	}
 
 	projectRoot, err := filepath.Abs(project)
@@ -747,8 +747,8 @@ func runUpdate(args []string) error {
 	fsFlags.BoolVar(&check, "check", false, "check for updates without installing")
 	fsFlags.BoolVar(&force, "force", false, "force update even if same version")
 	fsFlags.BoolVar(&noCommit, "no-commit", false, "do not auto-commit Belmont-managed files after install")
-	if err := fsFlags.Parse(args); err != nil {
-		return fmt.Errorf("update: %w", err)
+	if handled, err := parseCommandFlags(fsFlags, args, "update"); err != nil || handled {
+		return err
 	}
 
 	if Version == "dev" {

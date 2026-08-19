@@ -73,14 +73,52 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 		if progressContent, err := os.ReadFile(progressPath); err == nil {
 			milestones = parseMilestones(string(progressContent))
 			orphaned = len(orphanedTaskLines(string(progressContent)))
+		} else if featurePath != filepath.Join(featuresDir, slug) {
+			// A worktree override we could not read. Before #55 this branch did
+			// not exist: `milestones` stayed nil and the row rendered `0/0`, with
+			// no fallback to master either — so there was not even a baseline
+			// behind the number.
+			//
+			// `0/0` is the worst available rendering of "I could not read this".
+			// It is indistinguishable from a feature with no tasks, and it reads
+			// as FINISHED NOTHING rather than KNOW NOTHING — on the view
+			// `status.md`'s fast path runs, which is the half an agent sees.
+			//
+			// So: master's copy as the baseline, exactly what the parallel path
+			// does, and a gap recorded so no reader treats the counts as live.
+			// The gap is the same type and the same `describe()` the two
+			// `state.go` sites use; the milestone slot says "all milestones"
+			// because an unreadable file means every one of them fell back, not
+			// a named few. `Reason` names the worktree copy as the thing that
+			// failed, matching those sites: `324a965` moved that prose out of
+			// `describe()`'s format string and into each construction site, so a
+			// bare `err.Error()` here would be the one gap of the three that
+			// never says *which* file could not be read, and the only one
+			// opening with a raw Go error where the others open with a sentence.
+			if masterContent, mErr := os.ReadFile(filepath.Join(featuresDir, slug, "PROGRESS.md")); mErr == nil {
+				milestones = parseMilestones(string(masterContent))
+				orphaned = len(orphanedTaskLines(string(masterContent)))
+			}
+			liveGaps = append(liveGaps, liveOverlayGap{
+				Milestone: "all milestones",
+				Path:      featurePath,
+				Kind:      gapUnreadable,
+				Reason:    "its worktree's PROGRESS.md could not be read (" + err.Error() + ")",
+			})
 		}
 		if parallelLive {
 			// Each milestone from its own worktree, master for the rest —
 			// the same overlay `belmont status --feature` and `belmont
 			// blockers` already use, so all three agree during a run.
+			// Appended, not assigned. Nothing can reach both this and the
+			// unreadable-worktree gap above today — `parallelLive` keeps
+			// `featurePath` at master, which is the branch that gap needs — but
+			// that is two conditions thirty-odd lines apart holding a data-loss bug
+			// shut, and the gap it would discard is the only record that a
+			// feature's counts are not live.
 			var gaps []liveOverlayGap
 			milestones, gaps = overlayLiveMilestones(milestones, perMilestoneLive)
-			liveGaps = gaps
+			liveGaps = append(liveGaps, gaps...)
 			// Orphans cannot ride that overlay: a task line outside every
 			// milestone belongs to no milestone ID to be overlaid by, and lives
 			// in one specific document. Union across master and every live
@@ -140,7 +178,9 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 		}
 
 		featureNextMilestone := nextMilestone(milestones)
-		featureNextTask := nextTask(tasks)
+		featureNextTask := nextTask(tasks, milestones)
+		featureNextBlocked := nextBlockedMilestone(milestones)
+		featureNextTaskBlocked := nextTaskBlockedByDeps(tasks, milestones)
 
 		status := computeOverallStatus(tasks)
 
@@ -167,6 +207,8 @@ func listFeaturesWithOverrides(featuresDir string, maxName int, worktreeOverride
 			Milestones:      milestones,
 			NextMilestone:   featureNextMilestone,
 			NextTask:        featureNextTask,
+			NextBlocked:     featureNextBlocked,
+			NextTaskBlocked: featureNextTaskBlocked,
 			Status:          status,
 			LiveGaps:        liveGaps,
 		})
@@ -501,13 +543,12 @@ func computeWaves(milestones []milestone) ([]wave, error) {
 		return nil, nil
 	}
 
-	// Build ID -> milestone map
-	byID := make(map[string]milestone)
-	for _, m := range milestones {
-		byID[m.ID] = m
-	}
+	byID := milestonesByID(milestones)
 
-	// Compute in-degree for each undone milestone
+	// Compute in-degree for each undone milestone. What counts as a live
+	// dependency edge is depSatisfied's business — the next-work selectors
+	// consult the same predicate, so the scheduler and the status views
+	// cannot disagree about what is blocked (#59).
 	inDegree := make(map[string]int)
 	for _, m := range milestones {
 		if milestoneAllDone(m) {
@@ -515,7 +556,7 @@ func computeWaves(milestones []milestone) ([]wave, error) {
 		}
 		count := 0
 		for _, dep := range m.Deps {
-			if dm, ok := byID[dep]; ok && !milestoneAllDone(dm) {
+			if !depSatisfied(dep, byID) {
 				count++
 			}
 		}

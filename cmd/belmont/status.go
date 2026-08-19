@@ -29,8 +29,8 @@ func runStatus(args []string) error {
 	fsFlags.StringVar(&feature, "feature", "", "feature slug")
 	fsFlags.StringVar(&colorMode, "color", "auto", "auto, always, or never")
 	fsFlags.BoolVar(&showArchived, "show-archived", false, "include archived features in the listing (text mode)")
-	if err := fsFlags.Parse(args); err != nil {
-		return fmt.Errorf("status: %w", err)
+	if handled, err := parseCommandFlags(fsFlags, args, "status"); err != nil || handled {
+		return err
 	}
 
 	absRoot, err := filepath.Abs(root)
@@ -171,7 +171,9 @@ func buildStatus(root string, maxName int, feature string) (statusReport, error)
 		report.LastCompleted = lastCompletedTask(report.Tasks)
 		report.RecentDecisions = parseDecisions(string(progressContent), 3)
 		report.NextMilestone = nextMilestone(report.Milestones)
-		report.NextTask = nextTask(report.Tasks)
+		report.NextTask = nextTask(report.Tasks, report.Milestones)
+		report.NextBlocked = nextBlockedMilestone(report.Milestones)
+		report.NextTaskBlocked = nextTaskBlockedByDeps(report.Tasks, report.Milestones)
 		report.TechPlanReady = techPlanReady(techPlanPath)
 		report.OverallStatus = computeOverallStatus(report.Tasks)
 
@@ -348,11 +350,13 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 		for _, g := range report.LiveGaps {
 			sb.WriteString("  " + g.describe() + "\n")
 		}
-		// Deliberately NOT "run belmont recover": a gap only exists while
-		// auto.json is active, and `belmont recover --list` scans the same
-		// directory the live wave worktrees are in with no active-run filter — so
-		// mid-run it lists them as preserved and offers to clean them. The path
-		// above is the thing to look at.
+		// Deliberately NOT "run belmont recover": the path above is the thing to
+		// look at, and `recover` answers a different question.
+		//
+		// It is no longer a TRAP, though, which is what this comment used to say.
+		// `recover` now reads auto.json, marks a live wave's worktrees IN FLIGHT
+		// in `--list`, and refuses the mutating actions on them without --force.
+		// See issue #52.
 		sb.WriteString("  A run still in flight can also be a copy caught mid-write — re-run this before treating the worktree as broken.\n\n")
 	}
 
@@ -415,16 +419,31 @@ func renderStatus(report statusReport, color bool, showArchived bool) string {
 	}
 
 	sb.WriteString("Next Milestone:\n")
-	if report.NextMilestone == nil {
-		sb.WriteString("  - None\n")
-	} else {
+	switch {
+	case report.NextMilestone != nil:
 		sb.WriteString(fmt.Sprintf("  - %s - %s\n", report.NextMilestone.ID, report.NextMilestone.Name))
+	case report.NextBlocked != nil:
+		// Never "None" while undone work remains: loop-recipe.md's stop
+		// condition treats "Next Milestone: None" as the feature being
+		// finished, so a dependency-blocked file must render distinctly.
+		b := report.NextBlocked
+		sb.WriteString(fmt.Sprintf("  - (waiting on dependencies) %s depends on %s\n",
+			b.Milestone.ID, strings.Join(b.UnmetDeps, ", ")))
+	default:
+		sb.WriteString("  - None\n")
 	}
 	sb.WriteString("Next Individual Task:\n")
-	if report.NextTask == nil {
-		sb.WriteString("  - None\n")
-	} else {
+	switch {
+	case report.NextTask != nil:
 		sb.WriteString(fmt.Sprintf("  - %s - %s\n", report.NextTask.ID, report.NextTask.Name))
+	case report.NextBlocked != nil:
+		sb.WriteString("  - (waiting on dependencies — see Next Milestone above)\n")
+	case report.NextTaskBlocked != nil:
+		b := report.NextTaskBlocked
+		sb.WriteString(fmt.Sprintf("  - (waiting on dependencies) next candidate sits in %s — depends on %s\n",
+			b.Milestone.ID, strings.Join(b.UnmetDeps, ", ")))
+	default:
+		sb.WriteString("  - None\n")
 	}
 	sb.WriteString("\n")
 
@@ -565,6 +584,15 @@ func renderFeatureListing(report statusReport, color bool, showArchived bool) st
 			// Show next task if feature is in progress
 			if f.NextTask != nil && f.Status == "In Progress" {
 				sb.WriteString(fmt.Sprintf("  Next: %s — %s\n", f.NextTask.ID, f.NextTask.Name))
+			} else if f.Status == "In Progress" {
+				b := f.NextBlocked
+				if b == nil {
+					b = f.NextTaskBlocked
+				}
+				if b != nil {
+					sb.WriteString(fmt.Sprintf("  Next: waiting on dependencies — %s depends on %s\n",
+						b.Milestone.ID, strings.Join(b.UnmetDeps, ", ")))
+				}
 			}
 
 			// Show blocked tasks if any.

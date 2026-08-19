@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -444,6 +445,7 @@ func runRecover(args []string) error {
 	var clean string
 	var cleanAll bool
 	var tool string
+	var force bool
 	fs.StringVar(&root, "root", ".", "project root")
 	fs.StringVar(&format, "format", "text", "text or json")
 	fs.BoolVar(&list, "list", false, "list preserved worktrees")
@@ -451,8 +453,9 @@ func runRecover(args []string) error {
 	fs.StringVar(&clean, "clean", "", "delete worktree and branch for slug")
 	fs.BoolVar(&cleanAll, "clean-all", false, "clean all preserved worktrees")
 	fs.StringVar(&tool, "tool", "", "CLI tool for reconciliation (claude|codex|gemini|copilot|cursor|pi|opencode) — auto-detected if omitted")
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("recover: %w", err)
+	fs.BoolVar(&force, "force", false, "act on worktrees an active run owns (use only when auto.json is stale)")
+	if handled, err := parseCommandFlags(fs, args, "recover"); err != nil || handled {
+		return err
 	}
 
 	root, err := filepath.Abs(root)
@@ -462,31 +465,145 @@ func runRecover(args []string) error {
 
 	worktrees := listPreservedWorktrees(root)
 
+	// `recover` exists for worktrees PRESERVED FROM A FAILED MERGE, but it finds
+	// them by scanning the same directory `runAutoParallel` creates the live
+	// wave's worktrees in, with no notion of an active run. So mid-run it
+	// reported the running wave's worktrees as preserved and would have deleted
+	// them.
+	//
+	// The cost is not "some commits". `.belmont/` is `--assume-unchanged` inside
+	// a worktree, so every task state the wave has completed but not yet merged
+	// is in no commit anywhere; removing the directory takes it with it.
+	//
+	// The split between actions is deliberate. The MUTATING ones refuse. `--list`
+	// does not, because it is read-only and what invited the destructive command
+	// in the first place was a listing that called a live worktree "preserved" —
+	// refusing to inform would leave the reader with less than they started with.
+	// See issue #52.
+	live, liveLabel := activeRunWorktrees(root)
+	if force {
+		live = nil
+	}
+
 	if merge != "" {
+		if err := refuseIfRunOwns(live, liveLabel, worktrees, merge, "merge"); err != nil {
+			return err
+		}
 		return recoverMerge(root, merge, tool, worktrees)
 	}
 	if clean != "" {
+		if err := refuseIfRunOwns(live, liveLabel, worktrees, clean, "clean"); err != nil {
+			return err
+		}
 		return recoverClean(root, clean, worktrees)
 	}
 	if cleanAll {
+		// All-or-nothing: cleaning the non-live ones and skipping the rest would
+		// report partial success for a command whose whole contract is "all".
+		for _, wt := range worktrees {
+			if live[absPathOrSelf(wt.Path)] {
+				printActiveRunGuidance()
+				return fmt.Errorf("recover: %s is still in flight and owns %s — refusing --clean-all",
+					liveLabel, filepath.Base(wt.Path))
+			}
+		}
 		return recoverCleanAll(root, worktrees, format)
 	}
 
 	// Default: list (explicit or implicit)
-	return recoverList(root, worktrees, format)
+	return recoverList(root, worktrees, format, live, liveLabel)
 }
 
-func recoverList(root string, worktrees []worktreeEntry, format string) error {
+// activeRunWorktrees returns the absolute worktree paths `.belmont/auto.json`
+// claims for a run that is still active, plus a label naming what is running.
+//
+// Empty when no run is active — `readActiveAutoJSONOrNil` already returns nil for
+// a missing file, unparseable JSON, or `active: false`, so an absent guard and a
+// finished run are the same thing here.
+func activeRunWorktrees(root string) (map[string]bool, string) {
+	aj := readActiveAutoJSONOrNil(root)
+	if aj == nil {
+		return nil, ""
+	}
+	paths := map[string]bool{}
+	for _, e := range aj.Worktrees {
+		paths[absPathOrSelf(e.Path)] = true
+	}
+	if aj.Feature != "" {
+		return paths, aj.Feature
+	}
+	// Multi-feature mode names no single feature; the worktree keys are the
+	// feature slugs, so the label is built from them rather than left blank —
+	// "an active run owns this" is much less useful than saying which.
+	var slugs []string
+	for slug := range aj.Worktrees {
+		slugs = append(slugs, slug)
+	}
+	sort.Strings(slugs)
+	if len(slugs) == 0 {
+		return paths, "an active run"
+	}
+	return paths, strings.Join(slugs, ", ")
+}
+
+func absPathOrSelf(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
+}
+
+// refuseIfRunOwns blocks a mutating recover action aimed at a worktree the active
+// run still owns. `slug` is matched the way the action itself matches it, on the
+// worktree directory's base name.
+func refuseIfRunOwns(live map[string]bool, liveLabel string, worktrees []worktreeEntry, slug, action string) error {
+	if len(live) == 0 {
+		return nil
+	}
+	for _, wt := range worktrees {
+		if filepath.Base(wt.Path) != slug || !live[absPathOrSelf(wt.Path)] {
+			continue
+		}
+		printActiveRunGuidance()
+		return fmt.Errorf("recover: %s is still in flight and owns %s — refusing --%s",
+			liveLabel, slug, action)
+	}
+	return nil
+}
+
+// printActiveRunGuidance explains the refusal and names the way past it.
+//
+// Kept off the error value itself: the error is what `must()` prints on the last
+// line before exiting, and a three-line error reads badly there. This is also
+// what keeps the message a single sentence with no trailing punctuation, which
+// is the house style staticcheck enforces (ST1005).
+func printActiveRunGuidance() {
+	fmt.Fprintln(os.Stderr, "  Deleting or merging a live worktree loses every task state the run has completed but not merged:")
+	fmt.Fprintln(os.Stderr, "  `.belmont/` is assume-unchanged inside a worktree, so that state is in no commit anywhere.")
+	fmt.Fprintln(os.Stderr, "  Wait for the run to finish, or pass --force if you are certain .belmont/auto.json is stale")
+	fmt.Fprintln(os.Stderr, "  (a run killed with SIGKILL leaves it behind with active: true).")
+}
+
+func recoverList(root string, worktrees []worktreeEntry, format string, live map[string]bool, liveLabel string) error {
 	if format == "json" {
 		type wtJSON struct {
-			Slug   string `json:"slug"`
-			Path   string `json:"path"`
-			Branch string `json:"branch"`
+			Slug string `json:"slug"`
+			Path string `json:"path"`
+			// Named rather than omitted: an agent reading this needs the same
+			// distinction the text view now draws, and `false` is a fact worth
+			// stating for a command whose other actions delete things.
+			ActiveRun bool   `json:"active_run"`
+			Branch    string `json:"branch"`
 		}
 		var items []wtJSON
 		for _, wt := range worktrees {
 			slug := filepath.Base(wt.Path)
-			items = append(items, wtJSON{Slug: slug, Path: wt.Path, Branch: wt.Branch})
+			items = append(items, wtJSON{
+				Slug:      slug,
+				Path:      wt.Path,
+				ActiveRun: live[absPathOrSelf(wt.Path)],
+				Branch:    wt.Branch,
+			})
 		}
 		if items == nil {
 			items = []wtJSON{}
@@ -501,12 +618,50 @@ func recoverList(root string, worktrees []worktreeEntry, format string) error {
 		return nil
 	}
 
-	fmt.Printf("Preserved worktrees (%d):\n\n", len(worktrees))
+	liveCount := 0
+	for _, wt := range worktrees {
+		if live[absPathOrSelf(wt.Path)] {
+			liveCount++
+		}
+	}
+
+	// The heading has to change too, not just the per-entry label. "Preserved
+	// worktrees" is a claim about every row beneath it, and with a live wave in
+	// the list it contradicts the trailer below — which says in as many words
+	// that some of them are NOT preserved from a failed merge. Leaving the
+	// heading alone would have this command assert and deny the same thing eight
+	// lines apart, which is the framing #52 is actually about.
+	if liveCount > 0 {
+		fmt.Printf("Worktrees found (%d) — %d preserved from a failed merge, %d still in flight:\n\n",
+			len(worktrees), len(worktrees)-liveCount, liveCount)
+	} else {
+		fmt.Printf("Preserved worktrees (%d):\n\n", len(worktrees))
+	}
 	for _, wt := range worktrees {
 		slug := filepath.Base(wt.Path)
-		fmt.Printf("  %s\n", slug)
+		if live[absPathOrSelf(wt.Path)] {
+			// Not "preserved from a failed merge" at all. Saying so here is the
+			// point: this listing is what a confused user reads immediately
+			// before reaching for --clean-all.
+			fmt.Printf("  %s  [IN FLIGHT — owned by the active run: %s]\n", slug, liveLabel)
+		} else {
+			fmt.Printf("  %s\n", slug)
+		}
 		fmt.Printf("    Path:   %s\n", wt.Path)
 		fmt.Printf("    Branch: %s\n", wt.Branch)
+		fmt.Println()
+	}
+	if liveCount > 0 {
+		// One is the common case — a wave usually has a single worktree left to
+		// look at by the time anyone reaches for `recover` — so the singular is
+		// the form most readers will actually see.
+		sentence := "1 of these belongs to a run still in flight (%s) and is NOT preserved from a failed merge.\n"
+		if liveCount != 1 {
+			sentence = fmt.Sprintf("%d of these belong to a run still in flight (%%s) and are NOT preserved from a failed merge.\n", liveCount)
+		}
+		fmt.Printf(sentence, liveLabel)
+		fmt.Println("Cleaning or merging one now loses task state the run has completed but not merged.")
+		fmt.Println("--merge / --clean / --clean-all will refuse to touch them until the run finishes.")
 		fmt.Println()
 	}
 	fmt.Println("Actions:")
