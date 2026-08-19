@@ -6,6 +6,7 @@ This repository is `bigbenjoman/belmont`, a tracking fork of `blake-simpson/belm
 
 What this repo carries instead:
 
+- `.belmont/PR_FAQ.md` — a pointer, not a PR/FAQ. Replaced the `belmont install` stub on 2026-08-19 for the same reason this file replaced its own: the stub is copied into every worktree and read by seven planning skills, and it told each of them to run `/belmont:working-backwards`.
 - `.belmont/TECH_PLAN.md` — the seven Kind B rules that make self-hosting safe: binary pinning, the no-reinstall window between M1 and M11, barbell model tiers, zero Go dependencies, proposals-before-contract-change, Tier 2 evals for any prose change, and — added 2026-08-19 — **no product's confidential information in this repository**, which is a gate on `throughput`'s wave 2 and not merely advice.
 - `.belmont/features/<slug>/` — the framework features themselves. Currently `throughput`.
 - `AGENTS.md`, `CONTRIBUTING.md`, `knowledge/KNOWLEDGE.md` — the engineering conventions, authoritative for build, test and review.
