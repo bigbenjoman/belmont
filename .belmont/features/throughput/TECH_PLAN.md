@@ -23,13 +23,36 @@ These cannot be milestone tasks: `belmont auto` cannot bootstrap the state direc
 2. **Ignore `_research/` in the fork before the move lands.** `_research/` is 436 KB of the feature's 572 KB, and the fork's `.gitignore` has no rule for it. The master TECH_PLAN says research notes are never committed. Add `_research/` to `/Users/benlavender/repos/belmont/.gitignore` in the same commit that lands the feature directory; the files stay on disk so implementation agents can still read the measurement evidence they cite.
 3. **Install Belmont into the fork.** `cd ~/repos/belmont && belmont install --source . --tools claude`. This creates `.agents/`, `.claude/commands/belmont/`, and `.belmont/`.
 4. **Confirm the orchestrating binary is pinned.** The loop must run the Homebrew `belmont` (v0.11.0, `/opt/homebrew/bin/belmont`), *not* a build from the worktree. Go changes made inside a milestone take effect only on an explicit rebuild — this is the isolation that makes self-hosting safe.
-5. **Set concurrency.** Run with `--max-parallel 2` or `3`, not the default 5. Wave 2 holds six milestones; the measured local speedup is ~1.4×, and overcommitting is worse than serial.
+5. **Set concurrency.** Run with `--max-parallel 2` or `3`, not the default 5. Wave 2 holds seven milestones; the measured local speedup is ~1.4×, and overcommitting is worse than serial.
+
+## Prerequisites — before **wave 2** can start
+
+*Added 2026-08-19. These four are gates on wave 2, not on M1, and every one of them is an owner action: two touch a public git remote and two decide what the loop runs on. No agent performs any of them.*
+
+6. **Redact the product estate from this repository, then force-push.** `github.com/bigbenjoman/belmont` is `visibility: PUBLIC` and a fork of `blake-simpson/belmont`. `origin/main` has carried `.belmont/` since the P0-13a push on 2026-08-18: `census.json` alone names **82 feature slugs across all five products** (repo-4 14, repo-3 29, repo-2 18, repo-5 11, repo-1 10) with per-feature byte, milestone and task counts, and `MILESTONE-M1.done.md` carries 107 further product references across 245 KB.
+
+   Rewrite every committed occurrence to opaque identifiers — `repo-1`…`repo-5`, `feature-a`… — preserving every byte count, milestone count, task count and conclusion, because the census's findings are about *distributions*, not names. Twelve committed files are affected; **two of them are product source and would travel in an upstream PR regardless of `.belmont/`**: `cmd/belmont/extract.go:31` (names repo-4 and a byte count) and `knowledge/auto-mode/clean-tree-preflight.md:61` (names `~/repo-3`).
+
+   The alias↔slug mapping lives in the private planning workspace at `~/belmont/`, never in this repository — without it CENSUS.md's conclusions stop being actionable against real repos, and with it committed the redaction is decorative.
+
+   **Accepted residual risk, recorded rather than argued.** Objects already pushed to a public fork stay reachable through the parent repository's network, so a force-push does not undo the publication; only deleting the fork would. Decision by Ben Lavender, 2026-08-19: redact in place and accept that. This step reduces future exposure and the exposure already taken stands.
+
+7. **Do not start wave 2 before step 6 lands.** Seven milestones commit into this repository concurrently. Redacting after they start means redacting a moving target across seven worktrees.
+
+8. **Reverify M1, then freeze the orchestrator.** `belmont reverify --feature throughput` promotes M1's remaining `[x]` tasks (P0-3, P0-M1-FIX-12). Then build the pinned artefact from M1's merge commit and keep it:
+
+   ```bash
+   cd ~/repos/belmont && git rev-parse HEAD > /tmp/belmont-pre.sha
+   bash scripts/build.sh && cp ./belmont ~/bin/belmont-pre
+   ```
+
+9. **Repoint the pin to `belmont-pre` — this changes master TECH_PLAN rule 1.** Put `belmont-pre` on PATH ahead of Homebrew, for this repository's own loop *and* as the daily driver in the five product repos. It is one artefact serving both: there is one `belmont` on PATH, and the fork's loop and the passive arm want the same frozen build. See §The passive arm below for why, and §Risks for what it costs.
 
 ### Self-hosting hazards, and what contains them
 
 | Hazard | Containment |
 |---|---|
-| A milestone edits the Go code the orchestrator is running | Orchestrator uses the pinned Homebrew binary; worktree builds are never installed mid-run |
+| A milestone edits the Go code the orchestrator is running | Orchestrator uses a **frozen** binary; worktree builds are never installed mid-run. **Changed 2026-08-19**: the frozen binary is `belmont-pre`, built from M1's merge commit, not Homebrew v0.11.0. Isolation is identical — both are frozen — but Homebrew v0.11.0 contains no metrics code, so pinning to it meant the feature that exists to measure Belmont recorded *nothing* across its own twelve remaining milestones. Revert is one command: put Homebrew back on PATH |
 | A milestone edits skill prose the next phase reads | Skill prose resolves from `~/.agents/skills/belmont/` (user-level) until an explicit `belmont install` is run. **Do not run `belmont install` — in the fork or at user level — between M1 and M11.** The user-level refresh is prerequisite 0 and happens once, before M1. Verified at v0.11.0 at that point; it was v0.10.x before. |
 | A milestone changes `PROGRESS.md` format while the loop parses it | The register's line grammar does not change (see Decision Log). Only the detail tier is new, and it is opt-in per feature — `throughput` itself stays un-extracted until M11 |
 | M11 migrates features while the loop reads them | M11 runs serially, last, and `throughput`'s own register is migrated only after P3-3 has taken its final measurement |
@@ -56,6 +79,8 @@ These cannot be milestone tasks: `belmont auto` cannot bootstrap the state direc
 | ~~Steering position~~ | — | ~~P1-12~~ **withdrawn** | — |
 | Master file & journal | `cmd/belmont/journal.go` (new), `multifeature.go`, `_partials/commit-belmont-changes.md` | P2-1, P2-2, P2-3 | MEDIUM |
 | Scheduler correctness | `cmd/belmont/feature.go`, `validate.go`, `autocmd.go`, `docs/feature-auto.md` | P2-4, P2-5, P2-6 | HIGH |
+| Measurement controls | `cmd/belmont/toolexec.go`, `local_llms.go`, `metrics.go`, `auto_loop.go` | P0-14, P0-15, P0-16 | CRITICAL |
+| Seeded paired suite | `cmd/belmont/bench_harness_test.go` (new, `//go:build bench`), `testdata/bench/` | P0-17, P0-18, P0-19, P0-20 | CRITICAL |
 | Rollout | all five repos, `scripts/build.sh` | P3-1, P3-2, P3-3 | CRITICAL |
 
 ---
@@ -86,7 +111,10 @@ cmd/belmont/
 ├── auto_decide.go         # CHANGED: verify-round cap, lane-scoped pause    (P0-9)
 ├── auto_loop.go           # CHANGED: trajectory signal, clean-context retry (P0-8, P0-10)
 ├── autocmd.go             # CHANGED: ceiling preflight, slot cap, messages  (P1-7, P2-6)
-├── toolexec.go            # CHANGED: usage extraction per tool              (P0-2)
+├── toolexec.go            # CHANGED: usage extraction; model chain for all  (P0-2, P0-14)
+├── local_llms.go          # CHANGED: chain generalised beyond pi/opencode   (P0-14)
+├── bench_harness_test.go  # NEW: //go:build bench — seed, run, analyse      (P0-17..P0-20)
+├── testdata/bench/gen.go  # NEW: //go:build bench — calibrated seed emitter (P0-17)
 ├── install.go             # CHANGED: per-host skill files, not symlinks     (P1-9)
 ├── main.go                # CHANGED: subcommand dispatch + help             (P1-4, P0-4)
 └── eval_harness_test.go   # CHANGED: + slice fixture, + bounded-loop fixture (P1-4, P0-9, P1-13)
@@ -183,9 +211,24 @@ Bytes rather than tokens because a zero-dependency Go binary has no tokenizer.
 Added via the existing `ensureGitignoreEntry` mechanism in `fsutil.go`, alongside `.belmont/auto.json` and `.belmont/worktrees/`. Local-only: bookkeeping commits are already 41–46% of commit volume in these repos.
 
 ```json
-{"run":"2026-08-19T09:14:02Z","feature":"throughput","milestone":"M3","phase":"implement","tool":"claude","wall_ms":2814000,"input":30903,"output":8871,"cache_creation":22387,"cache_read":8506,"critical_path":true,"input_semantics":"excludes_cache_read"}
-{"run":"2026-08-19T09:14:02Z","feature":"throughput","milestone":"M3","phase":"verify","tool":"claude","wall_ms":1102000,"input":null,"output":null,"cache_creation":null,"cache_read":null,"note":"tool reports no usage"}
+{"run":"...","feature":"throughput","milestone":"M3","phase":"implement","tool":"claude","wall_ms":2814000,"input":30903,"output":8871,"cache_creation":22387,"cache_read":8506,"critical_path":true,"input_semantics":"excludes_cache_read","model_requested":"claude-opus-4-8-20260112","model_served":"claude-opus-4-8-20260112"}
+{"run":"...","feature":"throughput","milestone":"M3","phase":"verify","tool":"claude","wall_ms":1102000,"input":null,"output":null,"cache_creation":null,"cache_read":null,"note":"tool reports no usage","model_requested":"claude-opus-4-8-20260112","model_served":null,"model_note":"served ID not verified against a live run"}
+{"run":"...","feature":"throughput","milestone":"M3","phase":"__terminal__","tool":"claude","wall_ms":0,"outcome":"completed","exit_reason":"all tasks verified","tasks_verified":5,"tasks_total":5}
 ```
+
+#### Model identity — `model_requested` / `model_served` (new, P0-14)
+
+`model_requested` is the exact ID Belmont passed to the tool. `model_served` is the ID the tool reports it actually used, where it reports one; `null` plus a `model_note` where it does not, following the `usageUnavailableNote` precedent already set for gemini and cursor (`metrics.go:185`). **Do not assume a tool's self-reporting schema — verify it against a live run**, exactly as `P0-M1-FIX-4` did for codex's `cached_input_tokens` semantics.
+
+Recording only the request is not sufficient, and this is the whole point of the control. A vendor serving something other than what was asked, silently, over a months-long passive window, is indistinguishable from your own improvement if the record holds the request alone. `belmont metrics` **refuses to aggregate across differing model IDs** and reports `null` with a stated reason plus the per-model breakdown — the same fail-closed rule already applied to `input_semantics`, for the same reason: a figure spanning two models is neither model's figure.
+
+#### Run outcome — the `__terminal__` record (new, P0-15)
+
+One record per run, appended when the loop exits, in the same JSONL. Not a separate file: a run's phases and its outcome belong to one append-only stream, and splitting them invites the two to disagree.
+
+`outcome` is `completed` only when the run's milestone reaches **all `[v]`** — the feature's own success bar, where `[v]` and not `[x]` is the unit. Anything else is `incomplete`, with `exit_reason` carrying which: `max-iterations`, `blocked`, `circuit-breaker`, `tool-error`, `session-limit`.
+
+Completion rate = `completed / attempted`. **Failed runs count in the denominator and are excluded from the ratio computation, and the harness never retries.** A retry would silently repair the completion rate, which is precisely the number published to stop a run that terminated cheaply from flattering a median.
 
 Usage source per tool — no extra API calls, exact figures rather than estimates:
 
@@ -269,6 +312,55 @@ New deterministic checks, each naming its specific offender. Agent judgement is 
 
 No code change. The four skills recommending `--format json` as a quick summary stop doing so; each names the cheapest path that answers its question. The single existing warning in `_partials/loop-recipe.md` cites ~3× — corrected to the measured **12×** at 529 tasks (682,148 B JSON against 57,145 B text).
 
+### Model resolution — the chain generalised (new) — P0-14
+
+`modelTiers["claude"]` is `haiku` / `sonnet` / `opus` (`toolexec.go:402`) — the drifting aliases the measurement controls forbid. Pi and opencode already resolve through a layered chain (`local_llms.go`, `resolvePiModelFlags` / `resolveOpencodeModelFlags`); **generalise that chain to every tool** rather than hardcoding IDs, which is what `AGENTS.md` says to do when extending this area.
+
+```
+BELMONT_<TOOL>_MODEL_<TIER>  /  BELMONT_<TOOL>_PROVIDER_<TIER>   env, per tier
+  > BELMONT_<TOOL>_MODEL     /  BELMONT_<TOOL>_PROVIDER          env, all tiers
+  > <project>/.belmont/local-llms.json
+  > ~/.belmont/local-llms.json
+  > modelTiers[tool][tier]                                        unchanged defaults
+```
+
+**Default behaviour for every existing user is unchanged** — an absent chain falls through to today's aliases. The aliases are deliberately *not* replaced: they exist so users track the current frontier, and pinning them globally would commit the project to editing that table on every vendor release, or to shipping a build that silently holds users on a superseded model. The measurement pins itself; it does not pin everybody else.
+
+### The bench harness (new, never shipped) — P0-17 … P0-20
+
+Not a subcommand. Build-tagged test files, mirroring `eval_harness_test.go` exactly — the pattern this repo already uses for "drives a real tool, spends real tokens, must never run in CI by accident".
+
+```bash
+go test -tags bench ./cmd/belmont                              # offline, free, in CI
+BELMONT_BENCH_LIVE=1 go test -tags bench -timeout 0 \
+    -run TestBenchLive ./cmd/belmont                           # spends; owner-run
+```
+
+`-timeout 0` is required for the same reason Tier 2 requires it (`AGENTS.md:59`): without it Go's ten-minute default orphans the live tool child, and these runs are measured in tens of minutes.
+
+| Test | Tag only | Live | What it proves |
+|---|:-:|:-:|---|
+| `TestBenchSeed` | ✅ | | The generated seed reproduces byte-for-byte from a fixed seed value |
+| `TestBenchAnalysis` | ✅ | | Median, Hodges–Lehmann interval and completion rate against fixture pairs |
+| `TestBenchGuards` | ✅ | | The testbed-location refusal fires; the prose-sentinel assertion fires |
+| `TestBenchLive` | | ✅ | The paired suite itself |
+
+Three of the four run offline and free. That split is deliberate and load-bearing: **P3-3's verdict is computed by `TestBenchAnalysis`'s code**, and a statistic that decides whether this feature succeeded cannot be the one piece with no test behind it.
+
+**Refusals, both hard.** The harness aborts if the resolved testbed path lies inside any of the five product repositories or inside this one — a measurement instrument that can write into what it measures is the 2026-08-18 failure with a different entry point. And it aborts if the arm's own installed prose did not resolve: each arm installs from a **fixed commit checkout** into the testbed, and a sentinel string from that arm's `SKILL.md` must be observed before the timed run begins. Without that check, both arms silently resolve prose from user-level `~/.agents/skills/belmont/`, and M2, M4 and M7 — whose entire deliverable is prose — measure as zero improvement.
+
+### The passive arm
+
+No commands and nothing scheduled. Once `belmont-pre` is on PATH (prerequisite 9) every normal run in the five product repos and in this repository records metrics as a side effect, at zero extra token cost and with no interference.
+
+Three properties make it genuinely pre-change data, and all three are consequences of the binary being frozen rather than of anything anyone remembers to do:
+
+1. **The binary does not move.** `belmont-pre` is built once at M1's merge commit and is not refreshed as M2–M13 land. §Distribution's "do not run this between M1 and M11" is unchanged and is what enforces it.
+2. **The prose does not move either.** `.claude/` is gitignored here, so worktrees resolve `/belmont:*` from user-level `~/.agents/skills/belmont/`, frozen at v0.11.0 by prerequisite 0 and master rule 2. Prose changes merging into `main` do not reach the running loop.
+3. **`.belmont/metrics/` cannot dirty the tree it measures.** `P0-M1-FIX-12` guarantees the ignore rule on the `auto` path itself, not only at install time — which is why this arm needs no per-repo setup step at all.
+
+The window opens at prerequisite 9 and closes at the M11 rollout. `P0-16` verifies it is genuinely open and records the date and the frozen commit; it writes nothing into any product repository, because a step that both opens a measurement and reports on it is free to report what it wishes were true.
+
 ---
 
 ## Go Implementation Notes
@@ -324,7 +416,9 @@ Proof: a concurrent read-during-write test under `go test -race`. **An atomicity
 
 `toolexec.go` already assembles the invocation; add a per-tool usage extractor beside it and a `metrics.go` that appends one JSONL record per phase. Wall-clock is measured around the `exec.Command` in `auto_loop.go`. Critical-path marking comes from `computeWaves` — a milestone is on the critical path if it lies on a longest chain through the DAG.
 
-P0-3 captures the baseline on repo-3 and repo-4 **after P0-12 and P0-2, before any of M2–M10 merges**, and records the Belmont commit it was taken against.
+**P0-3 was re-scoped on 2026-08-19 and now covers the read-path half only** — the register-size and `status` output figures in `BASELINE.md`, which are captured, reproduce exactly, and carry commit evidence at `c952426c`. It records the Belmont commit it was taken against.
+
+The cost half — tokens and wall-clock per verified milestone — moved to **M12 and M13**, because it turned out to be a milestone's worth of work rather than a task's: a model-pinning mechanism that does not exist, an outcome field that does not exist, a seeded testbed, a paired runner and an analysis path. `P0-3a`, the placeholder that carried it, is withdrawn `[-]`. See §M12 and §M13 below.
 
 ### P1-1 / P1-2 / P1-3 — The split (M3)
 
@@ -422,6 +516,42 @@ An unknown `dep` fails the `ok` test and contributes nothing, so a typo silently
 
 Effective concurrency becomes `min(--max-parallel, parallel_slots)`, printed on every run. A run that requested parallelism but found no declared dependencies says so and why. Absent `parallel_slots` means today's behaviour. **Configured, not auto-detected**: the binding constraint is memory bandwidth and API rate limits, which no portable probe can see, and the measured penalty for overcommitting is worse than running serially — the same graph yields 14.31× on an unbounded backend and 1.43× on a two-slot local one, with overcommit oscillating between near-two-slot and near-sequential.
 
+### P0-14 / P0-15 / P0-16 — Trustworthy measurement (M12)
+
+**P0-14** — Generalise the model-resolution chain (§Command Specifications) and add `model_requested` / `model_served` / `model_note` to `metricsRecord` (`metrics.go:149`). `summariseMetrics` gains the same fail-closed refusal it already applies to `input_semantics`: no combined figure across differing model IDs, `null` plus a stated reason and a per-model breakdown instead. Verify each tool's self-reporting schema against a live run before writing a parser for it; where it is unverified, say so in the record rather than estimating.
+
+**P0-15** — The `__terminal__` record (§Metrics). `recordPhaseMetrics` (`auto_loop.go:614`) already knows the run ID and the metrics root; the terminal record is appended where the loop exits, reading the milestone's final task states through `canonicalMarker` rather than comparing raw bytes. Watch the wave path: `P0-M1-FIX-1` established that `MetricsRoot` and `Root` differ under worktrees, and the terminal record must follow `MetricsRoot` like every other record or it is written into a tree that is about to be deleted.
+
+**P0-16** — Verify the passive window is open, and record it. Report-only: for this repository and each of the five product repos, confirm the resolved `belmont` is the frozen commit (via `belmont version`), that `.belmont/metrics/` is ignored, and that records are accruing. Write the window-open date and the frozen commit into `BASELINE.md` and `baseline.json`. **It writes nothing into any product repository** — per §Constraints in the PRD, measurement there is observational only, and `P0-M1-FIX-12` already guarantees the ignore rule from the `auto` path so there is nothing to install.
+
+### P0-17 / P0-18 / P0-19 / P0-20 — The seeded paired suite (M13)
+
+**P0-17 — the seed.** A generator (`testdata/bench/gen.go`, tag `bench`) emitting a register calibrated to the measured pathological profile: 1,860,979 total bytes, 30 milestones, 529 tasks, 458 with detail, and the head-versus-indented split recorded in `census.json`. Deterministic from a fixed seed value, so `TestBenchSeed` asserts the exact byte count offline and free, forever.
+
+**Generated, never copied.** The register it models is a pre-launch product's complete feature planning, and this repository is a public fork of a third party's. Read-path cost is a function of bytes and structure, not of words, so a calibrated generator is byte-equivalent for the purpose while carrying no product content — and git stores ~100 lines instead of a 1.86 MB blob. The same generator emits a median-sized 17 KB register from a different parameter set, which is what makes the typical case measurable later at no extra cost.
+
+The testbed itself is a trivial buildable project under `os.MkdirTemp` — no dependency install, no database, no product test suite. Those would be three variance sources bolted onto a measurement whose entire design is isolating one, and the quantity being measured does not read them.
+
+**P0-18 — the runner.** Both arms from one `baseline-seed` tag, `git reset --hard` between every run, arm order alternating across replicates (A/B, B/A, A/B).
+
+**Strictly serial, and this is not a preference.** Wall-clock is one of the two measured outcomes, and this feature's own research is that concurrent local runs are memory-bandwidth bound — the same graph yields 14.31× unbounded and 1.43× on two slots. Running the suite in parallel would corrupt the very number it exists to produce.
+
+Arm B migrates before its timed run: `belmont extract` on the testbed, then the run on the migrated register. That is the post-M11 world, and measuring arm B on an un-migrated pathological register would measure a state that will never exist. The migration's own cost is recorded and reported **separately**, never amortised into the per-run figure. **Acceptance criterion on P0-17, not a hope**: the seed must be chosen such that extraction lands it under `progress_error_bytes`, because `CENSUS.md` records five of 82 registers still exceeding the ceiling after extraction — and if the seed is one of those, arm B refuses to start and the suite produces nothing.
+
+Per run, recorded: arm, seed SHA, Belmont commit, `model_requested`/`model_served`, the `belmont metrics --format json` payload, and the terminal outcome.
+
+**P0-19 — the A/A pilot.** Both "arms" on the same pre-change build, ~3 seeded milestones × 3 replicates. It measures two things nobody currently knows: the **within-task sd** of per-pair log-ratios, which sets the pair count (6 at sd 0.3, 12 at 0.7, 20 at 1.0, per the 2026-08-19 research), and the **per-run wall-clock** of the seeded design, which is what makes the M11 block schedulable. It is also an honesty check: an A/A whose median ratio departs materially from 1.0 means the harness is not measuring what it believes it is, and that must be resolved before any real pair is run.
+
+**When sd and the clock conflict, sample size wins.** If the derived pair count will not fit the available block, cut in this order: the seeded milestone's work, then verify rounds (`--from M<n> --to M<n>`), then the phases measured. **The pair count is the last thing to give, and if it gives, the report says so.** The reason is this feature's own record: `P0-M1-FIX-6` through `FIX-11` are five consecutive rounds correcting claims stated beyond their evidence, in these very files. A headline "50% reduction" published with an interval too wide to support it is that same failure with a statistic instead of a sentence.
+
+**P0-20 — the analysis, one path for both consumers.** Per-pair log-ratios, **blocked by task and never pooled** — with heterogeneous tasks that is the only defensible treatment at this n ([Miller 2024](https://arxiv.org/html/2411.00640v1)).
+
+- **Point estimate**: the sample median of per-pair reductions. This is what criterion 26 says the pass/fail rule is, worded literally, so it is what gets computed.
+- **Interval**: the exact Wilcoxon signed-rank / Hodges–Lehmann interval. Exact at n = 6–20, where a percentile bootstrap is unstable, and it matches the signed-rank power calculation that sized the suite in the first place.
+- **Completion rate**, published beside every median.
+
+The same function serves P0-19's pilot and P3-3's verdict, so the two halves of the comparison cannot diverge — the same reasoning that put `belmont metrics` behind both P0-3 and P3-3.
+
 ---
 
 ## Prior Art
@@ -477,6 +607,22 @@ Open upstream PRs opportunistically. Never block a milestone on one.
 | P1-12 withdrawn `[-]` | Keep as measure-first; implement as written | Already measured in-repo: identical cache figures prefixed and suffixed. The mechanism is real; the saving is not |
 | Go toolchain bumped as M1's first task | Out of scope; bump during M11 | **User decision, overriding the recommendation.** Sequenced before P0-2/P0-3 so the baseline is captured on the bumped toolchain and the comparison stays clean |
 
+### Added during tech-plan, 2026-08-19 — placing the seeded harness
+
+| Decision | Alternatives considered | Rationale |
+|---|---|---|
+| Both arms run at P3-3, against a binary frozen at M1 | Capture arm A now and arm B at M11; run the full pair twice | Alternating arm order needs both builds to exist at once, and at M1 the post-change build does not. Arms months apart confound cache warmth, vendor drift and machine state *with the arm* — the three things the 2026-08-19 controls exist to remove. A frozen binary is also immune to sibling merges, so the harness milestone need not serialise a wave behind it |
+| Two new milestones, M12 (wave 2) and M13 (wave 3) | One 7-task milestone; fold everything into M11 | Free on wave count — still four waves, and theoretical parallelism rises 2.75× → 3.25×. One milestone would mix shipped Go, a bench harness and a five-repo ops step, which is the sizing rules' own "too big" test. Folding into M11 discovers harness infeasibility at wave 4, after everything else is spent, and loses the passive window entirely |
+| P0-3 re-scoped to `[x]`; P0-3a withdrawn `[-]` | Promote P0-3 to `[v]` here; withdraw both | M1's `[!]` PAUSEs the whole feature, so this had to resolve. `[x]` lets `belmont reverify` judge the *new* criterion; a planning session writing `[v]` against a criterion it rewrote in the same session is the failure `[x]` vs `[v]` exists to prevent, and nothing mechanical would have caught it — commit `c952426c` names the task |
+| Harness as build-tagged test files | `scripts/*.sh` + a Go helper; a shipped `belmont bench` subcommand | Exactly the `eval_harness_test.go` pattern, so CI wiring, gating and conventions already exist. A subcommand puts a one-off instrument permanently into a surface 139 feature directories depend on. Shell cannot compute a Hodges–Lehmann interval without a dependency, and this repo has none |
+| Generated seed, calibrated to the measured distribution | Copy the 1.86 MB register verbatim (committed, or gitignored) | Read-path cost is a function of bytes and structure, not words, so a generator is byte-equivalent for the purpose. Committing the copy would publish a pre-launch product's plans into a public fork; gitignoring it makes the seed unreproducible on any other machine, which undercuts the whole design |
+| Arm B migrates before its timed run | Raise `progress_error_bytes` in the testbed; run all three variants | The post-M11 world is migrated; measuring arm B un-migrated measures a state that will never exist. Three variants would decompose the win informatively but cost 50% more runs in a strictly serial budget where the run *is* the unit of statistical power |
+| Pin repointed to `belmont-pre`, not Homebrew v0.11.0 | Keep the Homebrew pin; repoint only after M12 | Isolation is identical — both frozen — but Homebrew v0.11.0 has no metrics code, so the feature that exists to measure Belmont would record nothing across its own twelve remaining milestones. Reverts in one command. Waiting for M12 would lose all of wave 2, more than half the remainder |
+| Extend the model chain; record requested **and** served | Record the request only; replace `modelTiers` aliases with pinned IDs | Recording the request cannot see a vendor serving something else, which over a months-long window is the exact confound. Replacing the aliases pins every user in every repo to serve one experiment, and commits the project to editing that table on every vendor release |
+| Sample median + exact Wilcoxon/Hodges–Lehmann interval | Percentile bootstrap; report significance against 50% | The median is what criterion 26 literally names as the rule. The exact interval is stable at n = 6–20 where a bootstrap is not, and it matches the signed-rank calculation that sized the suite. Significance against a 50% threshold would need a true effect near 65% — the reason criterion 26 was rewritten around the point estimate |
+| No retries on a failed run | Retry on infrastructure failure, recorded as such | The completion rate exists to stop a cheaply-failed run flattering a median. A retry repairs that rate silently, which is the same distortion arriving through the fix rather than the fault |
+| Redact the product estate in place; accept the residual exposure | Move to a private repo and delete the public fork; evict `.belmont/` from the fork | **User decision, 2026-08-19, against the recommendation and recorded as such.** Objects already pushed to a public fork stay reachable via the parent network, so a force-push reduces future exposure without undoing the publication already made. The cheapest option, and the one that keeps `.belmont/` as the state of record and the census evidence intact |
+
 ---
 
 ## Verification Checklist
@@ -499,6 +645,8 @@ go build ./cmd/belmont               # NB: plain build does not embed skills/age
 go test ./cmd/belmont
 go test -race ./cmd/belmont          # required for P0-1
 go test -tags eval ./cmd/belmont     # Tier 1, offline, free, in CI
+go test -tags bench ./cmd/belmont    # seed determinism + analysis math, offline, free, in CI
+go vet -tags bench ./cmd/belmont     # tagged files are invisible to plain `go vet ./...`
 go vet ./...
 staticcheck ./...                    # runs in CI and is currently clean — keep it so
 gofmt -l cmd/                        # must print nothing
@@ -515,6 +663,10 @@ belmont validate --root ~/repos/belmont
 | M6 | `auto_decide.go`, `auto_loop.go`, `guards.go` — behavioural | required |
 | M7 | the per-host skill build — **prose payload** | **required** |
 | M8 | agent frontmatter + dispatch partial (P1-13) | required |
+| M12 | `toolexec.go`, `local_llms.go`, `metrics.go` — Go only, no prose | not required |
+| M13 | the bench harness — test files only, no prose | not required |
+
+`ci.yml` already carries the exact wiring to copy: `go test -tags eval` at line 35 and `go vet -tags eval ./cmd/belmont` at line 44, with a comment explaining that the plain `go vet ./...` above cannot see build-tagged files. Add the `bench` pair beside them. **The live suite stays out of CI** — it is gated twice, by the tag and by `BELMONT_BENCH_LIVE=1`, exactly as `TestEvalLive` is.
 
 M2 and M7 were previously Tier-1-only; corrected 2026-08-18 during `/belmont:review-plans`. They are the two milestones whose entire deliverable is prose, so they are exactly the ones Tier 1 cannot speak to.
 
@@ -545,6 +697,13 @@ BELMONT_EVAL_LIVE=1 go test -tags eval -timeout 0 -run TestEvalLive ./cmd/belmon
 | Parallelism requested, no dependencies declared | Run says it is serial and why, then runs serially |
 | `--max-parallel` above `parallel_slots` | Capped to the lower value, and the cap is reported |
 | Skill built for a host with no dedicated install path | Falls back to the generic `.agents/skills/belmont/<skill>/SKILL.md`. Every supported host keeps a complete build |
+| Testbed path resolves inside a product repo or this one | Harness **refuses to run**, naming the path. A measurement instrument able to write into what it measures is the 2026-08-18 failure with a different entry point |
+| Arm's own prose did not resolve in the testbed | Harness aborts before the timed run. Otherwise both arms silently use user-level prose and M2/M4/M7 measure as zero |
+| A seeded run fails or hits the session limit | Recorded with its `exit_reason`, counted in the completion-rate denominator, excluded from the ratio. **Never retried** |
+| Extraction does not bring the seed under `progress_error_bytes` | Arm B cannot start. Prevented at seed-selection time by a P0-17 acceptance criterion, not discovered at run time — five of 82 real registers have this property |
+| Tool reports a `model_served` differing from `model_requested` | Recorded as-is and flagged. Not corrected, not dropped — a divergence is the finding |
+| `belmont metrics` spans two model IDs | Combined figure is `null` with a stated reason plus a per-model breakdown. Same fail-closed rule as `input_semantics` |
+| A/A pilot's median ratio departs materially from 1.0 | The harness is not measuring what it believes. Resolve before running any real pair; no suite size can fix a biased instrument |
 
 ---
 
@@ -559,14 +718,18 @@ BELMONT_EVAL_LIVE=1 go test -tags eval -timeout 0 -run TestEvalLive ./cmd/belmon
 - **M7: Skill payload** — depends: M1 (wave 2). Independent of the state work entirely; touches only the generator and install path.
 - **M9: Master file & journal** — depends: M1 (wave 2). Needs atomic writes; independent of the detail tier.
 - **M10: Scheduler correctness** — depends: M1 (wave 2). Self-contained dependency-layer fixes. Land early — parallel work amplifies every defect here.
+- **M12: Trustworthy measurement** — depends: M1 (wave 2). Needs P0-2's record to extend, and nothing else. Placed early on purpose: the passive window cannot open until the model and outcome fields exist, and every week it stays shut is pre-change observation that cannot be recovered afterwards.
 - **M4: The read path** — depends: M3 (wave 3). `slice` must serve the detail tier, so the tier has to exist first.
 - **M5: Growth ceilings** — depends: M3 (wave 3). A ceiling is only meaningful once extraction gives a way back under it.
 - **M8: Cacheable dispatch** — depends: M7 (wave 3). Registration is Claude-Code-only, so the dispatch prose must already be host-conditional.
-- **M11: Roll out & re-measure** — depends: M2, M4, M5, M6, M8, M9, M10 (wave 4). Migrates the four pathological features, brings all five repos onto one build, reports against the M1 baseline including anything that missed.
+- **M13: The seeded paired suite** — depends: M12 (wave 3). The runner records the `model_requested` / `model_served` fields M12 adds, so the record schema has to exist first. Its A/A pilot runs here; the paired suite it sizes runs at M11.
+- **M11: Roll out & re-measure** — depends: M2, M4, M5, M6, M8, M9, M10, M13 (wave 4). Migrates the pathological features, brings all five repos onto one build, and runs the paired suite M13 built, reporting against the M1 baseline including anything that missed.
 
-**Wave structure**: W1 = M1 · W2 = M2, M3, M6, M7, M9, M10 · W3 = M4, M5, M8 · W4 = M11.
+**Wave structure**: W1 = M1 · W2 = M2, M3, M6, M7, M9, M10, M12 · W3 = M4, M5, M8, M13 · W4 = M11.
 
-2.75× theoretical parallelism. **Expect ~1.4× in practice.** Run with `--max-parallel 2` or `3` — wave 2's six milestones against six slots is precisely the overcommit the measurements warn about.
+Thirteen milestones in four waves — **3.25× theoretical parallelism**, up from 2.75×, because both new milestones landed inside waves that already existed. **Expect ~1.4× in practice.** Run with `--max-parallel 2` or `3`: wave 2 now holds seven milestones, and seven against seven slots is precisely the overcommit the measurements warn about.
+
+**The measurement is not on the critical path, and that is deliberate.** M12 and M13 sit inside existing waves, so neither adds a wave; the only ordering they impose is on M11, which already waited for seven other milestones.
 
 ---
 
@@ -596,9 +759,15 @@ No tap, no release pipeline, no token. `belmont version` still reports a commit,
 | Extraction loses information on a 1.86 MB file | Low | Byte-for-byte round-trip proof before any write; `--dry-run`; per-feature commit |
 | P1-11 spike fails and M8 shrinks to one task | Medium | Explicitly planned for — withdraw as `[-]`, do not work around |
 | Baseline contaminated by the toolchain bump | Low | P0-12 sequenced before P0-2 and P0-3, so before and after are built identically |
-| Upstream diverges while the fork carries eleven milestones | Medium | Formats stay backward-compatible; three proposals give upstream reviewable specs rather than one large diff; merge `upstream/main` between waves |
+| Upstream diverges while the fork carries thirteen milestones | Medium | Formats stay backward-compatible; three proposals give upstream reviewable specs rather than one large diff; merge `upstream/main` between waves |
 | Two verify agents share a model and co-fail | Known | Not addressed by this feature, and deliberately so — pairwise error correlation underprices joint failure by 2.5–8.3×, which argues for keeping the two lenses genuinely *different*, not for collapsing them |
 | Success criteria not met at P3-3 | Medium | A criterion that was not met is reported as not met. The baseline exists so this cannot be argued either way |
+| `belmont-pre` carries an M1 defect and breaks twelve milestones | Low-Medium | M1 is the most-verified milestone here — six tasks, twelve fix rounds, three of them in code. Revert is one command: Homebrew back on PATH, and the passive arm is lost rather than the run |
+| The M11 paired-suite block runs longer than a sitting | **High** | Measured: 43–45 min per milestone on *real* code work (implement 27–38, verify 5–18). The seeded design does trivial work so implement should collapse, but nobody knows by how much until P0-19's pilot measures it. That is the pilot's second job, and the cut order (work → verify rounds → phases → pair count) is decided in advance so it is not improvised at 2 a.m. |
+| The A/A pilot shows sd ≥ 1.0, demanding 20 pairs | Medium | Sample size wins; per-run cost gives first. If it cannot give enough, the achieved n and its consequence for the interval are published rather than quietly absorbed |
+| Product names leak into a new artefact | Medium | The seed is generated, not copied; per-pair records name repos by alias. The redaction wordlist is gitignored, so the local guard script skips where it is absent — **CI cannot enforce this and does not pretend to** |
+| Redaction leaves the already-published objects reachable | **Known, accepted** | Recorded in prerequisite 6 as an accepted residual risk on the owner's explicit decision. Not mitigated — only repository deletion would, and that option was declined |
+| M12 and M6 both touch `auto_loop.go` in wave 2 | Medium | Different functions: M6 rewrites the decision and retry paths, M12 appends one terminal record beside the existing `recordPhaseMetrics` call at `:614`. Recorded here so the merge is expected rather than discovered |
 
 ---
 

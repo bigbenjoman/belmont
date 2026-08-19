@@ -22,7 +22,7 @@ What is wrong is everything around the graph. Measured on the two live deploymen
 
 ## Success Criteria (Definition of Done)
 
-- [ ] Tokens per verified milestone and wall-clock per verified milestone are both measured, per run, by **two arms**: a **seeded paired suite** that carries the causal claim, and **passive observation of real runs on repo-3 and repo-4** that establishes external validity. Neither arm may mutate a product repository (see Constraints)
+- [ ] Tokens per verified milestone and wall-clock per verified milestone are both measured, per run, by **two arms**: a **seeded paired suite** that carries the causal claim, and **passive observation of real runs across the observed repositories** — the five product repositories plus Belmont's own — that establishes external validity. Neither arm may mutate a product repository (see Constraints)
 - [ ] **Median tokens per verified milestone falls by at least 50%** on the seeded suite, stated as a point estimate and **published alongside its confidence interval and the completion rate** of the runs it summarises. The pass/fail rule is the point estimate; the interval and completion rate are published so the precision is visible and a run that "succeeded" by failing cheaply cannot flatter the figure
 - [ ] The passive arm reports the real **overhead-to-work ratio**, and the seeded suite's figure is translated through it rather than quoted as if it were a real-world number
 - [ ] No phase reads more than 25,000 tokens of Belmont state before it has selected its milestone
@@ -85,7 +85,11 @@ And the milestone is not silently treated as having no unmet dependencies
 
   *This is written down because it was violated.* On 2026-08-18 a baseline capture drove four `belmont auto` runs into `repo-3`, producing 13 commits on `main` including two database migrations (local only; nothing pushed). Nothing in the plan forbade it, and a later session will not remember this conversation. Review record: `~/belmont/repo-3-agent-run-review-2026-08-19.md`.
 
-- **A measurement claim is only as good as its controls.** Both arms of any comparison pin **exact model IDs**, never the drifting `opus` / `sonnet` aliases in `modelTiers`; `cache_read` and `cache_creation` stay recorded separately so prompt-cache warmth is inspectable rather than baked into a total; and every median is published with the **completion rate** of the runs behind it, because a cheap failed run flatters a median. See §Research Notes for sources.
+- **A measurement claim is only as good as its controls.** Both arms of any comparison pin **exact model IDs**, never drifting tier aliases; cache-read and cache-creation counts stay recorded separately so prompt-cache warmth is inspectable rather than baked into a total; and every median is published with the **completion rate** of the runs behind it, because a cheap failed run flatters a median. See §Research Notes for sources, and TECH_PLAN.md §Model resolution for how the pinning works.
+
+- **No product's confidential information may enter this repository.** Belmont's own repository is a public fork of a third party's, and its `.belmont/` directory is committed as the state of record. Feature names, roadmaps and per-feature measurements from **the five product repositories** are confidential and must appear here only as **opaque identifiers** — this paragraph deliberately does not name them either. The identifier↔product mapping lives in the private planning workspace and never in this repository. This binds every artefact the feature produces — census output, baselines, per-run records, test fixtures, code comments and knowledge entries alike.
+
+  *This is written down because it was violated.* Measured 2026-08-19: the repository is public and already carries a complete inventory of 82 feature slugs across all five products, with per-feature sizes and task counts, plus product names in two source files that would travel in any upstream contribution. Remediation and the residual risk knowingly accepted are recorded in TECH_PLAN.md §Prerequisites — before wave 2.
 
 ## Out of Scope
 
@@ -104,7 +108,8 @@ Scored out on the evidence rather than on preference; each is recorded with the 
 
 ## Open Questions
 
-- **Still open** — whether the extraction census in M1 finds any feature whose *index alone* exceeds 25,000 tokens. If one does, the read-path work in M4 stops being an optimisation and becomes a prerequisite for M3, and the wave structure changes. M1's census answers it.
+- **Answered by M1's census, resolution taken 2026-08-18** — whether any feature's *index alone* exceeds 25,000 tokens after extraction. **Five do**, against a pre-estimate of three, and the pre-estimate was wrong in mechanism as well as magnitude. The consequence the question anticipated — M4 becoming a prerequisite of M3 — was measured and **declined**: the ordering it would guarantee is already held transitively, and restructuring costs a wave (five waves at 2.20× against four at 3.25×). Per-register figures in `CENSUS.md`; the reasoning in PROGRESS.md under `P0-4a`.
+- **Answered during tech-planning, 2026-08-19** — which milestone owns building the seeded harness. **M12** (the controls that make a measurement trustworthy) and **M13** (the harness itself), sitting inside waves that already existed so neither adds one. See TECH_PLAN.md §Implementation Order.
 - **Root cause found, resolution deferred to a spike in M8** — whether registering agents natively preserves identical tool access. The cause is now known: the six agent definitions carry no YAML frontmatter, so nothing registers as a dispatchable sub-agent and the prose falls back to a general-purpose dispatch that reads its own definition afterwards. M8's first task confirms empirically that registration preserves tool access, per-agent model tiers, and the research agents' forbidden-action constraints. If any of the three fails, the task is withdrawn rather than worked around. See TECH_PLAN.md §Go Implementation Notes.
 
 ## Clarifications
@@ -149,7 +154,17 @@ Triggered by the baseline capture driving `belmont auto` into `repo-3` and makin
 - **The instrumented build becomes the daily driver once M1 verifies.** M1 is toolchain, atomic writes and instrumentation — none of it changes agent behaviour — so adopting it starts free passive accrual, and everything recorded between then and the M11 rollout is genuine pre-change data.
 - **Domains skipped this session as not applicable**: user & audience, problem & motivation, primary and alternate flows, content & copy, onboarding, notifications, offline, monetization — settled in the 2026-08-18 interview or inapplicable to a developer-tool feature with no UI surface. **Trust/privacy/legal skipped**: metrics records carry repo and feature names, no personal data, and never leave the machine.
 
-**Open question for tech-plan**: which milestone owns *building* the seeded harness, and where it lives. It is new work created by this decision, M1 is already well past the task-count ceiling, and only `/belmont:tech-plan` may place it.
+**Open question for tech-plan** — *answered 2026-08-19, see below.*
+
+### Added during tech-planning, 2026-08-19 — where the harness went, and what it changed
+
+- **The harness is M12 and M13**, in waves that already existed. Answering the question surfaced that three of the four controls this session promoted to acceptance-relevant were not implementable against the code as it stands, which is why it became two milestones rather than a task.
+- **Both arms run at the end, against a build frozen when M1 finished.** The alternating-arm-order control needs both builds to exist at the same time, and when the baseline was originally to be captured, only one did. Arms separated by months would confound prompt-cache warmth, vendor drift and machine state with the arm itself — the three things the controls exist to remove.
+- **The post-change arm migrates its state before its timed run.** The size ceiling this feature introduces would otherwise refuse the deliberately-pathological seed, and measuring the post-change arm on unmigrated state would measure a configuration that will never exist. The migration's cost is reported separately, never folded into the per-run figure.
+- **The seeded state is generated to match the measured profile, not copied.** What is measured depends on size and structure rather than on words, so nothing confidential needs to be reproduced — see §Constraints.
+- **When sample size and available time conflict, sample size wins** and the runs get cheaper instead. The published interval is what makes an under-powered result visible, and this feature's own record — five consecutive rounds correcting claims stated beyond their evidence — is the reason that matters more here than elsewhere.
+- **Failed runs are never retried.** They count in the completion rate and drop out of the cost comparison. Retrying would silently repair the number that exists to expose them.
+- **Belmont's own execution joins the observed set.** The build orchestrating this feature's remaining milestones is now an instrumented one, frozen at the same point, so twelve milestones of real work are measured rather than invisible. Previously the tool being measured recorded nothing while running itself.
 
 ## Technical Context (for implementation agents)
 
@@ -243,19 +258,93 @@ Mixed. M1, M3, M5, M9, M10 are Go-side work on the CLI. M2, M6, M7 are skill-pro
 
 **Verification**: Two consecutive runs on the same feature produce comparable records. The metrics location is gitignored and produces no working-tree changes.
 
-### P0-3: Capture the pre-change baseline
+### P0-3: Capture the read-path half of the pre-change baseline
 **Severity**: CRITICAL
 
 **Task Description**: Every later acceptance criterion is stated against a baseline that does not yet exist.
 
-**Solution**: A recorded pre-change baseline of tokens and wall-clock per verified milestone, stored where M11 can compare against it, gathered by **two arms**:
+**Solution**: A recorded pre-change measurement of what Belmont reads — register sizes across the estate, and the size of `status` output in each format — stored where M11 can compare against it and naming the Belmont version it was taken against.
 
-1. **Seeded paired suite** (carries the causal claim). A disposable testbed whose state is seeded to the worst measured real register (~1.86 MB, 300+ milestones, ~346k tokens of archives per `CENSUS.md`) but whose milestone under test is deliberately small — what is being measured is Belmont's read-path overhead, which does not depend on how much code the milestone writes, so runs finish in minutes rather than hours. **4–5 seeded milestones × 3 replicates ≈ 12–15 pairs**, which is the threshold for detecting a 50% median reduction on a paired design. Replicates **alternate arm order** (A/B, B/A, A/B) so prompt-cache warmth and vendor drift average out instead of always favouring whichever arm runs second.
-2. **Passive observation** (carries external validity). The instrumented build becomes the daily driver once M1 verifies; from then until the M11 rollout every normal run on the five repos records metrics as a side effect, at zero extra token cost and with no interference. This arm supplies the real **overhead-to-work ratio** through which the seeded suite's figure is translated — without it the seeded number overstates the headline reduction, because the small-work design deliberately over-weights overhead.
+**Notes**: Re-scoped 2026-08-19 during tech-planning. This task originally also carried the tokens-and-wall-clock half; that turned out to need a mechanism that does not exist (exact model IDs cannot be pinned, no model or run-outcome is recorded anywhere) and moved to **M12** and **M13**. The read-path half is captured and reproduces exactly.
 
-**Notes**: The seeded suite must be taken after P0-2 and before any of M2–M10 merges. The passive arm's pre-change window opens when the M1 build is adopted and closes at the M11 rollout; nothing needs to be scheduled for it beyond that. **Neither arm may run `belmont auto` against a product repository** (see §Constraints).
+**Verification**: The read-path figures exist for the estate, reproduce from the documented commands, and name the Belmont version and repo commit behind them.
 
-**Verification**: A baseline record exists for both arms and names the exact model IDs and the Belmont commit it was taken against. The seeded suite's record includes per-pair figures (not just the aggregate) so a confidence interval and completion rate can be computed at M11.
+### P0-14: Pin exact model IDs and record what was actually served
+**Severity**: CRITICAL
+
+**Task Description**: The comparison's controls require exact model IDs, but the tiers resolve to drifting aliases and no model is recorded anywhere — so a vendor-side model change is indistinguishable from this feature's improvement.
+
+**Solution**: A way to pin the exact model each tier resolves to, layered so that specifying nothing keeps today's behaviour for every existing user. Each recorded phase names both the model that was **asked for** and the model the tool reports it **served**, or states plainly that the tool does not report one. Any summary spanning more than one model refuses to combine them and says why.
+
+**Notes**: The served-model schema differs per tool and must be confirmed against a live run, never assumed. Where it is unconfirmed the record says unconfirmed rather than estimating — the same rule the instrumentation already follows for token usage.
+
+**Verification**: A recorded phase names both models. A summary spanning two different models declines to produce a combined figure and names the models it saw. With nothing configured, behaviour is unchanged.
+
+### P0-15: Record whether a run's milestone actually completed
+**Severity**: CRITICAL
+
+**Task Description**: Every median must be published with the completion rate of the runs behind it, because a run that terminated cheaply without finishing flatters the median — but nothing records whether a run finished.
+
+**Solution**: One record per run capturing its outcome and, when it did not complete, why. A run counts as complete only when its milestone reaches **verified** — the feature's own success bar, where verified and not merely done is the unit.
+
+**Notes**: A failed run is data, not an error: it counts in the completion-rate denominator and is excluded from the cost comparison. **Failed runs are never retried** — a retry silently repairs the number that exists to expose cheap failures.
+
+**Verification**: A run that finishes its milestone records complete; one stopped by iteration limit, blocker, circuit breaker or tool failure records incomplete with the reason. Completion rate is computable from the records alone.
+
+### P0-16: Open and verify the passive observation window
+**Severity**: HIGH
+
+**Task Description**: The passive arm accrues only if the frozen instrumented build is genuinely what runs, in every repository being observed — and nothing currently confirms that.
+
+**Solution**: A report confirming, for each observed repository, that the running build is the frozen one, that the metrics location is ignored so instrumentation cannot dirty the tree it measures, and that records are accruing. The window's opening date and the frozen build's identity are recorded alongside the baseline.
+
+**Notes**: **Report-only. It writes nothing into any product repository** (see §Constraints). A step that both opens a measurement and reports on it is free to report what it wishes were true.
+
+**Verification**: The report names each observed repository, the build identity it found, and whether records are accruing. The window's opening date and frozen build are recorded with the baseline. No product repository is modified.
+
+### P0-17: Generate a disposable, resettable seeded testbed
+**Severity**: CRITICAL
+
+**Task Description**: The causal claim needs an environment that can be reset to an identical starting state for every run, and it must never be a product repository.
+
+**Solution**: A generated, throwaway workspace whose Belmont state matches the measured worst-case profile in size and structure, with a small number of deliberately trivial milestones for the arms to run, reproducible byte-for-byte from a fixed starting value and tagged so any run can reset to it.
+
+**Notes**: **Generated, never copied.** The register being modelled is a pre-launch product's complete feature planning, and what is being measured depends on size and structure rather than on words. The generator must also be able to emit a typical-sized register, so the ordinary case can be measured later at no extra cost.
+
+**Verification**: Two generations from the same starting value are byte-identical and match the recorded profile. The migration step brings the seeded state under the configured size ceiling — **if it does not, the seed is wrong**, because the post-change arm would refuse to start. Creating the testbed inside any product repository, or inside Belmont's own, is refused.
+
+### P0-18: The paired runner
+**Severity**: CRITICAL
+
+**Task Description**: A comparison whose two halves ran under different conditions proves nothing, and the conditions that differ by accident are exactly the ones nobody records.
+
+**Solution**: A runner that takes both arms from one identical starting state, resets between every run, alternates which arm goes first across replicates, and records per run: which arm, the starting state, the build identity, both model IDs, the cost figures and the outcome. The post-change arm migrates its state first, and that migration's cost is reported **separately** rather than folded into the per-run figure.
+
+**Notes**: **Runs strictly one at a time.** Wall-clock is one of the two measured outcomes and concurrent local runs contend for the same bandwidth — running the suite in parallel would corrupt the number it exists to produce. The runner must also confirm that each arm's *own* prose is what ran; without that check both arms silently use the same prose and the milestones whose entire deliverable is prose measure as zero improvement.
+
+**Verification**: Per-run records exist with every field above. Arm order alternates across replicates. A run whose arm's prose did not resolve is aborted rather than recorded. Migration cost appears as its own figure.
+
+### P0-19: A/A variance pilot and sample sizing
+**Severity**: HIGH
+
+**Task Description**: The pair count needed to detect a 50% median reduction depends on a variance nobody has measured, and the suite's wall-clock cost is likewise unknown.
+
+**Solution**: A pilot running both arms on the *same* pre-change build, measuring the run-to-run variance of paired ratios and the per-run wall-clock. The pair count for the real suite is derived from the measured variance and recorded with its derivation.
+
+**Notes**: Also an honesty check — a same-build comparison whose result departs materially from "no difference" means the instrument is biased, and no sample size fixes that. **If the derived pair count will not fit the available time, the run gets cheaper before the pair count gets smaller**; if the pair count does give, the final report says so.
+
+**Verification**: The measured variance, the derived pair count and its derivation are recorded. The same-build comparison shows no material difference, or the discrepancy is resolved before any real pair is run.
+
+### P0-20: One analysis path for the pilot and the M11 verdict
+**Severity**: CRITICAL
+
+**Task Description**: The number this feature is judged by must be computed the same way at both ends of the comparison, and it must be testable without spending a token.
+
+**Solution**: One analysis producing the median reduction as a point estimate, its confidence interval, and the completion rate of the runs behind it — computed per task and never by pooling tasks together. The same analysis serves both the pilot and the final verdict.
+
+**Notes**: The point estimate is the pass/fail rule; the interval and completion rate are published so the precision is visible. Blocking by task is the only defensible treatment when the tasks differ in size.
+
+**Verification**: The analysis runs offline against recorded pairs, with no tool invocation, and is covered by tests. Pilot and final verdict are produced by the same code path. Every published median carries its interval and completion rate.
 
 ### P0-4: Extraction census across all feature directories
 **Severity**: HIGH
@@ -363,7 +452,7 @@ Mixed. M1, M3, M5, M9, M10 are Go-side work on the CLI. M2, M6, M7 are skill-pro
 
 **Solution**: Every unmerged branch is classified as merge, rebase or abandon, with the verdict and reason recorded where the next session will read it. The classification is complete before any milestone touches a shared file. The default branch is brought up to date so it stops misrepresenting what the repository contains.
 
-**Notes**: This is the task that prevents wave 2's six parallel milestones from colliding with existing work.
+**Notes**: This is the task that prevents wave 2's seven parallel milestones from colliding with existing work.
 
 Three branches carry a known dependency and must be triaged deliberately rather than swept:
 

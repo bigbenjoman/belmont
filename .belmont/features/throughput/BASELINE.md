@@ -90,44 +90,110 @@ Three facts make this unavoidable rather than an omission:
 > The replacement is **two arms with distinct jobs** — see PRD §Success Criteria, §Constraints
 > and §Research Notes (2026-08-19), which are canonical. This file holds the procedure only.
 
-**Arm 1 — seeded paired suite (carries the causal claim).** Disposable testbed, state seeded to
-the worst measured real register (~1.86 MB, 300+ milestones, ~346k tokens of archives — see
-`CENSUS.md`), milestone under test deliberately small. Read-path overhead does not scale with how
-much code a milestone writes, so runs finish in minutes while still exercising what M2–M4 attack.
+> **TIMING CORRECTED 2026-08-19 — tech-planning session.** The block below previously showed both
+> arms running back-to-back at P0-3, with arm order alternating across replicates. **That cannot
+> happen at M1**: alternation requires both builds to exist at the same time, and when the baseline
+> was to be captured the post-change build did not exist. Running arm A now and arm B months later
+> would confound prompt-cache warmth, vendor drift and machine state *with the arm* — the three
+> things the controls below exist to remove.
+>
+> **The paired suite therefore runs in full at M11/P3-3**, both arms interleaved, against
+> `belmont-pre`: a binary frozen at M1's merge commit and kept. **M13** builds the harness and runs
+> an A/A pilot that sizes the suite; **M11** runs it. Nothing about "pre-change" is lost — what
+> freezes is the artefact, not the calendar.
+
+**Arm 1 — seeded paired suite (carries the causal claim).** Disposable testbed under a temp
+directory, never inside a product repository or this one — the harness refuses to run otherwise.
+Its state is **generated** to match the worst measured register's profile in size and structure
+(1,860,979 B, 30 milestones, 529 tasks, 458 with detail). It is not a copy: read-path cost is a
+function of bytes and structure rather than of words, and the real register is a pre-launch
+product's complete feature planning. The milestone under test is deliberately trivial — what is
+measured is read-path overhead, which does not scale with how much code a milestone writes.
+
+Built and sized by **M13** (`P0-17`–`P0-20`), executed by **M11/P3-3**. Harness form is build-tagged
+test files, not a shipped subcommand — see `TECH_PLAN.md` §The bench harness.
 
 ```bash
+# Built once when M1 verifies, kept, and never refreshed until the M11 rollout.
+git -C ~/repos/belmont rev-parse HEAD > /tmp/belmont-pre.sha
+bash scripts/build.sh && cp ./belmont ~/bin/belmont-pre
+
 # Seed once; this commit is the fixed starting state for every arm and replicate.
 git -C <testbed> tag baseline-seed
 
-# 4-5 seeded milestones x 3 replicates ~= 12-15 pairs (the paired-design threshold).
-# ALTERNATE arm order across replicates - A/B, then B/A, then A/B - so prompt-cache
-# warmth and vendor drift average out rather than always favouring whichever arm is second.
+# Pair count is DERIVED from the A/A pilot's measured variance, not assumed:
+#   sd 0.3 -> 6 pairs   sd 0.7 -> 12   sd 1.0 -> 20
+# ALTERNATE arm order across replicates - A/B, then B/A, then A/B.
+# STRICTLY SERIAL: wall-clock is a measured outcome, and concurrent local runs
+# contend for the same memory bandwidth (1.43x on two slots, not 14.31x).
 git -C <testbed> reset --hard baseline-seed
-<belmont-current>          auto --feature <slug> --from M<n> --to M<n> --tool claude   # arm A
-<belmont-current>          metrics --feature <slug> --root <testbed> --format json
+~/bin/belmont-pre   auto --feature <slug> --from M<n> --to M<n> --tool claude    # arm A
+~/bin/belmont-pre   metrics --feature <slug> --root <testbed> --format json
 
 git -C <testbed> reset --hard baseline-seed
-/tmp/belmont-instrumented  auto --feature <slug> --from M<n> --to M<n> --tool claude   # arm B
-/tmp/belmont-instrumented  metrics --feature <slug> --root <testbed> --format json
+~/bin/belmont-post  extract --feature <slug> --root <testbed>    # arm B migrates first;
+                                                                 # cost recorded SEPARATELY
+~/bin/belmont-post  auto --feature <slug> --from M<n> --to M<n> --tool claude    # arm B
+~/bin/belmont-post  metrics --feature <slug> --root <testbed> --format json
 ```
 
-**Arm 2 — passive observation (carries external validity).** No commands. Adopt the instrumented
-build as the daily driver once M1 verifies; every normal run on the five repos then records
-metrics as a side effect, at zero extra token cost and with no interference. The pre-change
-window closes at the M11 rollout. This arm supplies the real **overhead-to-work ratio** that the
-seeded figure must be translated through — the small-work design deliberately over-weights
-overhead, so quoting the seeded number raw would overstate the real-world reduction.
+Arm B migrates because M5's size ceiling would otherwise refuse the deliberately pathological seed
+— and because migrated state *is* the post-M11 world, so measuring arm B unmigrated would measure a
+configuration that will never exist. Its cost is a separate line, never amortised into the per-run
+figure. **Acceptance criterion on the seed**: extraction must land it under `progress_error_bytes`,
+because five of 82 real registers still exceed the ceiling after extraction and a seed with that
+property makes arm B unable to start at all.
 
-**Controls — all three are acceptance-relevant, not method trivia.**
+Each arm installs **its own** prose into the testbed from a fixed commit checkout, and the harness
+asserts that prose resolved before the timed run begins. Without that check both arms silently
+resolve from user-level `~/.agents/skills/belmont/` and M2, M4 and M7 — whose entire deliverable is
+prose — measure as zero improvement.
+
+**Arm 2 — passive observation (carries external validity).** No commands and nothing to schedule.
+`belmont-pre` goes on PATH once M1 verifies and stays there until the M11 rollout; every normal run
+in the observed repositories then records metrics as a side effect, at zero extra token cost and
+with no interference.
+
+**This now includes Belmont's own repository.** Its loop was previously pinned to Homebrew v0.11.0,
+which contains no metrics code — so twelve milestones of real work would have gone unrecorded by
+the feature that exists to measure exactly that. The pin is repointed to `belmont-pre`; isolation is
+identical, because both are frozen. Pre-change status is guaranteed by the binary not moving rather
+than by anyone remembering: skill prose is likewise frozen at v0.11.0 by master rule 2, and
+`P0-M1-FIX-12` guarantees the metrics directory is ignored from the `auto` path, so no
+per-repository setup step is needed.
+
+This arm supplies the real **overhead-to-work ratio** that the seeded figure must be translated
+through — the small-work design deliberately over-weights overhead, so quoting the seeded number
+raw would overstate the real-world reduction.
+
+**Controls — all three are acceptance-relevant, not method trivia. None of the three is
+implementable against the code as it stands; that is what M12 exists for.**
 
 - **Pin exact model IDs.** Never the drifting `opus` / `sonnet` aliases in `modelTiers`, or a
-  vendor-side model change masquerades as your improvement.
+  vendor-side model change masquerades as your improvement. *(`P0-14`: generalise the layered
+  resolution chain that already serves pi and opencode to every tool. Record `model_requested`
+  **and** `model_served` — recording only what was asked for cannot see a vendor serving something
+  else, which over a months-long passive window is the whole confound.)*
 - **Keep `cache_read` and `cache_creation` separate** in every record, so prompt-cache warmth is
   inspectable after the fact rather than baked into a total. Cache hit rate is both a confound
   here *and* one of the things the feature improves, so it cannot simply be factored out.
+  *(Already satisfied by `P0-2`; the fields exist.)*
 - **Publish the completion rate beside every median.** A run that terminated cheaply without
   finishing flatters a median — which is exactly what the zero-usage records surfaced by
-  `P0-M1-FIX-12` are.
+  `P0-M1-FIX-12` are. *(`P0-15`: nothing currently records whether a run's milestone reached `[v]`.
+  A run counts as complete only at `[v]`. **Failed runs are never retried** — they count in the
+  denominator and drop out of the ratio, because a retry silently repairs the number this control
+  exists to expose.)*
+
+**Analysis** *(`P0-20`, one code path for the pilot and the M11 verdict)*: per-pair log-ratios,
+blocked by task and never pooled. Point estimate is the **sample median** of per-pair reductions,
+which is what criterion 26 literally names as the pass/fail rule. Interval is the **exact Wilcoxon
+signed-rank / Hodges–Lehmann** interval — stable at n = 6–20 where a percentile bootstrap is not,
+and matching the signed-rank calculation that sized the suite.
+
+**When sample size and wall-clock conflict, sample size wins.** Cut the seeded work first, then
+verify rounds, then the phases measured; the pair count gives last, and if it gives, the report
+says so.
 
 Record per-pair figures, not just aggregates, so M11/P3-3 can compute a confidence interval.
 Append to `baseline.json` under `per_milestone_cost_baseline` with the seed SHA, the pinned model
@@ -138,11 +204,22 @@ report the cost half as unevidenced rather than estimating it.** The PRD is expl
 instrumentation reports nothing rather than guessing; a baseline is the last place to break that
 rule, because every later claim is stated against it.
 
-**Records that exist but are not the baseline.** Seven records were captured from the withdrawn
+**Records that exist but are not the baseline.** Six records were captured from the withdrawn
 repo-3 runs (`~/repo-3/.belmont/metrics/feat-004.jsonl`). They are real
 measurements of real work and are kept for reference, but they are **not** the baseline and must
 not be presented as one: no milestone reached `[v]`, and two are zero-usage phases from
 session-limit exits. Nothing in `baseline.json` derives from them.
+
+*(Count corrected 2026-08-19: this said seven, as did `PROGRESS.md`. The file holds six —
+`wc -l` on it returns 6.)*
+
+**What they do tell us, and it matters for scheduling.** The four non-zero records give the only
+measured per-phase figures in existence: implement 27–38 min, verify 5–18 min, so **43–45 minutes
+per milestone** on real code work, with cost dominated by cache-read volume (4.1M and 6.9M tokens
+on the two implement phases). The seeded design does trivial work, so implement should collapse —
+but by how much is unknown until `P0-19`'s pilot measures it, and at 24–30 serial runs the answer
+decides whether the M11 block is one sitting or several. **Sizing the M11 block is the pilot's
+second job**, and it is why the cut order above is decided in advance rather than improvised.
 
 ## Reproducing the read-path half
 
