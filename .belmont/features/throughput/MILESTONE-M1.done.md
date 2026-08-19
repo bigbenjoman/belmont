@@ -1,3 +1,11 @@
+> **ANNOTATION 2026-08-19 — every commit SHA below is stale, and this file is deliberately not rewritten.**
+>
+> `main` was rewritten with `git filter-repo` on 2026-08-19 to redact the product estate to opaque identifiers (prerequisite 6, wave-2 gate). Every SHA quoted in this archive now resolves only as an unreachable object, on no remote and in no clone. This file is an *archive*: it is annotated rather than edited, the same convention `P0-13a` used for the stale-remote figure. Live files (`PROGRESS.md`, `TECH_PLAN.md`, `NOTES.md`, `docs/branch-triage.md`) were rewritten in place.
+>
+> Remap for the SHAs this file quotes: `c952426c`→`ff06d45` (P0-3), `23e71008`→`24db490` (the `1129cf84` cherry-pick). `1129cf84` itself is on `origin/feat/maintenance-ci` and was **not** rewritten — only `main` was in scope. To resolve any other SHA here, match its commit subject rather than its hash; subjects survived the rewrite unchanged.
+>
+> Product identifiers in this file are aliases (`repo-N`, `feat-NNN`); the map lives at `~/belmont/private/estate-alias-map.json` and never in this repository. Recorded as `P0-M1-FIX-25`.
+
 ## Pass 1 — /belmont:implement (M1 full pipeline, 2026-08-18)
 
 # Milestone: M1 — Toolchain, atomic writes & baseline
