@@ -170,6 +170,33 @@ writer the only writer, so the bounds above are enforced rather than merely
 remembered. The JSON shape is `{"repairs": [{"line": N, "task_id": "...",
 "action": "...", "reason": "..."}]}`, with `line` as reported by `--dry-run`.
 
+## What a run cost: `belmont metrics`
+
+```bash
+belmont metrics --feature SLUG [--root PATH] [--format text|json]
+```
+
+Summarises `.belmont/metrics/<feature>.jsonl` — one append-only record per phase, written by `belmont auto`. Records are **local-only and gitignored**; `auto` guarantees the ignore rule at startup (see the clean-tree preflight above).
+
+The governing rule is that **a figure is either reported by the tool that spent it, or it is null.** Nothing here estimates a token count — not from character counts, not from a ratio, not from a previous run. A host that cannot report usage (copilot, pi, opencode) records `null` with a stated reason and wall-clock only. A plausible invention would silently contaminate the baseline every later comparison is judged against.
+
+Two distinctions the summary keeps rather than flattening:
+
+- **`input_semantics` is per tool and is not aggregated across tools.** Claude's `input_tokens` *excludes* `cache_read_input_tokens`; codex's (OpenAI lineage) *includes* `cached_input_tokens`. Summing them yields a plausible wrong number, so a figure spanning two tools is reported as `null` with the reason plus a per-tool breakdown.
+- **Zero-usage phases are flagged, never dropped.** A phase that failed before the tool produced usage (a session-limit exit at 3 s) still appended a record. It counts as a phase and is surfaced as `phases_with_zero_usage`, because silently excluding failures is how a cheap failure flatters a median. `ZeroUsage` ("the host said zero") and `Unreported` ("the host said nothing") are disjoint and answer different questions.
+
+## Register size census: `belmont extract`
+
+```bash
+belmont extract --dry-run [--feature SLUG] [--root PATH] [--roots PATH,PATH] [--allow-unreadable-roots] [--format text|json]
+```
+
+Measures what moving indented narrative detail out of `PROGRESS.md` would yield, per feature. **`--dry-run` is required, not optional** — this release ships the census only; nothing is written.
+
+- **`--roots` paths must be absolute.** The shell expands `~` only at the start of a word, so every path after the first comma stays literal and resolves under the current directory. The documented command silently returned 43 registers instead of 65 before this was caught.
+- **A root or register that cannot be read is a reported failure, never a skip.** The run refuses and names everything it could not read, rather than quietly reporting a smaller denominator — an incomplete census reads exactly like a complete one once its numbers are quoted elsewhere. `--allow-unreadable-roots` overrides; the report then states what it missed, above the figures and again below them. `coverage_complete` in the JSON is false whenever either `unreadable_roots` or `unreadable_registers` is non-empty.
+- Feature directories with **no** register are counted separately (`dirs_without_register`) from registers that **exist but could not be read** (`unreadable_registers`). The first is a fact about the estate; the second is a hole in the measurement.
+
 ## Milestone-structure validation
 
 `belmont validate` lints `PROGRESS.md` for milestone-structure violations — the class of bug documented in [`knowledge/cross-cutting/milestone-immutability.md`](../knowledge/cross-cutting/milestone-immutability.md).

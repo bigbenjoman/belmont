@@ -412,6 +412,19 @@ belmont reverify --feature my-feature --from M3 --to M10
 belmont blockers
 belmont blockers --feature my-feature --summary
 
+# What a feature actually cost — tokens and wall-clock per phase, from the
+# tool's own reported usage. Never estimated: a host that cannot report usage
+# records null with a stated reason. Records are local-only and gitignored.
+belmont metrics --feature my-feature
+belmont metrics --feature my-feature --format json
+
+# Measure what splitting narrative detail out of PROGRESS.md would yield,
+# across one repo or several. Census only — --dry-run is required and nothing
+# is written. --roots entries must be absolute: only the first is a shell word,
+# so a ~ after the first comma is never expanded.
+belmont extract --dry-run --feature my-feature
+belmont extract --dry-run --root /abs/path --roots /abs/one,/abs/two
+
 # Sync master PROGRESS.md with actual feature states
 belmont sync
 
